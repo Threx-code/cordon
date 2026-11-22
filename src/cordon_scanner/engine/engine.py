@@ -43,6 +43,7 @@ from cordon_scanner.engine.isolation.documents import Documents, PendingHooks
 from cordon_scanner.engine.isolation.expander import ArchiveExpander
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.archive_stages import ArchiveStages
+from cordon_scanner.engine.pipeline.ceilings import Ceilings
 from cordon_scanner.engine.pipeline.constants import REPOSITORY_SCOPE
 from cordon_scanner.engine.pipeline.coverage import Coverage, CoverageLedger
 from cordon_scanner.engine.pipeline.dependencies import Dependencies
@@ -277,6 +278,7 @@ class Engine:
                 duration_ms=int((time.monotonic() - started) * 1000),
                 detector_cpu_ms=DetectorClock.milliseconds(),
                 view_files=DetectorClock.counts(),
+                model_refusals=Ceilings.model_refusals(),
             ),
             **acc.coverage(),
             schema_version=SCHEMA_VERSION,
@@ -365,6 +367,7 @@ class Engine:
                 duration_ms=int((time.monotonic() - started) * 1000),
                 detector_cpu_ms=DetectorClock.milliseconds(),
                 view_files=DetectorClock.counts(),
+                model_refusals=Ceilings.model_refusals(),
             ),
             **acc.coverage(),
             schema_version=SCHEMA_VERSION,

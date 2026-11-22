@@ -197,6 +197,11 @@ class Verdict:
         """The score at which `area` blocks: the model's line for it, scaled by `LINE_SCALE`."""
         return float(areas.get(area, areas[Verdict.FALLBACK])) * Verdict.LINE_SCALE.get(area, 1.0)
 
+    @staticmethod
+    def model_refusals() -> dict[str, str] | None:
+        """The delivered models a scan turned down and why, or None when it turned none down: what a scan's stats say about the models it did not use."""
+        return FeedModels.refusals() or None
+
     _PYPI: ClassVar[re.Pattern[str]] = re.compile(r"^[^/]+/PKG-INFO$|^[^/]+\.dist-info/METADATA$")
     #: Each ecosystem's layout, read on the outermost archive only (a jar bundled in a Gradle
     #: repository is not a Maven release), measured on the benign corpus (2026-10-19). Release

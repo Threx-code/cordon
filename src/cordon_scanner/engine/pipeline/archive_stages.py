@@ -541,6 +541,7 @@ class ArchiveStages:
             duration_ms=int((time.monotonic() - started) * 1000),
             detector_cpu_ms=DetectorClock.milliseconds(),
             view_files=DetectorClock.counts(),
+            model_refusals=Ceilings.model_refusals(),
         )
 
     def deferred(
