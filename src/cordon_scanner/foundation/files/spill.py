@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import atexit
 import contextlib
+import mmap
 import os
 import shutil
 import tempfile
@@ -49,6 +50,12 @@ class SpilledBytes(bytes):
     def read_whole(self) -> bytes:
         """All of it, in memory: only for a caller bounded by its own limit (a nested archive)."""
         return Path(self.path).read_bytes()
+
+    def mapped(self) -> mmap.mmap:
+        """All of it, read straight from the kept file: pages come in as they are read and go out again, so an archive past the size one is held at in
+        memory can still be opened. Read-only; the caller must not use it after this object is released (the file goes with it)."""
+        with Path(self.path).open("rb") as handle:
+            return mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ)
 
 
 class Spill:
