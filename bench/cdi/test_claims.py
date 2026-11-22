@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from bench.cdi.claims import ClaimRefused, Claims
 from bench.cdi.gate import Gate
 
@@ -59,7 +58,9 @@ class TestTheDiversity:
 
     def test_fewer_than_ten_families_fails_though_none_is_large(self) -> None:
         held = [f"f{i % 9}" for i in range(90)]
-        assert Claims.diversity(held, 100) == ("9 distinct campaigns or families, the minimum is 10",)
+        assert Claims.diversity(held, 100) == (
+            "9 distinct campaigns or families, the minimum is 10",
+        )
 
     def test_a_development_split_smaller_than_the_held_out_one_fails(self) -> None:
         reasons = Claims.diversity(MANY, 239)
@@ -90,14 +91,20 @@ class TestRequire:
 class TestTheGate:
     def spec(self, tmp_path: Path, claim: dict[str, Any]) -> dict[str, Any]:
         rows = tmp_path / "scans"
-        rows.write_text('{"file": "m1", "exit": 1, "findings": [], "seconds": 1}\n', encoding="utf-8")
+        rows.write_text(
+            '{"file": "m1", "exit": 1, "findings": [], "seconds": 1}\n', encoding="utf-8"
+        )
         return {
             "candidate_id": "c",
-            "sets": [{"name": "m", "kind": "malware", "area": "x", "off": str(rows), "on": str(rows)}],
+            "sets": [
+                {"name": "m", "kind": "malware", "area": "x", "off": str(rows), "on": str(rows)}
+            ],
             "claim": claim,
         }
 
-    def test_a_split_failing_a_rule_rejects_with_the_minimum_in_the_reason(self, tmp_path: Path) -> None:
+    def test_a_split_failing_a_rule_rejects_with_the_minimum_in_the_reason(
+        self, tmp_path: Path
+    ) -> None:
         claim = {"held_families": ["gha"] * 237, "dev_malware_n": 300, "legit_n": 5_000}
         _, decision = Gate.evaluate(self.spec(tmp_path, claim))
         assert decision["gates"]["claim"]["result"] == "fail"

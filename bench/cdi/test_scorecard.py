@@ -6,7 +6,6 @@ import copy
 from typing import Any
 
 import pytest
-
 from bench.cdi.scorecard import Baseline, BaselineEdited, Conclusion, Proportions, Scorecard
 
 BASE = Baseline.freeze({"mal_blocked": 300, "mal_n": 400, "benign_blocked": 5, "benign_n": 5_000})
@@ -14,8 +13,15 @@ BASE = Baseline.freeze({"mal_blocked": 300, "mal_n": 400, "benign_blocked": 5, "
 
 class Kit:
     @staticmethod
-    def candidate(mal_blocked: int = 360, mal_n: int = 400, benign_blocked: int = 5, benign_n: int = 5_000) -> dict[str, int]:
-        return {"mal_blocked": mal_blocked, "mal_n": mal_n, "benign_blocked": benign_blocked, "benign_n": benign_n}
+    def candidate(
+        mal_blocked: int = 360, mal_n: int = 400, benign_blocked: int = 5, benign_n: int = 5_000
+    ) -> dict[str, int]:
+        return {
+            "mal_blocked": mal_blocked,
+            "mal_n": mal_n,
+            "benign_blocked": benign_blocked,
+            "benign_n": benign_n,
+        }
 
     @staticmethod
     def card(**over: int) -> dict[str, Any]:
@@ -36,7 +42,9 @@ class TestTheScorecard:
 
     def test_a_small_gain_whose_bound_spans_zero_is_not_incremental(self) -> None:
         card = Scorecard.of(BASE, Kit.candidate(mal_blocked=305))
-        assert card["recall_gain_low"] < 0 < card["recall_gain_high"] and card["incremental"] is False
+        assert (
+            card["recall_gain_low"] < 0 < card["recall_gain_high"] and card["incremental"] is False
+        )
 
     def test_the_benign_block_rate_has_an_upper_bound(self) -> None:
         card = Scorecard.of(BASE, Kit.candidate(benign_blocked=10))
@@ -71,7 +79,9 @@ class TestEveryCaseEndsInResearchOrShadow:
 
     def test_unavailable_data_ends_in_research(self) -> None:
         result = Conclusion.of({"pypi": Kit.card(), "npm": None})
-        assert result["outcome"] == "research" and "data unavailable for npm" in result["reasons"][0]
+        assert (
+            result["outcome"] == "research" and "data unavailable for npm" in result["reasons"][0]
+        )
 
     def test_no_areas_at_all_ends_in_research(self) -> None:
         assert Conclusion.of({})["outcome"] == "research"
@@ -84,7 +94,9 @@ class TestEveryCaseEndsInResearchOrShadow:
         assert Conclusion.of({"pypi": Kit.card(benign_n=2_999)})["outcome"] == "research"
 
     def test_an_inconclusive_gain_ends_in_research(self) -> None:
-        result = Conclusion.of({"pypi": Kit.card(mal_blocked=305), "npm": Kit.card(mal_blocked=303)})
+        result = Conclusion.of(
+            {"pypi": Kit.card(mal_blocked=305), "npm": Kit.card(mal_blocked=303)}
+        )
         assert result["outcome"] == "research" and "spans zero" in result["reasons"][0]
 
     def test_a_gain_in_one_area_only_is_not_generalisable_and_ends_in_shadow(self) -> None:

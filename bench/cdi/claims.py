@@ -42,7 +42,9 @@ class Claims:
         return tuple(out)
 
     @staticmethod
-    def short_of_plan(malware_n: int, legit_n: int, catalogue: int | None = None) -> tuple[str, ...]:
+    def short_of_plan(
+        malware_n: int, legit_n: int, catalogue: int | None = None
+    ) -> tuple[str, ...]:
         """SI-R2: where a split passes the floors and is still under the plan's size. The legitimate plan is the whole catalogue when it holds fewer than 100,000 units."""
         out = []
         if malware_n < MALWARE_PLAN:
@@ -61,7 +63,9 @@ class Claims:
         counts = Counter(held_families)
         total = len(held_families)
         if len(counts) < MIN_FAMILIES:
-            out.append(f"{len(counts)} distinct campaigns or families, the minimum is {MIN_FAMILIES}")
+            out.append(
+                f"{len(counts)} distinct campaigns or families, the minimum is {MIN_FAMILIES}"
+            )
         if total:
             top = max(counts.values())
             if top / total > MAX_FAMILY_SHARE:
@@ -69,7 +73,9 @@ class Claims:
                     f"one campaign or family holds {top} of {total} held-out units ({top / total:.0%}), the most allowed is {MAX_FAMILY_SHARE:.0%}"
                 )
         if dev_malware_n < total:
-            out.append(f"the development split ({dev_malware_n}) is smaller than the held-out one ({total})")
+            out.append(
+                f"the development split ({dev_malware_n}) is smaller than the held-out one ({total})"
+            )
         return tuple(out)
 
     @staticmethod

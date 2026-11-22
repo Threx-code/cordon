@@ -73,7 +73,9 @@ class Hypotheses:
             out.append("not a hypothesis record")
         if label_tier not in FACTORY_TIERS:
             out.append(
-                "no confirmed label" if label_tier is None else f"label tier {label_tier} is not confirmed or corroborated"
+                "no confirmed label"
+                if label_tier is None
+                else f"label tier {label_tier} is not confirmed or corroborated"
             )
         if not independent_evidence:
             out.append("no independent evidence")

@@ -9,7 +9,9 @@ from typing import Any
 from bench.cdi.gate import Gate
 from bench.cdi.lineage import Lineage
 
-SKILL = [["SUSPECT.AGENT.SKILL_INSTRUCTIONS.001", "high", "high", "suspicious", "a/SKILL.md", 3, "agent"]]
+SKILL = [
+    ["SUSPECT.AGENT.SKILL_INSTRUCTIONS.001", "high", "high", "suspicious", "a/SKILL.md", 3, "agent"]
+]
 OTHER = [["MALWARE.DROPPER.001", "critical", "high", "malicious", "b/setup.py", 9, "dropper"]]
 MAL = [["MALWARE.DROPPER.001", "critical", "high", "malicious"]]
 
@@ -17,8 +19,13 @@ MAL = [["MALWARE.DROPPER.001", "critical", "high", "malicious"]]
 class Kit:
     @staticmethod
     def row(name: str, sha: str, findings: list[list[Any]], exit_code: int = 1) -> dict[str, Any]:
-        return {"file": name, "sha256": sha, "exit": exit_code, "findings": findings, "seconds": 1.0}
-
+        return {
+            "file": name,
+            "sha256": sha,
+            "exit": exit_code,
+            "findings": findings,
+            "seconds": 1.0,
+        }
 
     @staticmethod
     def write(path: Path, rows: list[dict[str, Any]]) -> str:
@@ -29,12 +36,16 @@ class Kit:
 class TestTheContentKey:
     def test_a_reworded_copy_has_another_sha256_and_the_same_content_key(self) -> None:
         original = Kit.row("train/a", "sha-1", SKILL)
-        reworded = Kit.row("held/a2", "sha-2", [[*SKILL[0][:5], 40, "agent"]])  # same finding, another line
+        reworded = Kit.row(
+            "held/a2", "sha-2", [[*SKILL[0][:5], 40, "agent"]]
+        )  # same finding, another line
         assert Lineage.sha(original) != Lineage.sha(reworded)
         assert Lineage.content_key(original) == Lineage.content_key(reworded)
 
     def test_other_content_has_another_key(self) -> None:
-        assert Lineage.content_key(Kit.row("a", "s", SKILL)) != Lineage.content_key(Kit.row("b", "s", OTHER))
+        assert Lineage.content_key(Kit.row("a", "s", SKILL)) != Lineage.content_key(
+            Kit.row("b", "s", OTHER)
+        )
 
     def test_the_scanner_and_intel_versions_do_not_move_it(self) -> None:
         a = Kit.row("a", "s", SKILL)
@@ -80,7 +91,9 @@ class TestTheOverlap:
 
 
 class TestTheGateBlocks:
-    def spec(self, tmp_path: Path, train: list[dict], held: list[dict], **extra: Any) -> dict[str, Any]:
+    def spec(
+        self, tmp_path: Path, train: list[dict], held: list[dict], **extra: Any
+    ) -> dict[str, Any]:
         mal = [Kit.row("m1", "x1", MAL), Kit.row("m2", "x2", [], 0)]
         return {
             "candidate_id": "cand:q11",
@@ -100,7 +113,9 @@ class TestTheGateBlocks:
             **extra,
         }
 
-    def test_a_reworded_copy_in_train_and_held_fails_the_gate_and_rejects(self, tmp_path: Path) -> None:
+    def test_a_reworded_copy_in_train_and_held_fails_the_gate_and_rejects(
+        self, tmp_path: Path
+    ) -> None:
         train = [Kit.row("train/a", "sha-1", SKILL)]
         held = [Kit.row("held/a2", "sha-2", [[*SKILL[0][:5], 40, "agent"]])]
         _, decision = Gate.evaluate(self.spec(tmp_path, train, held))
@@ -121,7 +136,9 @@ class TestTheGateBlocks:
         assert decision["gates"]["lineage"]["result"] == "fail"
         assert decision["outcome"] == "reject"
 
-    def test_a_candidate_without_a_trained_component_is_not_applicable(self, tmp_path: Path) -> None:
+    def test_a_candidate_without_a_trained_component_is_not_applicable(
+        self, tmp_path: Path
+    ) -> None:
         spec = self.spec(tmp_path, [], [])
         del spec["lineage"]
         _, decision = Gate.evaluate(spec)

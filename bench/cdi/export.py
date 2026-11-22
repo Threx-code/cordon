@@ -75,4 +75,6 @@ class DatasetExport:
         if not path.exists():
             return None
         document = json.loads(path.read_text(encoding="utf-8"))
-        return {str(d) for d in document["artifacts"]}, {str(f) for f in document.get("families", ())}
+        return {str(d) for d in document["artifacts"]}, {
+            str(f) for f in document.get("families", ())
+        }

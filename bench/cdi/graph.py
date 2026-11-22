@@ -69,6 +69,8 @@ class ThreatGraph:
         for other in sorted(candidates):
             evidence = self.evidence(seed, other)
             total = sum(evidence.values())
-            if total >= THRESHOLD and (len(evidence) >= MIN_KINDS or max(evidence.values()) >= THRESHOLD):
+            if total >= THRESHOLD and (
+                len(evidence) >= MIN_KINDS or max(evidence.values()) >= THRESHOLD
+            ):
                 out[other] = total
         return out

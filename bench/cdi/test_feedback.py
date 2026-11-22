@@ -5,12 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from bench.cdi.feedback import ACQUIRE, KINDS, Feedback
 
 
 class TestTheRecords:
-    def test_a_rollback_and_an_fp_each_create_a_record_the_next_run_reads(self, tmp_path: Path) -> None:
+    def test_a_rollback_and_an_fp_each_create_a_record_the_next_run_reads(
+        self, tmp_path: Path
+    ) -> None:
         Feedback.add(tmp_path, "rollback", "cand:7", {"reason": "benign block after release"})
         Feedback.add(tmp_path, "false_positive", "sha:abc", {"rule": "R"})
         records, mark = Feedback.read(tmp_path)
@@ -49,7 +50,9 @@ class TestTheRecords:
         Feedback.add(tmp_path, "rollback", "c")
         assert Feedback.path(tmp_path).read_text(encoding="utf-8").splitlines()[0] == first
 
-    def test_a_correction_names_the_record_and_one_that_does_not_exist_is_refused(self, tmp_path: Path) -> None:
+    def test_a_correction_names_the_record_and_one_that_does_not_exist_is_refused(
+        self, tmp_path: Path
+    ) -> None:
         Feedback.add(tmp_path, "false_positive", "d")
         with pytest.raises(ValueError, match="no record 5"):
             Feedback.add(tmp_path, "false_positive", "d", corrects=5)

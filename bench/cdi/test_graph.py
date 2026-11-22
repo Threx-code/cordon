@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from bench.cdi.graph import COMMON_AT, ThreatGraph
 
 

@@ -78,7 +78,9 @@ class Scorecard:
         Baseline.check(baseline)
         for blocked, total in (("mal_blocked", "mal_n"), ("benign_blocked", "benign_n")):
             if not 0 <= candidate[blocked] <= candidate[total]:
-                raise ValueError(f"{blocked} {candidate[blocked]} is not within {total} {candidate[total]}")
+                raise ValueError(
+                    f"{blocked} {candidate[blocked]} is not within {total} {candidate[total]}"
+                )
         old = baseline["counts"]
         gain, low, high = Proportions.difference(
             candidate["mal_blocked"], candidate["mal_n"], old["mal_blocked"], old["mal_n"]
@@ -87,13 +89,17 @@ class Scorecard:
         return {
             "baseline_digest": baseline["digest"],
             "recall_baseline": old["mal_blocked"] / old["mal_n"] if old["mal_n"] else 0.0,
-            "recall_candidate": candidate["mal_blocked"] / candidate["mal_n"] if candidate["mal_n"] else 0.0,
+            "recall_candidate": candidate["mal_blocked"] / candidate["mal_n"]
+            if candidate["mal_n"]
+            else 0.0,
             "mal_n": candidate["mal_n"],
             "benign_n": candidate["benign_n"],
             "recall_gain": gain,
             "recall_gain_low": low,
             "recall_gain_high": high,
-            "benign_block_rate": candidate["benign_blocked"] / candidate["benign_n"] if candidate["benign_n"] else 0.0,
+            "benign_block_rate": candidate["benign_blocked"] / candidate["benign_n"]
+            if candidate["benign_n"]
+            else 0.0,
             "benign_block_upper": benign_upper,
             "incremental": low > 0,
         }
@@ -106,26 +112,38 @@ class Conclusion:
         reasons: list[str] = []
         missing = sorted(a for a, card in areas.items() if card is None)
         if missing or not areas:
-            return Conclusion.end("research", [f"data unavailable for {', '.join(missing) or 'every area'}"])
+            return Conclusion.end(
+                "research", [f"data unavailable for {', '.join(missing) or 'every area'}"]
+            )
         # Every area has a scorecard from here on: an area with none ended the question above.
         cards = {a: c for a, c in areas.items() if c is not None}
         small = sorted(a for a, c in cards.items() if Conclusion.too_small(c))
         if small:
             return Conclusion.end("research", [f"small n in {', '.join(small)}"])
         gains = [a for a, c in cards.items() if c["incremental"]]
-        spans = sorted(a for a, c in cards.items() if c["recall_gain_low"] <= 0 < c["recall_gain_high"])
+        spans = sorted(
+            a for a, c in cards.items() if c["recall_gain_low"] <= 0 < c["recall_gain_high"]
+        )
         if spans and not gains:
-            return Conclusion.end("research", [f"inconclusive in {', '.join(spans)}: the gain's interval spans zero"])
+            return Conclusion.end(
+                "research", [f"inconclusive in {', '.join(spans)}: the gain's interval spans zero"]
+            )
         if len(gains) < MIN_AREAS_WITH_GAIN:
-            reasons.append(f"not generalisable: the gain holds in {len(gains)} of {len(areas)} areas")
+            reasons.append(
+                f"not generalisable: the gain holds in {len(gains)} of {len(areas)} areas"
+            )
             return Conclusion.end("shadow", reasons)
         return Conclusion.end("shadow", ["clear gain; a pass earns shadow, never blocking"])
 
     @staticmethod
     def too_small(card: dict[str, Any]) -> bool:
-        return card.get("mal_n", MALWARE_FLOOR) < MALWARE_FLOOR or card.get("benign_n", LEGIT_FLOOR) < LEGIT_FLOOR
+        return bool(
+            card.get("mal_n", MALWARE_FLOOR) < MALWARE_FLOOR
+            or card.get("benign_n", LEGIT_FLOOR) < LEGIT_FLOOR
+        )
 
     @staticmethod
     def end(outcome: str, reasons: list[str]) -> dict[str, Any]:
-        assert outcome in OUTCOMES
+        if outcome not in OUTCOMES:
+            raise ValueError(f"an outcome is research or shadow, never {outcome!r}")
         return {"outcome": outcome, "reasons": reasons}

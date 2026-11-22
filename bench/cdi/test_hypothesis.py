@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-
 from bench.cdi.hypothesis import Distance, Hypotheses, HypothesisRefused
 
 
@@ -23,12 +22,15 @@ class Kit:
         }
         return Hypotheses.build(**{**parts, **over})
 
-
     @staticmethod
-    def featureset(artifact: str, *content: tuple[str, str, str], intel: bool = False) -> dict[str, Any]:
+    def featureset(
+        artifact: str, *content: tuple[str, str, str], intel: bool = False
+    ) -> dict[str, Any]:
         features = [{"name": n, "value": v, "slot": s, "source": "content"} for n, v, s in content]
         if intel:
-            features.append({"name": "finding:INTEL.X", "value": True, "slot": "none", "source": "intel"})
+            features.append(
+                {"name": "finding:INTEL.X", "value": True, "slot": "none", "source": "intel"}
+            )
         return {"artifact_id": artifact, "features": features}
 
 
@@ -39,7 +41,15 @@ class TestAHypothesisIsNotALabel:
         assert h["counterexamples"] == ["none found"] and h["validation_plan"]
 
     @pytest.mark.parametrize(
-        "part", ["statement", "supporting_samples", "counterexamples", "expected_coverage", "limits", "validation_plan"]
+        "part",
+        [
+            "statement",
+            "supporting_samples",
+            "counterexamples",
+            "expected_coverage",
+            "limits",
+            "validation_plan",
+        ],
     )
     def test_a_missing_part_is_refused_by_name(self, part: str) -> None:
         empty: Any = [] if part in ("supporting_samples", "counterexamples") else ""
@@ -53,7 +63,9 @@ class TestAHypothesisIsNotALabel:
         assert caught.value.reasons == ("no confirmed label", "no independent evidence")
 
     def test_a_confirmed_label_without_independent_evidence_is_not_enough(self) -> None:
-        assert Hypotheses.candidate_blockers(Kit.hypothesis(), "confirmed", []) == ("no independent evidence",)
+        assert Hypotheses.candidate_blockers(Kit.hypothesis(), "confirmed", []) == (
+            "no independent evidence",
+        )
 
     def test_independent_evidence_without_a_confirmed_label_is_not_enough(self) -> None:
         assert Hypotheses.candidate_blockers(Kit.hypothesis(), "silver", ["advisory:1"]) == (
@@ -65,7 +77,9 @@ class TestAHypothesisIsNotALabel:
         Hypotheses.require_candidate(Kit.hypothesis(), tier, ["advisory:1"])
 
     def test_a_record_that_is_not_a_hypothesis_is_refused(self) -> None:
-        assert "not a hypothesis record" in Hypotheses.candidate_blockers({"kind": "label"}, "confirmed", ["x"])
+        assert "not a hypothesis record" in Hypotheses.candidate_blockers(
+            {"kind": "label"}, "confirmed", ["x"]
+        )
 
 
 class TestTheNearestBenign:
@@ -96,7 +110,10 @@ class TestTheNearestBenign:
         assert Distance.between(with_intel, without) == 0.0
 
     def test_a_tie_goes_to_the_smaller_artifact_id(self) -> None:
-        a, b = Kit.featureset("b-id", ("a", "1", "code")), Kit.featureset("a-id", ("a", "1", "code"))
+        a, b = (
+            Kit.featureset("b-id", ("a", "1", "code")),
+            Kit.featureset("a-id", ("a", "1", "code")),
+        )
         assert Distance.nearest_benign(self.MAL, [a, b])["artifact_id"] == "a-id"  # type: ignore[index]
 
     def test_no_benign_set_gives_none(self) -> None:

@@ -30,7 +30,13 @@ class Feedback:
         return log_dir / "feedback.jsonl"
 
     @staticmethod
-    def add(log_dir: Path, kind: str, artifact_digest: str, detail: dict[str, Any] | None = None, corrects: int | None = None) -> int:
+    def add(
+        log_dir: Path,
+        kind: str,
+        artifact_digest: str,
+        detail: dict[str, Any] | None = None,
+        corrects: int | None = None,
+    ) -> int:
         """Append a record and return its id."""
         if kind not in KINDS:
             raise ValueError(f"feedback kind {kind!r} not in {list(KINDS)}")
@@ -47,7 +53,7 @@ class Feedback:
         }
         with Feedback.path(log_dir).open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, sort_keys=True) + "\n")
-        return int(record["id"])
+        return len(existing)
 
     @staticmethod
     def records(log_dir: Path) -> list[dict[str, Any]]:
@@ -71,5 +77,7 @@ class Feedback:
             if record["id"] in corrected:
                 continue
             entry = out.setdefault(record["kind"], [])
-            entry.append({"artifact_digest": record["artifact_digest"], "ask": ACQUIRE[record["kind"]]})
+            entry.append(
+                {"artifact_digest": record["artifact_digest"], "ask": ACQUIRE[record["kind"]]}
+            )
         return out

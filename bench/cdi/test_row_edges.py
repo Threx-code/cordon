@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from bench.cdi.claims import ClaimRefused, Claims
 from bench.cdi.export import DatasetExport
 from bench.cdi.feedback import Feedback
@@ -16,7 +15,9 @@ from bench.cdi.hypothesis import Distance, HypothesisRefused
 from bench.cdi.lineage import Lineage
 from bench.cdi.scorecard import Baseline, Conclusion, Proportions, Scorecard
 
-FINDING = [["SUSPECT.AGENT.SKILL_INSTRUCTIONS.001", "high", "high", "suspicious", "a/SKILL.md", 3, "agent"]]
+FINDING = [
+    ["SUSPECT.AGENT.SKILL_INSTRUCTIONS.001", "high", "high", "suspicious", "a/SKILL.md", 3, "agent"]
+]
 OTHER = [["MALWARE.DROPPER.001", "critical", "high", "malicious", "b/setup.py", 9, "dropper"]]
 
 
@@ -33,7 +34,12 @@ class TestLineage:
     def test_two_units_with_nothing_in_common_are_not_a_miss_of_the_sha_check_either(self) -> None:
         train = {"t": Rows.row("a", "sha-1", FINDING)}
         held = {"h": Rows.row("b", "sha-2", OTHER)}
-        assert Lineage.overlap(train, held) == {"units": 0, "by_content": 0, "by_sha256": 0, "missed_by_sha256": 0}
+        assert Lineage.overlap(train, held) == {
+            "units": 0,
+            "by_content": 0,
+            "by_sha256": 0,
+            "missed_by_sha256": 0,
+        }
 
     def test_a_row_with_no_sha256_is_compared_by_its_file_name(self) -> None:
         train = {"t": Rows.row("same-name", None, [])}
@@ -84,14 +90,22 @@ class TestExport:
         assert [i for i in range(60) if DatasetExport.eval_family(f"fam{i}")] == [7, 11, 19, 32, 49]
         assert sum(1 for i in range(1_000) if DatasetExport.eval_family(f"fam{i}")) == 90
 
-    def test_only_the_eval_manifest_lists_its_families_and_before_the_freeze_it_names_them(self, tmp_path: Path) -> None:
-        eval_family = next(f for f in (f"fam{i}" for i in range(100)) if DatasetExport.eval_family(f))
-        DatasetExport.export([self.unit("e1", eval_family), self.unit("t1", "fam0")], tmp_path, "a", "2026-11-01")
+    def test_only_the_eval_manifest_lists_its_families_and_before_the_freeze_it_names_them(
+        self, tmp_path: Path
+    ) -> None:
+        eval_family = next(
+            f for f in (f"fam{i}" for i in range(100)) if DatasetExport.eval_family(f)
+        )
+        DatasetExport.export(
+            [self.unit("e1", eval_family), self.unit("t1", "fam0")], tmp_path, "a", "2026-11-01"
+        )
         assert self.read(tmp_path, "eval")["families"] == [eval_family]
         for name in ("train", "fresh", "excluded"):
             assert "families" not in self.read(tmp_path, name)
 
-    def test_the_output_folder_is_made_with_its_parents_and_may_already_exist(self, tmp_path: Path) -> None:
+    def test_the_output_folder_is_made_with_its_parents_and_may_already_exist(
+        self, tmp_path: Path
+    ) -> None:
         out = tmp_path / "deep" / "er" / "still"
         DatasetExport.export([self.unit("t1", "fam0")], out, "a", "2026-11-01")
         DatasetExport.export([self.unit("t1", "fam0")], out, "a", "2026-11-01")
@@ -111,7 +125,9 @@ class TestHypothesis:
     def feature(self, artifact: str, *names: str) -> dict[str, Any]:
         return {
             "artifact_id": artifact,
-            "features": [{"name": n, "value": "1", "slot": "c", "source": "content"} for n in names],
+            "features": [
+                {"name": n, "value": "1", "slot": "c", "source": "content"} for n in names
+            ],
         }
 
     def test_two_sets_exactly_at_the_limit_join_and_a_hair_under_it_they_do_not(self) -> None:
@@ -134,13 +150,19 @@ class TestProportions:
     def test_an_empty_sample_says_nothing(self) -> None:
         assert Proportions.wilson(0, 0) == (0.0, 1.0)
 
-    def test_newcombes_interval_matches_the_published_example_56_of_70_against_48_of_80(self) -> None:
+    def test_newcombes_interval_matches_the_published_example_56_of_70_against_48_of_80(
+        self,
+    ) -> None:
         delta, low, high = Proportions.difference(56, 70, 48, 80)
         assert (delta, low, high) == pytest.approx((0.2, 0.0524, 0.3339), abs=1e-3)
 
     def test_equal_proportions_give_a_symmetric_interval_about_zero(self) -> None:
         delta, low, high = Proportions.difference(0, 100, 0, 100)
-        assert delta == 0 and low == pytest.approx(-0.03699, abs=1e-4) and high == pytest.approx(0.03699, abs=1e-4)
+        assert (
+            delta == 0
+            and low == pytest.approx(-0.03699, abs=1e-4)
+            and high == pytest.approx(0.03699, abs=1e-4)
+        )
 
     def test_either_side_empty_gives_the_widest_interval_and_neither_does_not(self) -> None:
         assert Proportions.difference(0, 0, 5, 10) == (0.0, -1.0, 1.0)
@@ -149,21 +171,32 @@ class TestProportions:
 
 
 class TestScorecardEdges:
-    BASE = Baseline.freeze({"mal_blocked": 300, "mal_n": 400, "benign_blocked": 5, "benign_n": 5_000})
+    BASE = Baseline.freeze(
+        {"mal_blocked": 300, "mal_n": 400, "benign_blocked": 5, "benign_n": 5_000}
+    )
 
     def counts(self, **over: int) -> dict[str, int]:
         return {"mal_blocked": 360, "mal_n": 400, "benign_blocked": 5, "benign_n": 5_000, **over}
 
     def test_every_unit_blocked_and_none_blocked_are_both_valid_counts(self) -> None:
         assert Scorecard.of(self.BASE, self.counts(mal_blocked=400))["recall_candidate"] == 1.0
-        assert Scorecard.of(self.BASE, self.counts(mal_blocked=0, benign_blocked=0))["recall_candidate"] == 0.0
+        assert (
+            Scorecard.of(self.BASE, self.counts(mal_blocked=0, benign_blocked=0))[
+                "recall_candidate"
+            ]
+            == 0.0
+        )
 
-    @pytest.mark.parametrize("over", [{"mal_blocked": -1}, {"mal_blocked": 401}, {"benign_blocked": 5_001}])
+    @pytest.mark.parametrize(
+        "over", [{"mal_blocked": -1}, {"mal_blocked": 401}, {"benign_blocked": 5_001}]
+    )
     def test_a_count_outside_its_total_is_refused(self, over: dict[str, int]) -> None:
         with pytest.raises(ValueError, match="is not within"):
             Scorecard.of(self.BASE, self.counts(**over))
 
-    def test_the_baseline_digest_does_not_depend_on_the_order_the_counts_were_written_in(self) -> None:
+    def test_the_baseline_digest_does_not_depend_on_the_order_the_counts_were_written_in(
+        self,
+    ) -> None:
         assert Baseline.digest({"a": 1, "b": 2}) == Baseline.digest({"b": 2, "a": 1})
 
     def test_a_set_exactly_at_the_minimum_is_not_too_small_and_one_under_is(self) -> None:
@@ -187,7 +220,9 @@ class TestFeedbackEdges:
         Feedback.add(tmp_path, "miss", "d2")
         assert Feedback.records(tmp_path)[1]["detail"] == {}
 
-    def test_a_correction_may_name_the_last_record_and_not_the_next_one(self, tmp_path: Path) -> None:
+    def test_a_correction_may_name_the_last_record_and_not_the_next_one(
+        self, tmp_path: Path
+    ) -> None:
         Feedback.add(tmp_path, "miss", "d1")
         Feedback.add(tmp_path, "miss", "d2")
         assert Feedback.add(tmp_path, "miss", "d3", corrects=1) == 2
@@ -197,7 +232,12 @@ class TestFeedbackEdges:
     def test_each_record_is_written_with_its_keys_in_order(self, tmp_path: Path) -> None:
         Feedback.add(tmp_path, "miss", "d1", {"z": 1, "a": 2})
         line = Feedback.path(tmp_path).read_text(encoding="utf-8").splitlines()[0]
-        assert line.index('"artifact_digest"') < line.index('"detail"') < line.index('"id"') < line.index('"kind"')
+        assert (
+            line.index('"artifact_digest"')
+            < line.index('"detail"')
+            < line.index('"id"')
+            < line.index('"kind"')
+        )
         assert line.index('"a"') < line.index('"z"')
 
 
