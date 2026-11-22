@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Any
 
 from . import schemas
+from .manifests import ManifestConflict, Manifests
 
 _KINDS = frozenset({"rule", "signal_combination", "feature", "model_update", "ecosystem_logic"})
 _LANES = frozenset({"rule_pack", "model"})
@@ -49,6 +50,7 @@ class CandidateFactory:
         kind: str,
         lane: str,
         source_misses: list[dict[str, Any]],
+        manifests: Manifests,
         mechanism_addressed: str,
         evidence: str,
         provenance: str,
@@ -71,10 +73,13 @@ class CandidateFactory:
             raise FactoryRejection("a rule_pack candidate must carry a declarative rule_pack")
         if not source_misses:
             raise FactoryRejection("a candidate must derive from at least one miss")
-        # The two-gate rule: every source miss must be train/dev (split is manifest-owned, passed in
-        # on the miss record). A val/held/fresh miss reaching the factory is leakage; refuse it.
+        # The two-gate rule: every source miss must be train/dev. The split is read from the dataset manifests by the miss's artifact digest (SI-Q10), never from the miss.
+        # A val/held/fresh miss reaching the factory is leakage; refuse it. An artifact the manifests do not list, or list in two splits, is refused too.
         for m in source_misses:
-            split = m.get("dataset_membership")
+            try:
+                split = manifests.of_miss(m)
+            except ManifestConflict as conflict:
+                raise FactoryRejection(f"miss {m.get('miss_id')!r}: {conflict}") from conflict
             if split not in schemas.FACTORY_SPLITS:
                 raise FactoryRejection(
                     f"miss {m.get('miss_id')!r} split {split!r} is not train/dev; factory refuses it"
@@ -106,7 +111,7 @@ class CandidateFactory:
 
     @staticmethod
     def file_exfil_candidate(
-        source_misses: list[dict[str, Any]], train_dataset_digest: str
+        source_misses: list[dict[str, Any]], train_dataset_digest: str, manifests: Manifests
     ) -> dict[str, Any]:
         return CandidateFactory.make_candidate(
             candidate_id="cdi.skill.file_exfil",
@@ -114,6 +119,7 @@ class CandidateFactory:
             kind="rule",
             lane="rule_pack",
             source_misses=source_misses,
+            manifests=manifests,
             mechanism_addressed="a local file uploaded to a host off this machine (skills class a)",
             evidence="agent_intent file-exfil intent → SUSPECT.AGENT.INTENT.001 (HIGH, third-party)",
             provenance="skills dev scan, wild family misses (train/dev split)",

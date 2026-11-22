@@ -2,8 +2,9 @@
 
 Promotes the census tools (reviews/*/tools/census.py, skills_census.py) to a structured record: per
 confirmed FN, what ran, what was absent, the failure mechanism, the nearest benign lookalike, and
-what is needed. ``dataset_membership`` is read from a5's manifests (the single source of truth); this
-record only references it. A miss informs the factory only when ``schemas.Schemas.eligible_for_factory`` is
+what is needed. A miss carries no split: its membership is read from the dataset manifests (`manifests.py`, the
+single source of truth) by the artifact digest, so changing a manifest changes the membership with no edit to the
+miss (SI-Q10). A miss informs the factory only when ``schemas.Schemas.eligible_for_factory`` is
 true (confirmed/corroborated label AND train/dev split) -- val/held/fresh misses are reported, never
 learned from.
 """
@@ -27,7 +28,6 @@ class Miss:
         artifact_id: str,
         artifact_digest: str,
         label_ref: str,
-        dataset_membership: str,
         baseline: dict[str, Any],
         reproduce: dict[str, Any],
         detectors_ran: list[str],
@@ -46,7 +46,6 @@ class Miss:
             "artifact_id": artifact_id,
             "artifact_digest": artifact_digest,
             "label_ref": label_ref,
-            "dataset_membership": dataset_membership,
             "baseline": baseline,
             "reproduce": reproduce,
             "detectors_ran": list(detectors_ran),

@@ -17,7 +17,7 @@ from typing import Any
 SCHEMA_VERSIONS: dict[str, str] = {
     "FeatureSet": "1.0.0",
     "ThreatCluster": "1.0.0",
-    "DetectionMiss": "1.0.0",
+    "DetectionMiss": "1.1.0",  # 1.1.0: no stored dataset_membership (SI-Q10), read from the manifests
     "CandidateDetector": "1.0.0",
 }
 
@@ -46,7 +46,6 @@ REQUIRED: dict[str, frozenset[str]] = {
             "artifact_id",
             "artifact_digest",
             "label_ref",
-            "dataset_membership",
             "baseline",
             "reproduce",
             "failure_mechanism",
