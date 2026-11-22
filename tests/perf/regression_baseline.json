@@ -1,0 +1,6 @@
+{
+ "cases": 163,
+ "corpus_sha256": "7c01e174de1f2f29390393217233ee80cda39e8c6d011ab112b7b04170e96a69",
+ "p99_ratio": 3.982,
+ "peak_rss_mb": 591.3
+}
