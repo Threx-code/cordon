@@ -9,7 +9,7 @@ passed without a word: an entry of 200,000 open parentheses was a complete scan.
 ```
   running files = what package.json names (main, bin, exports, the files its install scripts hand to node) + what those require, and a published
         │           package's import entries and install hooks
-        ▼  its brackets do not close: 32 or more of them are wrong (a close of another kind, a close with nothing open, an open at the end)
+        ▼  its brackets do not close: 52 or more of them are wrong (a close of another kind, a close with nothing open, an open at the end)
   an act token anywhere in the file (eval, Function, require, import, child_process, a network, a decoder) ─► SOURCE.UNPARSED, a gap,
         │ no                                                                                                  and the running verdict
         ▼
@@ -47,8 +47,9 @@ class JsUnparsed:
 
     #: How many bracket errors a file may show and still be read as source. The tokenizer is not a parser: a regular expression holding a bracket, a text in
     #: JSX, a type argument or a shebang puts it off by a few. Measured on 52 flagged files of 36 legitimate units (npm and MCP, dev half): 1 to 31 errors
-    #: each (4, 13, 17 and 18 in the classes 1, 2-3, 4-7 and 8-31); the hostile inputs written for the tests are off by thousands.
-    TOLERATED: ClassVar[int] = 32
+    #: each; then over every running JavaScript file of the legitimate lists (18,166 files, 435 units): 17,976 with none, 190 with 1 to 26 (1: 13, 2-3: 46,
+    #: 4-7: 71, 8-15: 48, 16-31: 12), the largest 26. Twice the largest is 52. The hostile inputs written for the tests are off by thousands.
+    TOLERATED: ClassVar[int] = 52
 
     @staticmethod
     def runs_as_source(path: str, running: set[str]) -> bool:

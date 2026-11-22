@@ -218,12 +218,12 @@ class TestADirectoryScan:
 
 class TestWhatTheReaderGetsWrongItself:
     """The tokenizer is not a parser: a regular expression holding a bracket, a text in JSX, a type argument puts it off by a few brackets. A file off by
-    fewer than 32 is read as source; the boundary is pinned on both sides."""
+    fewer than 52 is read as source; the boundary is pinned on both sides."""
 
     @pytest.mark.parametrize(
-        ("errors", "reported"), [(1, False), (31, False), (32, True), (33, True)]
+        ("errors", "reported"), [(1, False), (51, False), (52, True), (53, True)]
     )
-    def test_the_boundary_is_thirty_two_errors(
+    def test_the_boundary_is_fifty_two_errors(
         self, tmp_path: Path, errors: int, reported: bool
     ) -> None:
         result = Package.scan_tarball(
