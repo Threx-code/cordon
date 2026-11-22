@@ -1151,6 +1151,7 @@
   "test_extension_impersonation.py": "detect/agents",
   "test_extension_mentions.py": "detect/code/capability",
   "test_feed.py": "intel/malware",
+  "test_feed_default_address.py": "intel/malware",
   "test_feed_rules.py": "intel/malware",
   "test_feed_models.py": "intel/malware",
   "test_feed_delta_is_bounded.py": "intel/malware",
