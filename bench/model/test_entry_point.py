@@ -161,19 +161,19 @@ class TestTheSameListAndSeedGiveTheSameModelByteForByte:
     def test_two_runs_write_identical_model_bytes_and_the_same_list_hash(self, train, tmp_path: Path) -> None:
         a = self.run(train, tmp_path, self.IDS, 7, "a")
         b = self.run(train, tmp_path, self.IDS, 7, "b")
-        assert (a / "model.txt").read_bytes() == (b / "model.txt").read_bytes()
+        assert (a / "model.json.gz").read_bytes() == (b / "model.json.gz").read_bytes()
         assert (a / "metrics.json").read_bytes() == (b / "metrics.json").read_bytes()
         assert (a / "training_list.sha256").read_text(encoding="utf-8") == (b / "training_list.sha256").read_text(encoding="utf-8")
 
     def test_the_order_of_the_list_does_not_change_the_model(self, train, tmp_path: Path) -> None:
         a = self.run(train, tmp_path, self.IDS, 7, "a")
         b = self.run(train, tmp_path, list(reversed(self.IDS)), 7, "b")
-        assert (a / "model.txt").read_bytes() == (b / "model.txt").read_bytes()
+        assert (a / "model.json.gz").read_bytes() == (b / "model.json.gz").read_bytes()
 
     def test_another_list_gives_another_model_and_another_hash(self, train, tmp_path: Path) -> None:
         a = self.run(train, tmp_path, self.IDS, 7, "a")
         b = self.run(train, tmp_path, self.IDS[:-20], 7, "b")
-        assert (a / "model.txt").read_bytes() != (b / "model.txt").read_bytes()
+        assert (a / "model.json.gz").read_bytes() != (b / "model.json.gz").read_bytes()
         assert (a / "training_list.sha256").read_text(encoding="utf-8") != (b / "training_list.sha256").read_text(encoding="utf-8")
 
     def test_the_list_hash_is_of_the_sorted_unique_ids(self, train, tmp_path: Path) -> None:

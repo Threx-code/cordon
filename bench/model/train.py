@@ -33,10 +33,11 @@ except ImportError:  # pragma: no cover - a plain interpreter that only dispatch
     joblib = lgb = np = sparse = chi2 = StratifiedGroupKFold = None  # type: ignore[assignment]
 
 try:  # run as a module (tests) or as a script from this directory
-    from bench.model import area
+    from bench.model import area, export
 except ImportError:  # pragma: no cover - script invocation
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import area
+    import export
 
 PARAMS = {
     "objective": "binary",
@@ -120,6 +121,9 @@ class Training:
             "--train", type=Path, default=None, help="explicit training-id list, one per line"
         )
         parser.add_argument("--work", type=Path, default=Path("/work"))
+        parser.add_argument("--schema", default="fs1-0000000000000000", help="the feature schema of the exported model")
+        parser.add_argument("--fold", default="ff1-0000000000000000", help="the feature fold of the exported model")
+        parser.add_argument("--day", default="1970-01-01", help="the day in the exported model's version")
         parser.add_argument("--split", choices=("hash", "time", "campaign"), default="hash")
         parser.add_argument("--fpr", type=float, default=0.005)
         parser.add_argument("--extra", default="", help="extra dense columns: features/<name>.npy")
@@ -178,14 +182,17 @@ class Training:
         )
         out.mkdir(exist_ok=True)
         model.save_model(str(out / "model.txt"))
-        joblib.dump(
-            {
-                "threshold": threshold,
-                "split": args.split,
-                "fpr": args.fpr,
-                "columns": columns.tolist(),
-            },
-            out / "meta.joblib",
+        (out / "meta.json").write_text(
+            json.dumps(
+                {
+                    "threshold": threshold,
+                    "split": args.split,
+                    "fpr": args.fpr,
+                    "columns": columns.tolist(),
+                },
+                sort_keys=True,
+            ),
+            encoding="utf-8",
         )
         (out / "held_scores.json").write_text(
             json.dumps(
@@ -259,14 +266,32 @@ class Training:
         model = lgb.train(params, lgb.Dataset(matrix, labels), 20)
         out = args.work / "model-fixture"
         out.mkdir(parents=True, exist_ok=True)
-        model.save_model(str(out / "model.txt"))
         predicted = model.predict(matrix) > 0.5
+        sha = area.Contract.training_list_sha(ids)
+        exported = export.ModelExport.from_lightgbm(
+            model,
+            [f"f{i}" for i in range(matrix.shape[1])],
+            schema=getattr(args, "schema", "fs1-0000000000000000"),
+            fold=getattr(args, "fold", "ff1-0000000000000000"),
+            version=export.ModelExport.version(getattr(args, "day", "1970-01-01"), sha),
+            rows=matrix.tolist(),
+            predict=lambda rows: model.predict(np.array(rows)),
+        )
+        file_sha = export.ModelExport.write(exported, out / "model.json.gz")
         area.Contract.write_contract(
             out,
             area="fixture",
             seed=seed,
             train_ids=ids,
-            metrics={"accuracy": round(float((predicted == labels).mean()), 6), "n_malicious": int(labels.sum())},
+            metrics={
+                "accuracy": round(float((predicted == labels).mean()), 6),
+                "n_malicious": int(labels.sum()),
+                "model_file": "model.json.gz",
+                "model_sha256": file_sha,
+                "version": exported["version"],
+                "num_threads": Training.FIXTURE_PARAMS["num_threads"],
+                "deterministic": Training.FIXTURE_PARAMS["deterministic"],
+            },
         )
         return 0
 

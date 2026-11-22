@@ -87,7 +87,7 @@ class TestTheModelLaneRunsThroughTheOneEntryPoint:
         args = argparse.Namespace(train=listing, seed=3, work=tmp_path)
         assert train.Training.fixture(args) == 0
         written = sorted(p.name for p in (tmp_path / "model-fixture").iterdir())
-        assert written == ["metrics.json", "model.txt", "training_list.sha256"]
+        assert written == ["metrics.json", "model.json.gz", "training_list.sha256"]
 
     def test_every_trainer_is_started_by_the_entry_point_and_by_nothing_else(self) -> None:
         assert set(area.EntryPoint.TRAINERS) >= {"verdict", "skill-text", "area-fit", "mcp"}
