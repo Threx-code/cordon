@@ -19,6 +19,7 @@ from fnmatch import fnmatchcase
 from typing import Any, ClassVar
 
 from cordon_scanner.contracts.subjects import SubjectKind
+from cordon_scanner.decide.decision.capabilities import AgentCapabilities
 from cordon_scanner.decide.decision.evidence import Context, FindingFact
 from cordon_scanner.decide.decision.records import JsonRecord, PolicyError
 
@@ -66,6 +67,7 @@ class Fields:
             FieldSpec("context.actor", "text"),
             FieldSpec("intel.known_malware", "bool"),
             FieldSpec("intel.advisory", "bool"),
+            FieldSpec(AgentCapabilities.FIELD, "tags", AgentCapabilities.NAMES),
         )
     }
     #: The operators of each kind.
@@ -176,6 +178,8 @@ class PredicateCompiler:
             return str(value)
         if not isinstance(value, str) or not value:
             raise PolicyError(f"{where}: expected a non-empty string")
+        if spec.kind == "tags" and spec.values and "*" not in value and value not in spec.values:
+            raise PolicyError(f"{where}: {value!r} is not one of {', '.join(spec.values)}")
         return value
 
     @staticmethod

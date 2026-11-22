@@ -29,6 +29,7 @@ class PolicyCompiler:
         "publisher.age_days": "R502",
         "name.lookalike": "R504",
         "registry.host": "R505",
+        "agent.capabilities": "R602",
         "approval": "R700",
     }
 

@@ -53,6 +53,7 @@ class Facts:
             "subject.ecosystem": artifact.ecosystem,
             "subject.namespace": artifact.namespace,
             "subject.tags": artifact.tags,
+            "agent.capabilities": artifact.capabilities or (),
             "subject.id": artifact.subject_id,
             "artifact.digest": artifact.digest,
             "version.age_days": artifact.age_days(self.clock),

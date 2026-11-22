@@ -12,6 +12,7 @@ from typing import Any, ClassVar
 
 from cordon_scanner.contracts.digests import ArtifactDigests
 from cordon_scanner.contracts.subjects import SubjectKind
+from cordon_scanner.decide.decision.capabilities import AgentCapabilities
 from cordon_scanner.decide.decision.records import Checks, DecisionError, Instants, JsonRecord
 
 
@@ -26,6 +27,8 @@ class ArtifactRef(JsonRecord):
     ecosystem: str | None = None
     namespace: str | None = None
     tags: tuple[str, ...] = ()
+    capabilities: tuple[str, ...] | None = None
+    """The capabilities an agent declares (`AgentCapabilities.NAMES`), what `agent.capabilities` reads; `None` (left out of the record) for anything that is not an agent."""
     released_at: str | None = None
     registry: str | None = None
     """The host the artifact was served from (`registry.npmjs.org`), when known: what `registry.host` reads (R505)."""
@@ -34,6 +37,12 @@ class ArtifactRef(JsonRecord):
         Checks.one_of("ArtifactRef", "kind", self.kind, tuple(kind.value for kind in SubjectKind))
         Checks.text("ArtifactRef", "subject_id", self.subject_id)
         Checks.strings("ArtifactRef", "tags", self.tags)
+        if self.capabilities is not None:
+            Checks.strings("ArtifactRef", "capabilities", self.capabilities)
+        if AgentCapabilities.unknown(self.capabilities or ()):
+            raise DecisionError(
+                f"ArtifactRef.capabilities: {', '.join(AgentCapabilities.unknown(self.capabilities or ()))} not in the vocabulary"
+            )
         if self.digest is not None and not ArtifactDigests.is_digest(self.digest):
             raise DecisionError(f"ArtifactRef.digest: {self.digest!r} is not a sha256 digest")
         if self.released_at is not None:
