@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import argparse
 import functools
+import os
 import sys
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from cordon_scanner.cli.commands.account.login import LoginCommand
@@ -176,11 +178,25 @@ class CommandLine:
             # "findings" would be worse than useless: it would look like the code
             # was bad when the tool was.
             print(f"{cls.PROGRAM}: internal error: {type(exc).__name__}: {exc}", file=sys.stderr)
+            cls._note_error_type(exc)
             print(
                 "  This is a bug in cordon. Please report it with the command you ran.",
                 file=sys.stderr,
             )
             return int(ExitCode.SCANNER_ERROR)
+
+    ERROR_TYPE_FILE = "CORDON_ERROR_TYPE_FILE"
+    """The environment variable naming a file the class name of an internal error is written to, so a harness running many scans can record what ended each one (the message is never written: it can hold a path or a line of the scanned code)."""
+
+    @staticmethod
+    def _note_error_type(exc: BaseException) -> None:
+        target = os.environ.get(CommandLine.ERROR_TYPE_FILE)
+        if not target:
+            return
+        try:
+            Path(target).write_text(type(exc).__name__ + "\n", encoding="utf-8")
+        except OSError:
+            return  # S2: the note is for a harness; a scan that cannot write it still ends as it would
 
     @staticmethod
     def main(argv: Sequence[str] | None = None) -> int:

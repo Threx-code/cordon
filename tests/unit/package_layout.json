@@ -1201,6 +1201,7 @@
   "test_hardening_tier.py": "engine",
   "test_helm_provenance.py": "intel/provenance",
   "test_help_screens.py": "cli",
+  "test_error_type_note.py": "cli",
   "test_homebrew_heredocs.py": "ecosystems",
   "test_homebrew_not_run.py": "ecosystems",
   "test_homebrew_provenance.py": "intel/provenance",
