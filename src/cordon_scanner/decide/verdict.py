@@ -122,6 +122,8 @@ class VerdictModel:
                 model: Any = json.load(handle)
         except (OSError, ValueError, EOFError):
             return "unreadable"
+        if isinstance(model, dict) and "rules" in model and VerdictModel.undeclared(model):
+            return "undeclared"
         return "other_schema" if isinstance(model, dict) else "unreadable"
 
     @staticmethod
@@ -134,6 +136,8 @@ class VerdictModel:
             return None
         if not isinstance(model, dict):
             return None
+        if "rules" in model and VerdictModel.undeclared(model):
+            return None  # a schema that declares its rule ids and reads another is not read
         if model.get("format") == VerdictModel.UNFOLDED:
             return model
         if (
@@ -142,6 +146,33 @@ class VerdictModel:
         ):
             return model
         return None
+
+    @staticmethod
+    def reads(model: dict[str, Any]) -> list[str]:
+        """The rule ids the model reads: every `r:<rule>` feature of its own trees and of its sections (`by_area`, `registry`)."""
+        sections = [
+            model,
+            *(model.get("by_area") or {}).values(),
+            *([model["registry"]] if isinstance(model.get("registry"), dict) else []),
+        ]
+        names = {
+            n
+            for s in sections
+            if isinstance(s, dict)
+            for n in (s.get("features") or ())
+            if isinstance(n, str)
+        }
+        return sorted({n[2:] for n in names if n.startswith("r:") and not n.endswith("#n")})
+
+    @staticmethod
+    def undeclared(model: dict[str, Any]) -> list[str]:
+        """The rule ids the model reads and its schema does not declare (`rules`): every one of them when it declares none."""
+        declared = model.get("rules")
+        return [
+            r
+            for r in VerdictModel.reads(model)
+            if not isinstance(declared, list) or r not in declared
+        ]
 
     @staticmethod
     def _complete(model: dict[str, Any]) -> bool:

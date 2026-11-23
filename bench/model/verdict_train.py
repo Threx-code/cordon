@@ -1341,6 +1341,7 @@ class VerdictTrain:
                 "add_only": sorted(add_only_areas),
                 "lift_areas": sorted(lift_areas),
                 "keep": sorted(rare_rules | NAME_PROVENANCE_RULES),
+                "rules": VerdictModel.reads(exported),
                 # Format 3: fitted on folded features; loaded only at this tree's fold.
                 **FeatureFold.stamp(),
             }
