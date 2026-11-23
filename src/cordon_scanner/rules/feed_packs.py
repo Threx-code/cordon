@@ -35,6 +35,7 @@ from cordon_scanner.rules.feed_floor import FeedFloor
 from cordon_scanner.rules.pack import RulePack
 from cordon_scanner.rules.pack_signatures import PackSignatures
 from cordon_scanner.rules.pack_time import PackTime
+from cordon_scanner.rules.warn_list import WarnList
 
 logger = logging.getLogger("cordon_scanner.intel.malware.feed_rules")
 
@@ -204,6 +205,12 @@ class FeedPacks:
         )
 
     @classmethod
+    def _with_warn(cls, pack: RulePack, entry: dict[str, Any]) -> RulePack:
+        """The pack with the entry's warning list when two signatures are required and held (the list was checked against the signed statement), else without."""
+        listed = WarnList.parse(entry.get("warn")) if FeedFloor.REQUIRE_PACK_SIGNATURES else None
+        return replace(pack, warn=listed) if listed else pack
+
+    @classmethod
     def _floor_problem(cls, pack: RulePack, entry: dict[str, Any], path: Path) -> str | None:
         """Why this release will not take the pack however it loads: past its expiry, or, where two signatures are required, not signed twice."""
         if FeedFloor.REQUIRE_PACK_SIGNATURES:
@@ -280,7 +287,7 @@ class FeedPacks:
             taken |= ids
             if enforcement == "shadow":
                 pack = cls._shadowed(pack)
-            out.append((str(entry.get("candidate_id", ""))[:128], pack))
+            out.append((str(entry.get("candidate_id", ""))[:128], cls._with_warn(pack, entry)))
         out = cls._within_total_budget(
             sorted(out, key=lambda entry: (entry[1].id, entry[1].version))
         )

@@ -278,6 +278,8 @@ class ScanContext:
     """The published package's own `repository` URL (npm's `package.json`), as the registry shows
     it; empty when there is none or the target is not a package. Lets a detector tell the
     package's own release from someone else's (review 98, FP-2)."""
+    package_name: str = ""
+    """The published package's own name as its manifest or metadata declares it, or "": the identity a delivered pack's warning list is read against (`rules/warn_list.py`)."""
     distribution: str = ""
     """Which published format `package_distribution` recognised: `pypi`, `npm`, `cargo`,
     `rubygems`, `nuget`, `hex`, `gomod`, `maven`, `conda`, `hackage`, `cran` or `galaxy`; empty

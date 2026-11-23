@@ -281,6 +281,7 @@ class ArchiveStages:
             library_closure_paths=frozenset(Hooks.hook_js_closure(units, set(used | project))),
             declared_dependencies=EcosystemRegistry.declared_dependencies(units, early_format),
             package_repository=PackageEntries.repository(units, early_format),
+            package_name=PackageEntries.name(units, early_format),
             confusion_version=ConfusionVersions.reason(PackageEntries.version(units, early_format))
             or "",
             package_code_bytes=(name_facts := InstallFacts.of(units))[0],

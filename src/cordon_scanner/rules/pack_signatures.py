@@ -16,6 +16,7 @@ import json
 from typing import Any, ClassVar
 
 from cordon_scanner.intel.provenance import _ed25519
+from cordon_scanner.rules.warn_list import WarnList
 
 
 class PackSignatures:
@@ -44,6 +45,17 @@ class PackSignatures:
             return bool(_ed25519.Ed25519.verify(bytes.fromhex(public), message, bytes.fromhex(sig)))
         except ValueError:
             return False
+
+    @classmethod
+    def warn_problem(cls, entry: dict[str, Any], statement: dict[str, Any]) -> str | None:
+        """Why a warning list is not to be believed: the entry has one the statement does not carry equally, or it is not of the form."""
+        if entry.get("warn") is None and statement.get("warn") is None:
+            return None
+        if entry.get("warn") != statement.get("warn"):
+            return "the entry's warning list is not the one the pack signer signed"
+        if WarnList.parse(entry.get("warn")) is None:
+            return "the warning list is not of the form"
+        return None
 
     @classmethod
     def problem(cls, entry: dict[str, Any], pack_bytes: bytes) -> str | None:
@@ -75,6 +87,9 @@ class PackSignatures:
             return "the pack signature does not verify against a pinned pack-signer key"
         if statement.get("enforcement") != entry.get("enforcement"):
             return "the statement's enforcement is not the index entry's"
+        listed = cls.warn_problem(entry, statement)
+        if listed is not None:
+            return listed
         if entry.get("enforcement") == "block":
             approval = statement.get("approval")
             if (

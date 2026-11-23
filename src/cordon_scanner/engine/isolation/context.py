@@ -69,6 +69,7 @@ NAME_SETS = ("declared_dependencies", "verdict_dependency_names")
 SCALARS: dict[str, type] = {
     "package_distribution": bool,
     "package_repository": str,
+    "package_name": str,
     "distribution": str,
     "confusion_version": str,
     "package_code_bytes": int,

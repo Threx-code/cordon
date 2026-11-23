@@ -1032,6 +1032,7 @@
   "test_fact_terms.py": "rules",
   "test_fact_vector_tests.py": "rules",
   "test_pack_signatures.py": "rules",
+  "test_warn_list.py": "rules",
   "test_prepush_performance.py": "engine/performance",
   "test_front_fuzz.py": "analysis/javascript/front",
   "test_js_scan_in_place.py": "analysis/javascript",

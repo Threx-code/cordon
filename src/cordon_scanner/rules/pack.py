@@ -238,6 +238,8 @@ class RulePack:
     expires: str = ""
     skipped: tuple[tuple[str, str], ...] = ()
     demoted: tuple[tuple[str, str], ...] = ()
+    warn: tuple[tuple[str, str, str], ...] = ()
+    """A delivered pack's warning list, `(ecosystem, publisher, until)`: findings of its rules are warnings for those publishers until then (`rules/warn_list.py`). Empty for any pack whose list was not signed by both."""
 
     def __len__(self) -> int:
         return len(self.rules)

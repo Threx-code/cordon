@@ -16,15 +16,17 @@ loop's distiller learns in, so a detector it makes can ship as an ordinary rule 
 
 It runs once per scan, after the verdict, over what the rules and the verdict left: each file's capabilities (from
 its findings), the places the scan computed (`ScanContext.places`), the package-level findings and the lifecycle
-hooks. It adds findings and never lowers, holds or removes one. A suppressed finding is no fact."""
+hooks. It adds findings and never lowers or removes one; the one exception is a pack whose signed warning list holds its rules at warn for this package's publisher (`rules/warn_list.py`). A suppressed finding is no fact."""
 
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.foundation.capabilities import MatchKind
 from cordon_scanner.foundation.models import (
+    Category,
     Confidence,
     Evidence,
     EvidenceKind,
@@ -32,10 +34,12 @@ from cordon_scanner.foundation.models import (
     Finding,
     Location,
     RedactionMode,
+    Severity,
 )
 from cordon_scanner.foundation.results import NO_RISK
 from cordon_scanner.rules.fact_terms import UNREACHED, FactTerms, Term
 from cordon_scanner.rules.learned import LearnedBlock
+from cordon_scanner.rules.warn_list import WarnList
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
@@ -127,6 +131,7 @@ class PackageRules:
         selected = PackageRules.selected(rules)
         if not selected:
             return []
+        warned = PackageRules.warned(rules, ctx)
         names = {path: [str(n) for n in held.get("cap.all", ())] for path, held in facts.items()}
         known = PackageFacts(findings, ctx, names, reach)
         out = []
@@ -138,7 +143,12 @@ class PackageRules:
             satisfied = [t for t in (*all_of, *any_of) if known.has(t)]
             file_terms = [t for t in satisfied if t[0] == "file"]
             path = known.where(file_terms[0]) if file_terms else PACKAGE_SCOPE
-            out.append(PackageRules.finding(compiled, path, satisfied))
+            made = PackageRules.finding(compiled, path, satisfied)
+            out.append(
+                PackageRules.held(made, warned[compiled.rule.id])
+                if compiled.rule.id in warned
+                else made
+            )
         return out
 
     @staticmethod
@@ -156,6 +166,32 @@ class PackageRules:
             f"batch={learned['batch']}",
             *((f"n={learned['n']}",) if "n" in learned else ()),
             f"facts={said}",
+        )
+
+    @staticmethod
+    def warned(rules: RuleSet, ctx: ScanContext) -> dict[str, str]:
+        """The rules of packs whose warning list holds the scanned package now, by rule id with the time they are held until."""
+        held: dict[str, str] = {}
+        for pack in rules.packs:
+            if pack.warn and WarnList.holds(pack.warn, ctx.distribution, ctx.package_name):
+                until = min(
+                    u
+                    for e, p, u in pack.warn
+                    if e == ctx.distribution
+                    and p == WarnList.publisher_key(ctx.distribution, ctx.package_name)
+                )
+                held.update({c.rule.id: until for c in pack.rules})
+        return held
+
+    @staticmethod
+    def held(found: Finding, until: str) -> Finding:
+        """The finding as a warning: an open appeal holds the rule at warn for this publisher until `until`."""
+        return replace(
+            found,
+            severity=Severity.LOW,
+            confidence=Confidence.LOW,
+            category=Category.POLICY,
+            message=f"[held at warn for this publisher until {until}] {found.message}",
         )
 
     @staticmethod
