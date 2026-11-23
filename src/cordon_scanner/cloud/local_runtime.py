@@ -39,6 +39,7 @@ from cordon_scanner.decide.decision.outcome import Decision, Relaxation
 from cordon_scanner.decide.decision.records import DecisionError, Instants
 from cordon_scanner.decide.decision.table import CompiledPolicy
 from cordon_scanner.decide.points import PointRuntime
+from cordon_scanner.rules.feed_gaps import FeedGaps
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -417,6 +418,7 @@ class LocalRuntime:
             "digest": artifact.digest,
             "version": artifact.version,
             "decision": decision.to_json(),
+            "feed": FeedGaps.feed(),
         }
         return ArtifactDigests.canonical_json(document)
 

@@ -311,6 +311,8 @@ class SarifReporter(BaseReporter):
         ):
             if record:
                 found[key] = {"count": len(record), "rules": dict(sorted(record.items()))}
+        if result.stats.feed:
+            found["feed"] = dict(result.stats.feed)
         return found
 
     @staticmethod

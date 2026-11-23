@@ -435,6 +435,8 @@ class ScanStats:
     """The delivered rules the scan could not evaluate (a term written for a version the scanner does not know), by rule id and reason; absent when none was, so a scan's output does not vary without cause."""
     rules_demoted: Mapping[str, str] | None = None
     """The delivered rules the scan ran as warnings (one fired on a bundled benign fixture, or the device's record says it blocked too much), by rule id and reason; absent when none was."""
+    feed: Mapping[str, Any] | None = None
+    """The feed the scan ran on: `serial` (the delivered rule-pack set's sequence, or `none` with no feed) and `packs` (each delivered pack's version); set by every scan, so a backend can count scanners by feed version."""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -458,6 +460,7 @@ class ScanStats:
             **({"model_refusals": dict(self.model_refusals)} if self.model_refusals else {}),
             **({"rule_gaps": dict(self.rule_gaps)} if self.rule_gaps else {}),
             **({"rules_demoted": dict(self.rules_demoted)} if self.rules_demoted else {}),
+            **({"feed": dict(self.feed)} if self.feed else {}),
         }
 
 
