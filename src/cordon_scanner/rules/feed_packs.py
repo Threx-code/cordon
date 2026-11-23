@@ -33,6 +33,7 @@ from cordon_scanner.rules.benign_fixtures import BenignFixtures
 from cordon_scanner.rules.demotion import RuleDemotion
 from cordon_scanner.rules.feed_floor import FeedFloor
 from cordon_scanner.rules.pack import RulePack
+from cordon_scanner.rules.pack_signatures import PackSignatures
 from cordon_scanner.rules.pack_time import PackTime
 
 logger = logging.getLogger("cordon_scanner.intel.malware.feed_rules")
@@ -65,6 +66,11 @@ class PackLimits:
     """The only form a delivered rule's id may take: `LEARNED.<area>.<n>`. Anything else could stand for a bundled or an organisation's rule."""
 
     @classmethod
+    def delivered_problem(cls, pack: RulePack, retired: frozenset[str]) -> str | None:
+        """Why a delivered pack may not be activated beyond its size: an id outside the learned form or retired, or the bytes of a sample in a rule (a bundled pack may name indicators; a delivered one is predicates and fact terms)."""
+        return cls.id_problem(pack, retired) or cls.payload_problem(pack)
+
+    @classmethod
     def id_problem(cls, pack: RulePack, retired: frozenset[str]) -> str | None:
         """Why a rule id of the pack may not be delivered (outside the learned form, or retired), or `None`."""
         for compiled in pack.rules:
@@ -78,26 +84,40 @@ class PackLimits:
     MAX_ENCODED_RUN = 64
     """The longest run of base64 or hex characters any text of a rule may hold: more is a sample's bytes, not a detector."""
 
+    MIN_DISTINCT = 14
+    """Distinct characters a window of `MAX_ENCODED_RUN` must hold to be encoded bytes: a run of one word and padding holds fewer."""
+
     _ENCODED = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=_-")
 
     @classmethod
     def payload_problem(cls, pack: RulePack) -> str | None:
         """Why a rule of the pack carries what looks like the bytes of a sample (a long run of encoded characters in any of its text: patterns, tests, messages), or `None`. A delivered pack holds predicates and fact terms, never a sample."""
         for compiled in pack.rules:
-            if (
-                cls.longest_run(json.dumps(dict(compiled.rule.raw), default=str))
-                > cls.MAX_ENCODED_RUN
-            ):
+            if cls.looks_encoded(json.dumps(dict(compiled.rule.raw), default=str)):
                 return f"rule {compiled.rule.id} carries a run of more than {cls.MAX_ENCODED_RUN} encoded characters, which is a sample's bytes"
         return None
 
     @classmethod
-    def longest_run(cls, text: str) -> int:
-        best = run = 0
-        for char in text:
-            run = run + 1 if char in cls._ENCODED else 0
-            best = max(best, run)
-        return best
+    def looks_encoded(cls, text: str) -> bool:
+        """Whether some window of `MAX_ENCODED_RUN` + 1 characters, all of the base64 or hex alphabet, holds `MIN_DISTINCT` distinct ones."""
+        width = cls.MAX_ENCODED_RUN + 1
+        held: dict[str, int] = {}
+        run = 0
+        for index, char in enumerate(text):
+            if char not in cls._ENCODED:
+                held, run = {}, 0
+                continue
+            held[char] = held.get(char, 0) + 1
+            run += 1
+            if run > width:
+                old = text[index - width]
+                held[old] -= 1
+                if not held[old]:
+                    del held[old]
+                run = width
+            if run == width and len(held) >= cls.MIN_DISTINCT:
+                return True
+        return False
 
     @classmethod
     def file_problem(cls, path: Path) -> str | None:
@@ -184,6 +204,15 @@ class FeedPacks:
         )
 
     @classmethod
+    def _floor_problem(cls, pack: RulePack, entry: dict[str, Any], path: Path) -> str | None:
+        """Why this release will not take the pack however it loads: past its expiry, or, where two signatures are required, not signed twice."""
+        if FeedFloor.REQUIRE_PACK_SIGNATURES:
+            signed = PackSignatures.problem(entry, path.read_bytes())
+            if signed is not None:
+                return signed
+        return FeedFloor.pack_problem(pack)
+
+    @classmethod
     def _select(
         cls,
         loader: PackFiles,
@@ -224,9 +253,8 @@ class FeedPacks:
                 continue
             problem = (
                 PackLimits.pack_problem(pack)
-                or PackLimits.payload_problem(pack)
-                or PackLimits.id_problem(pack, retired)
-                or FeedFloor.pack_problem(pack)
+                or PackLimits.delivered_problem(pack, retired)
+                or cls._floor_problem(pack, entry, path)
             )
             if problem is not None:
                 logger.warning("feed rule pack %s not loaded: %s", name, problem)

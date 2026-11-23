@@ -27,6 +27,9 @@ class FeedFloor:
     REQUIRE_EXPIRY: ClassVar[bool] = True
     """Whether a pack without an expiry is refused: every emitted pack names the day it expires."""
 
+    REQUIRE_PACK_SIGNATURES: ClassVar[bool] = True
+    """Whether a delivered pack must carry the gate's signature and the pack signer's (`rules/pack_signatures.py`). A release constant, not a field of the index: whoever can change the index must not be able to lower it."""
+
     @staticmethod
     def today() -> str:
         return datetime.now(UTC).date().isoformat()

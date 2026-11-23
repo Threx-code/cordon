@@ -64,6 +64,15 @@ class SharedFixtures:
         monkeypatch.setattr(ReuseIndex, "_SHIPPED", SharedFixtures._REUSE_INDEX)
 
     @pytest.fixture(autouse=True)
+    def _delivered_packs_need_no_signature_unless_a_test_says_so(self, monkeypatch) -> None:
+        """The release requires two signatures on every delivered rule pack (`FeedFloor.REQUIRE_PACK_SIGNATURES`) and pins no
+        key yet; the many tests that install a hand-made pack read it unsigned. The tests of the signatures (`test_pack_signatures.py`,
+        `test_rule_lane.py`) switch it on and pin their own test keys."""
+        from cordon_scanner.rules.feed_floor import FeedFloor
+
+        monkeypatch.setattr(FeedFloor, "REQUIRE_PACK_SIGNATURES", False)
+
+    @pytest.fixture(autouse=True)
     def _fresh_advisory_database(self) -> None:
         """Each test starts with no shared advisory database, as a new process does: one test
         patching or clearing the shipped records must not leave a database built from them for
