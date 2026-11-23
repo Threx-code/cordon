@@ -193,3 +193,38 @@ class TestAFlowIsShapeOnly:
         shown = repr(Fixture.of(units, ctx)) + repr(Fixture.facts(units, ctx))
         for text in ("zz-unique", "ZZ_UNIQUE", "example.invalid"):
             assert text.lower() not in shown.lower()
+
+
+class TestTheCodeFeatureBudgetsAreGated:
+    """The budgets the code features run under, held where the prepush suite fails when one is passed: files read per place, the size of a file read, the size of every shipped model, and no shipped model reading a feature only measurement runs make."""
+
+    MEGABYTE = 1 << 20
+
+    def test_a_place_reads_at_most_fifty_files(self) -> None:
+        from cordon_scanner.engine.engine import Engine
+
+        assert ReachedFlows.FILES == 50 and Engine._PROFILE_FILES == 50
+
+    def test_a_file_over_one_megabyte_is_not_read(self) -> None:
+        assert ReachedFlows.MAX_SIZE <= self.MEGABYTE
+
+    def test_every_shipped_model_is_under_ten_megabytes(self) -> None:
+        from cordon_scanner.decide.verdict import MODEL_PATH, PYPI_MODEL_PATH
+
+        for path in (MODEL_PATH, PYPI_MODEL_PATH):
+            assert path.stat().st_size < 10 * self.MEGABYTE, path.name
+
+    def test_no_shipped_model_reads_a_feature_only_a_measurement_run_computes(self) -> None:
+        import gzip
+        import json
+
+        from cordon_scanner.decide.feature_schema import FeatureScope
+        from cordon_scanner.decide.verdict import MODEL_PATH, PYPI_MODEL_PATH, VerdictModel
+
+        for path in (MODEL_PATH, PYPI_MODEL_PATH):
+            model = json.loads(gzip.decompress(path.read_bytes()))
+            names = set(model["features"]) | set().union(
+                *(set(s["features"]) for s in (model.get("by_area") or {}).values())
+            )
+            assert [n for n in sorted(names) if not FeatureScope.computed(n)] == [], path.name
+        assert VerdictModel.load(MODEL_PATH) is not None
