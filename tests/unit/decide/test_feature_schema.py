@@ -423,6 +423,30 @@ class TestFeatureScope:
         )
 
 
+class TestFeaturesCarryNoPayload:
+    """A measurement run emits the code features under `CORDON_MEASURE_FEATURES`, and a feature is a hashed word, a word pair or an API name: never a string of the code."""
+
+    PAYLOAD = "zz-unique-payload-host.example.invalid"
+
+    def test_no_feature_name_holds_a_string_value_of_the_code(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        files = {
+            "p-1.0.0/setup.py": "from setuptools import setup\nsetup(name='p', version='1.0.0', packages=['p'])\n",
+            "p-1.0.0/p/__init__.py": f"import os\nimport subprocess\nTOKEN = '{TestFeaturesCarryNoPayload.PAYLOAD}'\nsubprocess.run(['curl', TOKEN], env=os.environ)\n",
+        }
+        users = ScopeKit.features(
+            tmp_path, monkeypatch, measure=False, files=files, archive_name="p-1.0.0.tgz"
+        )
+        measured = ScopeKit.features(
+            tmp_path, monkeypatch, measure=True, files=files, archive_name="p-1.0.0.tgz"
+        )
+        assert measured - users, "the probe reaches no code feature: it proves nothing"
+        shown = " ".join(sorted(measured)).lower()
+        for text in ("zz-unique", "example.invalid", "token", "curl"):
+            assert text not in shown
+
+
 class TestTheEquivalences:
     """A version mapped to an earlier one (`FeatureSchema.SAME_AS`) is admitted only with its identity
     test: item 56 moved reading a file into the workers, the extractor's code changed and no feature
