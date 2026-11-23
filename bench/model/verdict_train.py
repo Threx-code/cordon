@@ -64,6 +64,7 @@ except ImportError:  # pragma: no cover - script invocation puts bench/model on 
     _sys.path.insert(0, str(_pl.Path(__file__).resolve().parents[2]))
     from bench.tools.content import Content
 
+from bench.model.area_lines import AreaLines
 from bench.model.capacity import Capacity
 
 #: Findings the benign measure does not count: a secret, a policy choice, a known vulnerability or
@@ -659,6 +660,13 @@ class VerdictTrain:
         )
         p.add_argument("--jobs", type=int, default=4, help="LightGBM threads")
         p.add_argument(
+            "--line-upper",
+            type=float,
+            default=None,
+            help="hold every area's line so that the upper end of the 95% interval of the legitimate "
+            "work-set share it blocks is within this fraction (0.005), and record the bound per area",
+        )
+        p.add_argument(
             "--capacity-search",
             action="store_true",
             help="set the tree count, leaves, learning rate and minimum leaf by family-grouped "
@@ -1222,11 +1230,20 @@ class VerdictTrain:
         # G6 rule work's job, not the model's.
         for area in add_only_areas:
             lines[area] = 1.01
+        line_bounds = None
+        if a.line_upper is not None:
+            legit_scores: dict[str, list[float]] = collections.defaultdict(list)
+            for r in work:
+                if not r["label"]:
+                    legit_scores[r["area"]].append(float(r["score"]))
+            lines, line_bounds = AreaLines.enforce(lines, legit_scores, a.line_upper)
 
         fitted = {x: model().fit(xw[idx], yw[idx]) for x, idx in groups.items()}
         exported = cls.export(fitted["*"], names)
         if capacity is not None:
             exported = Capacity.attach(exported, capacity)
+        if line_bounds is not None:
+            exported["line_bounds"] = line_bounds
         # On the WORK half, every fit: the shipped trees must score what the fitted model scores.
         sample = groups["*"][:400]
         if sample:
