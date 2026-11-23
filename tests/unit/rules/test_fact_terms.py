@@ -169,3 +169,61 @@ class TestTermsByHowAFileIsReached:
                     assert FactTerms.file_satisfies(reached, places, held, term, reach) == (
                         term in expanded
                     ), (term, reach)
+
+
+class TestTheTargetKindIsATerm:
+    """A rule may name what was scanned, so the same file is judged one way in a published package and another in a source tree."""
+
+    HELPER = "const { spawn } = require('child_process');\nrequire('https').get('https://example.com/x', () => {});\nmodule.exports = () => spawn('git', ['status']);\n"
+
+    @staticmethod
+    def scanned(tmp_path, as_package: bool):
+        import io
+        import json
+        import tarfile
+
+        from cordon_scanner import Scanner
+        from cordon_scanner.foundation.config.settings import Config
+
+        files = {
+            "package.json": json.dumps(
+                {"name": "kind-demo", "version": "1.0.0", "main": "index.js"}
+            ),
+            "index.js": "module.exports = (a, b) => a + b;\n",
+            "lib/helper.js": TestTheTargetKindIsATerm.HELPER,
+        }
+        scanner = Scanner(Config.default().with_overrides(use_cache=False, offline=True))
+        if not as_package:
+            for name, text in files.items():
+                (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+                (tmp_path / name).write_text(text, encoding="utf-8")
+            return scanner.scan(tmp_path)
+        archive = tmp_path.parent / f"{tmp_path.name}.tgz"
+        with tarfile.open(archive, "w:gz") as tar:
+            for name, text in files.items():
+                data = text.encode()
+                info = tarfile.TarInfo(f"package/{name}")
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+        return scanner.scan(archive)
+
+    def test_a_rule_may_write_it_and_an_unknown_kind_is_an_error(self) -> None:
+        assert FactTerms.of_spec({"target": "package"}) == ("target", "package")
+        with pytest.raises(ValueError, match="not a scan target"):
+            FactTerms.of_spec({"target": "laptop"})
+
+    def test_the_record_gives_its_target_as_a_term(self) -> None:
+        assert ("target", "package") in FactTerms.of_facts({"target_kind": "package", "files": []})
+        assert not any(
+            t[0] == "target" for t in FactTerms.of_facts({"target_kind": "nonsense", "files": []})
+        )
+
+    def test_the_same_files_give_different_terms_in_a_source_tree_and_a_package(
+        self, tmp_path
+    ) -> None:
+        from cordon_scanner.report.facts import ScanFacts
+
+        source = FactTerms.of_facts(ScanFacts.of(self.scanned(tmp_path / "src", as_package=False)))
+        package = FactTerms.of_facts(ScanFacts.of(self.scanned(tmp_path / "pkg", as_package=True)))
+        assert ("target", "source") in source and ("target", "package") in package
+        assert ("target", "package") not in source and ("target", "source") not in package

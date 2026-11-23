@@ -16,6 +16,7 @@ A term is a tuple:
                                                 stem_only, unreached: nothing reaches it at all)
     ("package_rule", rule_id)                   a finding about the whole package with that rule id
     ("hook", kind)                              a lifecycle hook of that kind (preinstall, postinstall, ...)
+    ("target", kind)                            what was scanned: a published package, a source tree, an image, ... (`TARGETS`)
 
 What a rule may NOT be written in: names, hosts, ages, publishers, programs. An identity belongs to threat
 intel (it is exact, and it ages); age and publisher only stratify measurement (learning loop LL-19, LL-66)."""
@@ -96,8 +97,12 @@ class FactTerms:
     WHERE: ClassVar[frozenset[str]] = (
         PLACES | {ANY, UNREACHED} | frozenset(REACH_PREFIX + kind for kind in _REACH)
     )
-    KINDS: ClassVar[frozenset[str]] = frozenset({"file", "package_rule", "hook"})
-    VERSIONS: ClassVar[dict[str, int]] = {"file": 1, "package_rule": 1, "hook": 1}
+    KINDS: ClassVar[frozenset[str]] = frozenset({"file", "package_rule", "hook", "target"})
+    VERSIONS: ClassVar[dict[str, int]] = {"file": 1, "package_rule": 1, "hook": 1, "target": 1}
+    TARGETS: ClassVar[frozenset[str]] = frozenset(
+        {"source", "package", "archive", "image", "host", "sbom"}
+    )
+    """What a scan can be of (`ScanResult.target_kind`): the same file is reached differently in a published package and in a source tree, so a rule may name the kind."""
     """The semantics version of each term kind this scanner reads. A term is written `kind` (version 1) or `kind@N`; a version above this one is a meaning the scanner does not know."""
 
     NOT_COMPUTABLE: ClassVar[frozenset[str]] = frozenset({"change"})
@@ -166,6 +171,8 @@ class FactTerms:
         terms |= FactTerms.of_package(
             package.get("rules", {}), (str(h.get("kind", "")) for h in package.get("hooks", ()))
         )
+        if record.get("target_kind") in FactTerms.TARGETS:
+            terms.add(("target", str(record["target_kind"])))
         return terms
 
     @classmethod
@@ -226,6 +233,12 @@ class FactTerms:
             if not _HOOK_KIND.fullmatch(str(value)):
                 raise ValueError(f"not a hook kind: {value!r}")
             return ("hook", str(value))
+        if kind == "target":
+            if value not in FactTerms.TARGETS:
+                raise ValueError(
+                    f"not a scan target: {value!r}; expected one of: {', '.join(sorted(FactTerms.TARGETS))}"
+                )
+            return ("target", str(value))
         raise ValueError(
             f"unknown term kind {kind!r}; expected one of: {', '.join(sorted(FactTerms.KINDS))}"
         )
