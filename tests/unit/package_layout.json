@@ -900,6 +900,7 @@
   "test_compiler.py": "decide/decision",
   "test_content_rule.py": "contracts",
   "test_agent_hook.py": "contracts",
+  "test_agent_hook_overhead.py": "contracts",
   "test_cordon_runtime.py": "cloud",
   "test_credential_sweep.py": "detect/code",
   "test_bounds.py": "decide/decision",
