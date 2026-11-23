@@ -60,7 +60,7 @@ class AgentCommand:
         from cordon_scanner.cloud.agent.collection_status import CollectionStatus
 
         payload = device.DeviceInventory.collect(
-            collection=CollectionStatus.payload(CollectionStatus.of_store())
+            collection=CollectionStatus.payload(CollectionStatus.reason())
         )
         if action == "inventory" and getattr(args, "signed", False):
             return cls._signed(payload, getattr(args, "url", None))

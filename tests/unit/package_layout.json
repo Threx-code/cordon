@@ -903,6 +903,7 @@
   "test_agent_hook.py": "contracts",
   "test_facts_export.py": "contracts",
   "test_feed_serials.py": "cloud/agent",
+  "test_upload_lockfile_integrity.py": "cloud/agent",
   "test_collection_status.py": "cloud/agent",
   "test_agent_collection.py": "cli",
   "test_rule_breaker.py": "contracts",

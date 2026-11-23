@@ -11,7 +11,7 @@ import pytest
 
 from cordon_scanner.cli.commands.agent import AgentCommand
 from cordon_scanner.cloud import device
-from cordon_scanner.cloud.agent.collection_status import STORE_ENV, CollectionStatus
+from cordon_scanner.cloud.agent.collection_status import STORE_FOLDER, CollectionStatus
 from cordon_scanner.cloud.local_store import LocalStore
 from kits.bundle_kit import T0, Kit, Platform
 
@@ -36,10 +36,12 @@ class Run:
         monkeypatch.setattr(device.DeviceInventory, "report", staticmethod(posted))
         monkeypatch.setenv("HOME", str(tmp_path / "home"))
         (tmp_path / "home").mkdir(exist_ok=True)
-        if store is None:
-            monkeypatch.delenv(STORE_ENV, raising=False)
-        else:
-            monkeypatch.setenv(STORE_ENV, str(store))
+        monkeypatch.setenv("CORDON_CONFIG_DIR", str(tmp_path / "config"))
+        if store is not None:
+            (tmp_path / "config").mkdir(exist_ok=True)
+            link = tmp_path / "config" / STORE_FOLDER
+            if not link.exists():
+                link.symlink_to(store, target_is_directory=True)
         monkeypatch.setattr(CollectionStatus, "now", staticmethod(lambda: clock))
         code = AgentCommand.run(argparse.Namespace(agent_command="report", url=None))
         assert code == 0 and len(posted.payloads) == 1
@@ -94,3 +96,52 @@ class TestTheReportSaysHowItWasCollected:
             "degraded",
             "complete",
         )
+
+
+class TestTheDeviceCredential:
+    @staticmethod
+    def sign_in(tmp_path: Path, *, expires_at: float, refresh_token: str = "") -> None:
+        import json
+
+        config = tmp_path / "config"
+        config.mkdir(exist_ok=True)
+        (config / "credentials.json").write_text(
+            json.dumps(
+                {
+                    "url": "https://cloud.example.invalid",
+                    "org": "acme",
+                    "access_token": "t",
+                    "expires_at": expires_at,
+                    "refresh_token": refresh_token,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    def test_a_sign_in_past_its_not_after_with_no_refresh_says_key_expired(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        (tmp_path / "config").mkdir(exist_ok=True)
+        self.sign_in(tmp_path, expires_at=T0.timestamp())
+        payload = Run.report(monkeypatch, tmp_path, None, T0 + timedelta(days=1))
+        assert payload["collection"] == {"status": "degraded", "reason": "key_expired"}
+
+    def test_a_sign_in_that_can_be_refreshed_is_not_degraded(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        self.sign_in(tmp_path, expires_at=T0.timestamp(), refresh_token="r")
+        payload = Run.report(monkeypatch, tmp_path, None, T0 + timedelta(days=1))
+        assert payload["collection"] == {"status": "complete"}
+
+    def test_a_current_sign_in_is_not_degraded(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        self.sign_in(tmp_path, expires_at=(T0 + timedelta(days=2)).timestamp())
+        payload = Run.report(monkeypatch, tmp_path, None, T0 + timedelta(days=1))
+        assert payload["collection"] == {"status": "complete"}
+
+    def test_a_device_with_no_stored_sign_in_holds_no_key_to_expire(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        payload = Run.report(monkeypatch, tmp_path, None, T0 + timedelta(days=1))
+        assert payload["collection"] == {"status": "complete"}
