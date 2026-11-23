@@ -11,7 +11,7 @@ import io
 import json
 import tarfile
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from cordon_scanner import Scanner
 from cordon_scanner.foundation.config.settings import Config
@@ -111,7 +111,7 @@ class TestTheSameFilesAsARepositoryAndAsAPackage:
 class TestInstallHooksAreInTheRecordForEveryKind:
     """What a package runs when it is installed is the strongest signal the record holds: a published package carries its hooks and their programs exactly as the same files do as a directory."""
 
-    HOOKED = {
+    HOOKED: ClassVar[dict[str, str]] = {
         "package.json": json.dumps(
             {
                 "name": "p",
