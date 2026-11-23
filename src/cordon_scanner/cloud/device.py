@@ -32,12 +32,15 @@ import tomllib
 import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar, Final
+from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.cloud import CloudEndpoint, CloudError
 from cordon_scanner.cloud.transport import CloudTransport, Transport
 from cordon_scanner.foundation.evidence_key import EvidenceKey
 from cordon_scanner.version import __version__
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 SCHEMA: Final = "cordon.device-inventory/v1"
 MAX_FILE_BYTES: Final = 2 << 20
@@ -366,8 +369,10 @@ class DeviceInventory:
         return json.dumps({"mcpServers": servers}).encode()
 
     @staticmethod
-    def collect(home: Path | None = None) -> dict[str, Any]:
-        """The payload: device, inventory and findings. Nothing else leaves the machine."""
+    def collect(
+        home: Path | None = None, collection: Mapping[str, str] | None = None
+    ) -> dict[str, Any]:
+        """The payload: device, inventory and findings, and how well it was collected when the caller says (`CollectionStatus.payload`). Nothing else leaves the machine."""
         home = home or Path.home()
         tools, mcp, registries, files, read = DeviceInventory._read_sources(home)
         installed = DeviceInventory.installed_extensions(home)
@@ -379,7 +384,7 @@ class DeviceInventory:
 
         findings = DeviceInventory._agent_findings(files)
         findings.extend(DeviceInventory.extension_findings(installed))
-        return {
+        report = {
             "schema": SCHEMA,
             "agent_version": __version__,
             "device": DeviceInventory._device(),
@@ -393,6 +398,9 @@ class DeviceInventory:
             },
             "findings": findings,
         }
+        if collection is not None:
+            report["collection"] = dict(collection)
+        return report
 
     @staticmethod
     def _read_sources(

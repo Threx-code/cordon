@@ -1,0 +1,18 @@
+{
+  "note": "The platform's accepted shape of a report's `collection` (devices/helpers/report.py Report.collection, BP-V-60): absent means complete; a degraded collection gives one reason from the closed list; a complete one gives none; anything else is refused whole.",
+  "statuses": ["complete", "degraded"],
+  "reasons": ["bundle_expired", "policy_unavailable", "key_expired"],
+  "accepted": [
+    {"status": "complete"},
+    {"status": "degraded", "reason": "bundle_expired"},
+    {"status": "degraded", "reason": "policy_unavailable"},
+    {"status": "degraded", "reason": "key_expired"}
+  ],
+  "refused": [
+    {"status": "degraded"},
+    {"status": "degraded", "reason": "because I said so"},
+    {"status": "complete", "reason": "bundle_expired"},
+    {"status": "broken"},
+    {"status": "degraded", "reason": "bundle_expired", "extra": 1}
+  ]
+}

@@ -220,6 +220,20 @@ class LocalRuntime:
         self.note_feed(now)
         return True
 
+    def collection_reason(self, now: datetime) -> str | None:
+        """Why the agent's collection is degraded at `now`, from `CollectionStatus.REASONS`, or None when it is complete: no policy key valid (`key_expired`), no bundle held (`policy_unavailable`), or the held bundle past its expiry (`bundle_expired`)."""
+        try:
+            keys = BundleChain.policy_keys(self._root, self._delegation, self._tenant, now)
+        except BundleError:
+            return "policy_unavailable"
+        if not keys:
+            return "key_expired"
+        if self._held is None:
+            return "policy_unavailable"
+        if Instants.parse(str(self._held["expires_at"])) < Instants.parse(now.isoformat()):
+            return "bundle_expired"
+        return None
+
     def note_feed(self, clock: datetime) -> bool:
         """Queue the feed serial pair the scans here run on, once per pair (`FeedSerials.queue`); False with no store or nothing new.
 
