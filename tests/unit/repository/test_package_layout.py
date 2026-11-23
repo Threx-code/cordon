@@ -226,7 +226,8 @@ class Structure:
     #: fits one of these, or a home inside one of them.
     REPOSITORY_ROOT: ClassVar[frozenset[str]] = frozenset(
         {
-            # What GitHub, PyPI, the citation tools and FLOSS/fund read at the root.
+            # What GitHub, PyPI, the citation tools and FLOSS/fund read at the root; `.well-known` holds the
+            # funding manifest's proof that this repository belongs to it (fundingjson.org's `wellKnown`).
             ".well-known",
             ".github",
             "CITATION.cff",
