@@ -321,6 +321,47 @@ class TestTheReleasePackagesTheExtension:
         assert "needs.publish.result == 'skipped' && needs.confirm.result == 'success'" in job
 
 
+class TestTheExtensionIsAttestedWhereItIsBuilt:
+    """The .vsix on the release page is attested by the job that packages it. Attesting it later,
+    in the Marketplace job, left it unattested whenever that job waited for its reviewer or was never
+    approved, and attested whatever the release page held by then rather than the file that was built."""
+
+    @staticmethod
+    def job(name: str) -> str:
+        import re
+
+        text = RELEASE.read_text(encoding="utf-8")
+        start = text.index(f"\n  {name}:\n")
+        following = re.search(r"\n  [a-z][a-z0-9-]*:\n", text[start + 1 :])
+        return text[start : start + 1 + following.start()] if following else text[start:]
+
+    def test_the_building_job_attests_the_vsix_before_uploading_it(self) -> None:
+        job = self.job("github-release")
+        packaged = job.index("@vscode/vsce@")
+        attested = job.index("subject-path: artefacts/*.vsix")
+        uploaded = job.index("gh release create")
+        assert packaged < attested < uploaded
+        assert "actions/attest-build-provenance@" in job[packaged:attested]
+
+    def test_the_building_job_may_attest(self) -> None:
+        permissions = self.job("github-release").split("    steps:")[0]
+        assert "id-token: write" in permissions
+        assert "attestations: write" in permissions
+
+    def test_the_marketplace_publishes_only_a_verified_vsix(self) -> None:
+        job = self.job("vscode-marketplace")
+        verified = job.index("gh attestation verify")
+        assert verified < job.index("vsce@3.6.0 publish")
+        assert verified < job.index("ovsx@")
+        assert '--signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release.yml"' in job
+
+    def test_the_marketplace_signs_nothing(self) -> None:
+        """It holds publishing tokens behind a reviewer; it has no reason to mint attestations."""
+        job = self.job("vscode-marketplace")
+        assert "attest-build-provenance" not in job
+        assert "id-token: write" not in job
+
+
 class TestReleaseWorkflowPublishesTheImage:
     """The Dockerfile existed and nothing built or pushed it -- README called
     this out explicitly ("no published container image yet"). These assert

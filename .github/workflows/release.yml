@@ -563,6 +563,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # The .vsix is attested here, where it is built, so the file on the release page is attested
+      # whether or not the Marketplace job is ever approved.
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
@@ -590,6 +594,12 @@ jobs:
           npm ci --no-audit --no-fund
           npm test
           npx --yes @vscode/vsce@3.6.0 package --no-dependencies -o "../../artefacts/cordon-${GITHUB_REF_NAME#v}.vsix"
+
+      # The very file packaged above, before it is uploaded: its provenance names this workflow and
+      # this commit as what built it.
+      - uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018 # v1.4.4
+        with:
+          subject-path: artefacts/*.vsix
 
       - name: Take the notes from the release page
         env:
@@ -635,15 +645,15 @@ jobs:
     # The `threx-code` publisher was unclaimed on both registries, so anyone could have taken it and
     # shipped an extension under the name `/connect` tells people to search for (audit PK-08, FE-02).
     # Published only from a tag, only after the GitHub release exists, from the very .vsix attached to
-    # it (attested here), and with tokens held in a protected environment that needs a reviewer.
+    # it, only once its attestation from this workflow verifies, and with tokens held in a protected
+    # environment that needs a reviewer.
     needs: github-release
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: marketplace
     permissions:
       contents: read
-      id-token: write
-      attestations: write
+      attestations: read
     steps:
       - name: Fetch the released .vsix
         env:
@@ -653,9 +663,17 @@ jobs:
           gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern '*.vsix' --dir vsix
           ls -l vsix
 
-      - uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018 # v1.4.4
-        with:
-          subject-path: vsix/*.vsix
+      - name: Publish only a .vsix this workflow attested
+        # Attested where it was built (github-release). A file replaced on the release page after that
+        # carries no attestation from this workflow, so it fails here and is never published.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for package in vsix/*.vsix; do
+            gh attestation verify "$package" --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release.yml"
+          done
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
