@@ -101,54 +101,58 @@ LEAVES = st.one_of(
 KEY = st.one_of(st.sampled_from(KEYS), st.text(max_size=12))
 
 
-def structures(depth: int = 4) -> st.SearchStrategy[Any]:
-    return st.recursive(
-        LEAVES,
-        lambda inner: st.one_of(
-            st.lists(inner, max_size=5), st.dictionaries(KEY, inner, max_size=6)
-        ),
-        max_leaves=24,
-    )
+class Texts:
+    @staticmethod
+    def structures(depth: int = 4) -> st.SearchStrategy[Any]:
+        return st.recursive(
+            LEAVES,
+            lambda inner: st.one_of(
+                st.lists(inner, max_size=5), st.dictionaries(KEY, inner, max_size=6)
+            ),
+            max_leaves=24,
+        )
 
+    @staticmethod
+    @st.composite
+    def json_text(draw: st.DrawFn) -> str:
+        text = json.dumps(draw(Texts.structures()), ensure_ascii=draw(st.booleans()))
+        if draw(st.booleans()):
+            text = text.replace('"@@HUGE@@"', HUGE)
+        return text
 
-@st.composite
-def json_text(draw: st.DrawFn) -> str:
-    text = json.dumps(draw(structures()), ensure_ascii=draw(st.booleans()))
-    if draw(st.booleans()):
-        text = text.replace('"@@HUGE@@"', HUGE)
-    return text
+    @staticmethod
+    @st.composite
+    def front_matter(draw: st.DrawFn) -> str:
+        lines = [
+            f"{draw(KEY)}: {draw(st.one_of(LEAVES.map(str), st.text(max_size=30)))}"
+            for _ in range(draw(st.integers(0, 6)))
+        ]
+        body = draw(st.text(max_size=200))
+        return (
+            "---\n" + "\n".join(lines) + draw(st.sampled_from(["\n---\n", "\n", "\n...\n"])) + body
+        )
 
+    @staticmethod
+    @st.composite
+    def toml_text(draw: st.DrawFn) -> str:
+        rows = [
+            f"{draw(st.sampled_from(['[mcp_servers.x]', '[mcp_servers]', '[[hooks]]', '[profiles.p]', 'a.b.c']))}\n{draw(KEY)} = {draw(LEAVES.map(repr))}"
+            for _ in range(draw(st.integers(0, 5)))
+        ]
+        return "\n".join(rows) + draw(st.text(max_size=60))
 
-@st.composite
-def front_matter(draw: st.DrawFn) -> str:
-    lines = [
-        f"{draw(KEY)}: {draw(st.one_of(LEAVES.map(str), st.text(max_size=30)))}"
-        for _ in range(draw(st.integers(0, 6)))
-    ]
-    body = draw(st.text(max_size=200))
-    return "---\n" + "\n".join(lines) + draw(st.sampled_from(["\n---\n", "\n", "\n...\n"])) + body
-
-
-@st.composite
-def toml_text(draw: st.DrawFn) -> str:
-    rows = [
-        f"{draw(st.sampled_from(['[mcp_servers.x]', '[mcp_servers]', '[[hooks]]', '[profiles.p]', 'a.b.c']))}\n{draw(KEY)} = {draw(LEAVES.map(repr))}"
-        for _ in range(draw(st.integers(0, 5)))
-    ]
-    return "\n".join(rows) + draw(st.text(max_size=60))
-
-
-@st.composite
-def yaml_text(draw: st.DrawFn) -> str:
-    rows = [
-        f"{draw(KEY)}: {draw(st.one_of(LEAVES.map(str), st.text(max_size=20)))}"
-        for _ in range(draw(st.integers(0, 8)))
-    ]
-    return (
-        "on: push\njobs:\n  a:\n    steps:\n"
-        + "\n".join(f"      - {row}" for row in rows)
-        + draw(st.text(max_size=60))
-    )
+    @staticmethod
+    @st.composite
+    def yaml_text(draw: st.DrawFn) -> str:
+        rows = [
+            f"{draw(KEY)}: {draw(st.one_of(LEAVES.map(str), st.text(max_size=20)))}"
+            for _ in range(draw(st.integers(0, 8)))
+        ]
+        return (
+            "on: push\njobs:\n  a:\n    steps:\n"
+            + "\n".join(f"      - {row}" for row in rows)
+            + draw(st.text(max_size=60))
+        )
 
 
 JSON_FILES = (
@@ -204,26 +208,29 @@ FUZZ = settings(
 
 class TestNoFileMakesTheAgentsDetectorRaise:
     @FUZZ
-    @given(name=st.sampled_from(JSON_FILES), text=json_text())
+    @given(name=st.sampled_from(JSON_FILES), text=Texts.json_text())
     def test_a_json_file_with_hostile_values(
         self, tmp_path_factory: pytest.TempPathFactory, name: str, text: str
     ) -> None:
         assert Hostile.failed(tmp_path_factory.mktemp("j"), name, text) == []
 
     @FUZZ
-    @given(name=st.sampled_from(TEXT_FILES), text=st.one_of(front_matter(), st.text(max_size=400)))
+    @given(
+        name=st.sampled_from(TEXT_FILES),
+        text=st.one_of(Texts.front_matter(), st.text(max_size=400)),
+    )
     def test_an_instruction_or_skill_file_with_hostile_front_matter(
         self, tmp_path_factory: pytest.TempPathFactory, name: str, text: str
     ) -> None:
         assert Hostile.failed(tmp_path_factory.mktemp("t"), name, text) == []
 
     @FUZZ
-    @given(text=toml_text())
+    @given(text=Texts.toml_text())
     def test_a_codex_config(self, tmp_path_factory: pytest.TempPathFactory, text: str) -> None:
         assert Hostile.failed(tmp_path_factory.mktemp("c"), ".codex/config.toml", text) == []
 
     @FUZZ
-    @given(name=st.sampled_from(YAML_FILES), text=yaml_text())
+    @given(name=st.sampled_from(YAML_FILES), text=Texts.yaml_text())
     def test_a_workflow_or_yaml_config(
         self, tmp_path_factory: pytest.TempPathFactory, name: str, text: str
     ) -> None:
