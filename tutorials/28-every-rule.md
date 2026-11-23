@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,824 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,843 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -254,13 +254,16 @@ rule's own samples.
 
 ## CloudFormation
 
-232 rules.
+251 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
+| `POLICY.CFN.CMEK.AWS_AGENTREGISTRY_REGISTRY.001` | low | cfn:AWS::AgentRegistry::Registry: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_AIOPS_INVESTIGATIONGROUP.001` | low | cfn:AWS::AIOps::InvestigationGroup: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_AMAZONMQ_BROKER.001` | low | cfn:AWS::AmazonMQ::Broker: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_APPSTREAM_STACK.001` | low | cfn:AWS::AppStream::Stack: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_APS_WORKSPACE.001` | low | cfn:AWS::APS::Workspace: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_ATHENA_SYSTEMTABLES.001` | low | cfn:AWS::Athena::SystemTables: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_BACKUPGATEWAY_HYPERVISOR.001` | low | cfn:AWS::BackupGateway::Hypervisor: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_BEDROCKAGENTCORE_CAPACITYPROVIDER.001` | low | cfn:AWS::BedrockAgentCore::CapacityProvider: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_BEDROCKAGENTCORE_CONFIGURATIONBUNDLE.001` | low | cfn:AWS::BedrockAgentCore::ConfigurationBundle: a customer-managed key |
@@ -278,6 +281,7 @@ rule's own samples.
 | `POLICY.CFN.CMEK.AWS_CLEANROOMS_IDMAPPINGTABLE.001` | low | cfn:AWS::CleanRooms::IdMappingTable: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_CLEANROOMS_INTERMEDIATETABLE.001` | low | cfn:AWS::CleanRooms::IntermediateTable: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_CLOUDTRAIL_EVENTDATASTORE.001` | low | cfn:AWS::CloudTrail::EventDataStore: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_CLOUDWATCH_SPACE.001` | low | cfn:AWS::CloudWatch::Space: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_CODECOMMIT_REPOSITORY.001` | low | cfn:AWS::CodeCommit::Repository: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_COGNITO_USERPOOL.001` | low | cfn:AWS::Cognito::UserPool: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_COMPREHEND_DOCUMENTCLASSIFIER.001` | low | cfn:AWS::Comprehend::DocumentClassifier: a customer-managed key |
@@ -297,6 +301,7 @@ rule's own samples.
 | `POLICY.CFN.CMEK.AWS_DMS_REPLICATIONINSTANCE.001` | low | cfn:AWS::DMS::ReplicationInstance: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_DOCDBELASTIC_CLUSTER.001` | low | cfn:AWS::DocDBElastic::Cluster: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_DOCDB_DBCLUSTER.001` | low | cfn:AWS::DocDB::DBCluster: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_EC2_IMPORTIMAGETASK.001` | low | cfn:AWS::EC2::ImportImageTask: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_EC2_VERIFIEDACCESSENDPOINT.001` | low | cfn:AWS::EC2::VerifiedAccessEndpoint: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_EC2_VERIFIEDACCESSGROUP.001` | low | cfn:AWS::EC2::VerifiedAccessGroup: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_EC2_VERIFIEDACCESSTRUSTPROVIDER.001` | low | cfn:AWS::EC2::VerifiedAccessTrustProvider: a customer-managed key |
@@ -306,6 +311,7 @@ rule's own samples.
 | `POLICY.CFN.CMEK.AWS_ELASTICACHE_REPLICATIONGROUP.001` | low | cfn:AWS::ElastiCache::ReplicationGroup: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_ELASTICACHE_SERVERLESSCACHE.001` | low | cfn:AWS::ElastiCache::ServerlessCache: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_ELASTICACHE_SERVERLESSCACHESNAPSHOT.001` | low | cfn:AWS::ElastiCache::ServerlessCacheSnapshot: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_ELASTICACHE_SNAPSHOT.001` | low | cfn:AWS::ElastiCache::Snapshot: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_ELASTICSEARCH_DOMAIN.001` | low | cfn:AWS::Elasticsearch::Domain: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_EVS_ENVIRONMENT.001` | low | cfn:AWS::EVS::Environment: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_FINSPACE_ENVIRONMENT.001` | low | cfn:AWS::FinSpace::Environment: a customer-managed key |
@@ -332,6 +338,7 @@ rule's own samples.
 | `POLICY.CFN.CMEK.AWS_LAMBDA_CAPACITYPROVIDER.001` | low | cfn:AWS::Lambda::CapacityProvider: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_LAMBDA_EVENTSOURCEMAPPING.001` | low | cfn:AWS::Lambda::EventSourceMapping: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_LAMBDA_FUNCTION.001` | low | cfn:AWS::Lambda::Function: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_LAMBDA_WEBFUNCTIONREVISION.001` | low | cfn:AWS::Lambda::WebFunctionRevision: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_LOCATION_GEOFENCECOLLECTION.001` | low | cfn:AWS::Location::GeofenceCollection: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_LOCATION_TRACKER.001` | low | cfn:AWS::Location::Tracker: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_LOGS_INTEGRATION.001` | low | cfn:AWS::Logs::Integration: a customer-managed key |
@@ -361,6 +368,7 @@ rule's own samples.
 | `POLICY.CFN.CMEK.AWS_REDSHIFTSERVERLESS_NAMESPACE.001` | low | cfn:AWS::RedshiftServerless::Namespace: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_REDSHIFT_CLUSTER.001` | low | cfn:AWS::Redshift::Cluster: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_REDSHIFT_SNAPSHOTCOPYGRANT.001` | low | cfn:AWS::Redshift::SnapshotCopyGrant: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_REKOGNITION_PROJECTVERSION.001` | low | cfn:AWS::Rekognition::ProjectVersion: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_REKOGNITION_STREAMPROCESSOR.001` | low | cfn:AWS::Rekognition::StreamProcessor: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_RESILIENCEHUBV2_POLICY.001` | low | cfn:AWS::ResilienceHubV2::Policy: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_RESILIENCEHUBV2_SERVICE.001` | low | cfn:AWS::ResilienceHubV2::Service: a customer-managed key |
@@ -392,6 +400,7 @@ rule's own samples.
 | `POLICY.CFN.CMEK.AWS_SECRETSMANAGER_ROTATIONSCHEDULE.001` | low | cfn:AWS::SecretsManager::RotationSchedule: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_SECRETSMANAGER_SECRET.001` | low | cfn:AWS::SecretsManager::Secret: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_SECURITYAGENT_AGENTSPACE.001` | low | cfn:AWS::SecurityAgent::AgentSpace: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SECURITYAGENT_INTEGRATION.001` | low | cfn:AWS::SecurityAgent::Integration: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_SECURITYAGENT_SECURITYREQUIREMENTPACK.001` | low | cfn:AWS::SecurityAgent::SecurityRequirementPack: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_SECURITYHUB_CONNECTORV2.001` | low | cfn:AWS::SecurityHub::ConnectorV2: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_SECURITYLAKE_DATALAKE.001` | low | cfn:AWS::SecurityLake::DataLake: a customer-managed key |
@@ -403,6 +412,8 @@ rule's own samples.
 | `POLICY.CFN.CMEK.AWS_STEPFUNCTIONS_STATEMACHINE.001` | low | cfn:AWS::StepFunctions::StateMachine: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_SYNTHETICS_CANARY.001` | low | cfn:AWS::Synthetics::Canary: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_TIMESTREAM_DATABASE.001` | low | cfn:AWS::Timestream::Database: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_TIMESTREAM_INFLUXDBCLUSTER.001` | low | cfn:AWS::Timestream::InfluxDBCluster: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_TIMESTREAM_INFLUXDBINSTANCE.001` | low | cfn:AWS::Timestream::InfluxDBInstance: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_TIMESTREAM_SCHEDULEDQUERY.001` | low | cfn:AWS::Timestream::ScheduledQuery: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_TIMESTREAM_TABLE.001` | low | cfn:AWS::Timestream::Table: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_VOICEID_DOMAIN.001` | low | cfn:AWS::VoiceID::Domain: a customer-managed key |
@@ -414,6 +425,7 @@ rule's own samples.
 | `POLICY.CFN.DELETION_PROTECTION.AWS_DOCDB_GLOBALCLUSTER.001` | low | cfn:AWS::DocDB::GlobalCluster: deletion protection |
 | `POLICY.CFN.DELETION_PROTECTION.AWS_DSQL_CLUSTER.001` | low | cfn:AWS::DSQL::Cluster: deletion protection |
 | `POLICY.CFN.DELETION_PROTECTION.AWS_DYNAMODB_TABLE.001` | low | cfn:AWS::DynamoDB::Table: deletion protection |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_ECS_GATEWAY.001` | low | cfn:AWS::ECS::Gateway: deletion protection |
 | `POLICY.CFN.DELETION_PROTECTION.AWS_EKS_CLUSTER.001` | low | cfn:AWS::EKS::Cluster: deletion protection |
 | `POLICY.CFN.DELETION_PROTECTION.AWS_LOGS_LOGGROUP.001` | low | cfn:AWS::Logs::LogGroup: deletion protection |
 | `POLICY.CFN.DELETION_PROTECTION.AWS_NEPTUNEGRAPH_GRAPH.001` | low | cfn:AWS::NeptuneGraph::Graph: deletion protection |
@@ -423,13 +435,19 @@ rule's own samples.
 | `POLICY.CFN.DELETION_PROTECTION.AWS_RDS_DBCLUSTER.001` | low | cfn:AWS::RDS::DBCluster: deletion protection |
 | `POLICY.CFN.DELETION_PROTECTION.AWS_RDS_DBINSTANCE.001` | low | cfn:AWS::RDS::DBInstance: deletion protection |
 | `POLICY.CFN.DELETION_PROTECTION.AWS_RDS_GLOBALCLUSTER.001` | low | cfn:AWS::RDS::GlobalCluster: deletion protection |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_SMSVOICE_NOTIFYCONFIGURATION.001` | low | cfn:AWS::SMSVOICE::NotifyConfiguration: deletion protection |
 | `POLICY.CFN.DELETION_PROTECTION.AWS_SMSVOICE_PHONENUMBER.001` | low | cfn:AWS::SMSVOICE::PhoneNumber: deletion protection |
 | `POLICY.CFN.DELETION_PROTECTION.AWS_SMSVOICE_POOL.001` | low | cfn:AWS::SMSVOICE::Pool: deletion protection |
 | `POLICY.CFN.DELETION_PROTECTION.AWS_SMSVOICE_PROTECTCONFIGURATION.001` | low | cfn:AWS::SMSVOICE::ProtectConfiguration: deletion protection |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_SMSVOICE_RCSAGENT.001` | low | cfn:AWS::SMSVOICE::RcsAgent: deletion protection |
 | `POLICY.CFN.DELETION_PROTECTION.AWS_SMSVOICE_SENDERID.001` | low | cfn:AWS::SMSVOICE::SenderId: deletion protection |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_WELLARCHITECTED_AGENTORGANIZATIONALPROFILE.001` | low | cfn:AWS::WellArchitected::AgentOrganizationalProfile: deletion protection |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_WELLARCHITECTED_AGENTPROFILE.001` | low | cfn:AWS::WellArchitected::AgentProfile: deletion protection |
 | `POLICY.CFN.ENCRYPT_AT_REST.AWS_BEDROCKAGENTCORE_CAPACITYPROVIDER.001` | high | cfn:AWS::BedrockAgentCore::CapacityProvider: encryption at rest |
 | `POLICY.CFN.ENCRYPT_AT_REST.AWS_DOCDB_DBCLUSTER.001` | high | cfn:AWS::DocDB::DBCluster: storage encryption |
 | `POLICY.CFN.ENCRYPT_AT_REST.AWS_DOCDB_GLOBALCLUSTER.001` | high | cfn:AWS::DocDB::GlobalCluster: storage encryption |
+| `POLICY.CFN.ENCRYPT_AT_REST.AWS_EC2_IMPORTIMAGETASK.001` | high | cfn:AWS::EC2::ImportImageTask: encryption at rest |
+| `POLICY.CFN.ENCRYPT_AT_REST.AWS_EC2_IMPORTSNAPSHOTTASK.001` | high | cfn:AWS::EC2::ImportSnapshotTask: encryption at rest |
 | `POLICY.CFN.ENCRYPT_AT_REST.AWS_EC2_VOLUME.001` | high | cfn:AWS::EC2::Volume: encryption at rest |
 | `POLICY.CFN.ENCRYPT_AT_REST.AWS_NEPTUNE_DBCLUSTER.001` | high | cfn:AWS::Neptune::DBCluster: storage encryption |
 | `POLICY.CFN.ENCRYPT_AT_REST.AWS_NEPTUNE_GLOBALCLUSTER.001` | high | cfn:AWS::Neptune::GlobalCluster: storage encryption |
@@ -459,6 +477,7 @@ rule's own samples.
 | `POLICY.CFN.PATCHING.AWS_RDS_DBINSTANCE.001` | medium | cfn:AWS::RDS::DBInstance: automatic minor version upgrades |
 | `POLICY.CFN.PUBLIC_IP.AWS_AUTOSCALING_LAUNCHCONFIGURATION.001` | low | cfn:AWS::AutoScaling::LaunchConfiguration: a public ip address |
 | `POLICY.CFN.PUBLIC_IP.AWS_EC2_SUBNET.001` | low | cfn:AWS::EC2::Subnet: every instance in the subnet gets a public address |
+| `POLICY.CFN.PUBLIC_IP.AWS_MGN_LAUNCHCONFIGURATIONTEMPLATE.001` | low | cfn:AWS::MGN::LaunchConfigurationTemplate: a public ip address |
 | `POLICY.CFN.RESILIENCE.AWS_DMS_REPLICATIONCONFIG.001` | low | cfn:AWS::DMS::ReplicationConfig: a standby in another availability zone |
 | `POLICY.CFN.RESILIENCE.AWS_DMS_REPLICATIONINSTANCE.001` | low | cfn:AWS::DMS::ReplicationInstance: a standby in another availability zone |
 | `POLICY.CFN.RESILIENCE.AWS_RDS_DBINSTANCE.001` | low | cfn:AWS::RDS::DBInstance: a standby in another availability zone |
