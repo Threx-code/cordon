@@ -57,7 +57,7 @@ class Things:
             environment="production",
             scope_path=("acme",),
         )
-        (item,) = store.pending()
+        (item,) = [i for i in store.pending() if i.kind == "decision"]
         return item.body
 
 

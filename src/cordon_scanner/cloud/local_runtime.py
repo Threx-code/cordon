@@ -31,6 +31,8 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar, Final, NamedTuple
 
+from cordon_scanner.cloud.agent.feed_serials import KIND as FEED_KIND
+from cordon_scanner.cloud.agent.feed_serials import FeedSerials
 from cordon_scanner.cloud.bundle_chain import BundleChain, BundleError, BundleRefused
 from cordon_scanner.cloud.bundle_loosening import Granted, Loosening
 from cordon_scanner.contracts.digests import ArtifactDigests
@@ -158,6 +160,7 @@ class LocalRuntime:
             self._held = bundle
             if self._store is not None:
                 self._store.save_bundle([list(envelopes)[-1]])
+            self.note_feed(now)
         return state
 
     def restart(self, envelope: object, now: datetime) -> str:
@@ -214,13 +217,26 @@ class LocalRuntime:
         except BundleError:
             return False
         self._held, self._policy = bundle, policy
+        self.note_feed(now)
         return True
 
-    def drain(self, send: Callable[[Pending], None]) -> Drained:
-        """Send the uploads queued while offline, oldest first, stopping at the first that fails (see `LocalStore.drain`)."""
+    def note_feed(self, clock: datetime) -> bool:
+        """Queue the feed serial pair the scans here run on, once per pair (`FeedSerials.queue`); False with no store or nothing new.
+
+        Called when a session starts (a bundle accepted or resumed), so the sighting is queued ahead of the session's decisions."""
+        if self._store is None:
+            return False
+        return FeedSerials.queue(self._store, FeedGaps.feed(), clock)
+
+    def drain(
+        self, send: Callable[[Pending], None], feed_send: Callable[[Pending], None] | None = None
+    ) -> Drained:
+        """Send the uploads queued while offline, oldest first, stopping at the first that fails (see `LocalStore.drain`). The outbox holds decisions and feed-serial sightings; sightings go to `feed_send` when given (`FeedSerials.send` for the device endpoint), else to `send` with the rest."""
         if self._store is None:
             raise BundleError("no local store: nothing is queued")
-        return self._store.drain(send)
+        if feed_send is None:
+            return self._store.drain(send)
+        return self._store.drain(lambda item: (feed_send if item.kind == FEED_KIND else send)(item))
 
     def ask(
         self,

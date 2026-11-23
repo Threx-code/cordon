@@ -85,19 +85,14 @@ class Ceilings:
     @staticmethod
     def delivered_gaps() -> dict[str, Any]:
         """What the scan could not use of what the feed delivered, as the stats fields that carry it: the models it turned down and the rules it could not evaluate."""
+        from cordon_scanner.rules.feed_gaps import FeedGaps
+
         return {
             "model_refusals": Ceilings.model_refusals(),
             "rule_gaps": Ceilings.rule_gaps(),
             "rules_demoted": Ceilings.rules_demoted(),
-            "feed": Ceilings.feed(),
+            "feed": FeedGaps.feed(),
         }
-
-    @staticmethod
-    def feed() -> dict[str, Any]:
-        """The feed a scan ran on, for its stats (`FeedGaps.feed`)."""
-        from cordon_scanner.rules.feed_gaps import FeedGaps
-
-        return FeedGaps.feed()
 
     @staticmethod
     def model_refusals() -> dict[str, str] | None:

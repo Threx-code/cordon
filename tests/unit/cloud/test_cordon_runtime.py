@@ -270,7 +270,8 @@ class TestResolveAndAct:
         World.run(runtime)
         World.run(runtime)
         store = LocalStore(tmp_path)
-        assert len(store.pending()) == 1 and store.cache_size() == 1
+        decisions = [item for item in store.pending() if item.kind == "decision"]
+        assert len(decisions) == 1 and store.cache_size() == 1
 
 
 class TestWithNothingButTheStandardLibrary:
