@@ -89,3 +89,22 @@ class TestTheRuleRunsAsAWarning(Isolated):
         assert (
             compiled.rule.severity is Severity.LOW and "blocked 6 of 150" in compiled.rule.message
         )
+
+
+class TestAHoldOrAReportIsNotAMisfire(Isolated):
+    """A rule a customer holds at warn or reports does not block, so the breaker records nothing against it: a hold or a report is never counted as a misfire."""
+
+    def test_a_held_rule_that_fires_as_a_warning_is_never_demoted_for_it(
+        self, tmp_path: Path
+    ) -> None:
+        breaker = RuleBreaker(LocalStore(tmp_path))
+        Scans.run(breaker, 500, {})
+        assert breaker.demotions(T0 + timedelta(minutes=501)) == {}
+
+    def test_only_a_block_counts_against_a_rule(self, tmp_path: Path) -> None:
+        breaker = RuleBreaker(LocalStore(tmp_path))
+        Scans.run(breaker, 500, {GOOD: 2})
+        assert breaker.demotions(T0 + timedelta(minutes=501)) == {}
+        Scans.run(breaker, 0, {})
+        breaker.record(T0 + timedelta(minutes=502), [GOOD] * 40)
+        assert breaker.demotions(T0 + timedelta(minutes=503)) == {}, "one scan counts a rule once"
