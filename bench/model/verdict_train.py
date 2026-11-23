@@ -24,7 +24,7 @@ units outside it were quiet (review 98, 08-PROGRESS). Halves are fixed by a hash
 name, so every version of one package is on one side.
 
     docker run --rm --network none -v W:/w:ro -v OUT:/o -v "$PWD:/s:ro" -e PYTHONPATH=/s/src \\
-      cordon-model:next python /s/bench/model/verdict_train.py --corpus /w/corpus.txt \\
+      cordon-model:next python /s/bench/model/train.py --area verdict --corpus /w/corpus.txt \\
       --benign /w/f3/benign/scans.jsonl --malware /w/f3/mal/malware-scans.jsonl \\
       --labelled msb=/w/f3/msb/scans.jsonl asb=/w/f3/asb/scans.jsonl skills=/w/f3/pub/scans.jsonl \\
                  mcpv=/w/f3/mcpv/scans.jsonl mcpc=/w/f3/mcpc/scans.jsonl \\
@@ -1376,4 +1376,9 @@ class VerdictTrain:
 
 
 if __name__ == "__main__":
+    try:
+        from bench.model.area import EntryPoint
+    except ImportError:  # run as a script from this directory
+        from area import EntryPoint
+    EntryPoint.require(__file__)
     VerdictTrain.main()

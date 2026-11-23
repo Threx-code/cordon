@@ -28,7 +28,6 @@ import shutil
 import sys
 from pathlib import Path
 
-import joblib
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
@@ -75,7 +74,10 @@ class BundleBuilder:
             "--metrics", type=Path, help="a JSON file of measured results to record"
         )
         args = parser.parse_args()
-        meta = joblib.load(args.work / f"model-{args.split}" / "meta.joblib")
+        meta_path = args.work / f"model-{args.split}" / "meta.json"
+        if not meta_path.exists():
+            raise SystemExit(f"{meta_path} is missing: train again through bench/model/train.py (no pickle is read)")
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
         text_meta = json.loads((args.work / "text-model" / "meta.json").read_text(encoding="utf-8"))
         if args.out.exists():
             shutil.rmtree(args.out)

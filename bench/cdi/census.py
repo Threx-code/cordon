@@ -37,13 +37,35 @@ if TYPE_CHECKING:
 READING_GAP: Final = "READING_GAP"
 NO_SEPARATING_FACT: Final = "NO_SEPARATING_FACT"
 FACTS_EXIST: Final = "FACTS_EXIST"
-CLASSES: Final = (READING_GAP, NO_SEPARATING_FACT, FACTS_EXIST)
+#: Facts exist, but the terms a candidate would use are all held by one established legit release: at package scope they do not
+#: separate this release from legit ones.
+DO_NOT_SEPARATE: Final = "FACTS_EXIST_BUT_DO_NOT_SEPARATE"
+#: An attack class that no train unit shows: nothing a generator could learn from, so a reader or a teacher looks at it.
+NEW_CLASS: Final = "NEW_CLASS"
+#: A miss that is not a failure to detect: the scan or the harness stopped, or the release head did flag it and only the block was
+#: advisory. Nothing is learned from it by a reader, a teacher or a generator; it is counted by cause.
+NOT_DETECTION: Final = "NOT_DETECTION"
+CLASSES: Final = (READING_GAP, NO_SEPARATING_FACT, FACTS_EXIST, DO_NOT_SEPARATE, NEW_CLASS, NOT_DETECTION)
+#: The causes: a harness fault or an advisory-only block is stated on the row; the others are read from the scan's gap rules when
+#: every gap of the release is one of them (a gap in a file's own reading is a reading gap, never one of these).
+CAUSES: Final = ("harness_fault", "advisory_only", "timeout", "size_ceiling", "incomplete_scan")
+CAUSE_OF_RULE: Final = {
+    "OPERATIONAL.SCAN.TIMEOUT": "timeout",
+    "OPERATIONAL.SCAN.MEMORY_LIMIT": "size_ceiling",
+    "OPERATIONAL.ARCHIVE.REJECTED": "size_ceiling",
+    "OPERATIONAL.SCAN.INCOMPLETE": "incomplete_scan",
+}
+#: Cost classes of reading a form, in CPU seconds per MiB scanned.
+COST_CLASSES: Final = (("cheap", 1.0), ("moderate", 10.0), ("heavy", float("inf")))
 
 #: Where a classified miss goes. `counted_only` is every miss the leakage gates keep from learning.
 ROUTES: Final = {
     READING_GAP: "reader",
     NO_SEPARATING_FACT: "teacher",
     FACTS_EXIST: "generators",
+    DO_NOT_SEPARATE: "teacher",
+    NEW_CLASS: "reader_or_teacher",
+    NOT_DETECTION: "none",
 }
 COUNTED_ONLY: Final = "counted_only"
 #: The form of a gap no file carries (a timeout, a package-wide limit).
@@ -66,6 +88,11 @@ class MissRow:
     split: str
     label_tier: str
     facts: Mapping[str, Any]
+    attack_class: str = ""
+    harness_fault: bool = False
+    advisory_only: bool = False
+    cpu_seconds: float | None = None
+    size_mib: float | None = None
 
 
 @dataclass(frozen=True)
@@ -80,6 +107,8 @@ class Verdict:
     eligible: bool
     held: tuple[str, ...]
     route: str
+    cause: str = ""
+    cost_class: str = ""
 
 
 @dataclass
@@ -100,6 +129,8 @@ class Report:
         out = {"misses": len(self.verdicts), "stale_facts_version": self.stale}
         out.update({klass.lower(): counted.get(klass, 0) for klass in CLASSES})
         out["fed_to_generators"] = len(self.for_generators())
+        causes = Counter(v.cause for v in self.verdicts if v.cause)
+        out.update({f"cause_{cause}": causes.get(cause, 0) for cause in CAUSES})
         out["held"] = sum(1 for v in self.verdicts if v.held)
         out.update({f"held_{reason}": n for reason, n in sorted(held.items())})
         return out
@@ -125,6 +156,57 @@ class ReadingGaps:
         return tuple(sorted(found))
 
 
+class Cause:
+    """Why a miss is not a failure to detect, when it is not."""
+
+    @staticmethod
+    def of(row: MissRow, gaps: tuple[Gap, ...]) -> str:
+        if row.harness_fault:
+            return "harness_fault"
+        if row.advisory_only:
+            return "advisory_only"
+        causes = {CAUSE_OF_RULE.get(rule) for rule, form in gaps if form == PACKAGE_FORM}
+        if gaps and len(causes) == 1 and None not in causes and all(form == PACKAGE_FORM for _, form in gaps):
+            return next(iter(causes))
+        return ""
+
+
+class Cost:
+    """What it costs to read a form: CPU seconds per MiB, in a class, and the value of reading it per CPU second."""
+
+    @staticmethod
+    def klass(row: MissRow) -> str:
+        if not row.cpu_seconds or not row.size_mib or row.size_mib <= 0:
+            return "unknown"
+        per_mib = row.cpu_seconds / row.size_mib
+        return next(name for name, bound in COST_CLASSES if per_mib < bound)
+
+    @staticmethod
+    def ranked(verdicts: Iterable[Verdict], rows: Mapping[str, MissRow]) -> list[dict[str, Any]]:
+        """The reading gaps that would be read, best first by detection value (the eligible misses it would catch) per CPU second
+        spent reading them. A gap with no cost measured is ranked after every gap that has one."""
+        value: Counter[Gap] = Counter()
+        cpu: Counter[Gap] = Counter()
+        for v in verdicts:
+            if v.klass != READING_GAP or v.route != ROUTES[READING_GAP]:
+                continue
+            seconds = rows[v.key].cpu_seconds if v.key in rows else None
+            for gap in v.gaps:
+                value[gap] += 1
+                cpu[gap] += seconds or 0.0
+        out = [
+            {
+                "gap": gap,
+                "misses": n,
+                "cpu_seconds": cpu[gap],
+                "value_per_cpu_second": (n / cpu[gap]) if cpu[gap] > 0 else None,
+            }
+            for gap, n in value.items()
+        ]
+        out.sort(key=lambda e: (e["value_per_cpu_second"] is None, -(e["value_per_cpu_second"] or 0.0), -e["misses"], e["gap"]))
+        return out
+
+
 class Signature:
     """A release's facts as the scanner's own terms, without the kinds a rule may never use."""
 
@@ -136,6 +218,19 @@ class Signature:
     def distance(signature: frozenset[Term], legit: Iterable[frozenset[Term]]) -> int:
         """The fewest terms of the signature that an established legit release lacks (0: one holds them all)."""
         return min((len(signature - other) for other in legit), default=len(signature))
+
+
+class TermSets:
+    @staticmethod
+    def legit_rates(term_sets: Mapping[str, Iterable[Term]], legit: Iterable[Mapping[str, Any]]) -> dict[str, float]:
+        """For each named term set, the share of the established legit releases that hold every term of it. A generator is given
+        these before it searches: a set most legit releases hold cannot be a rule."""
+        signatures = [Signature.of(f) for f in legit]
+        rates: dict[str, float] = {}
+        for name, terms in term_sets.items():
+            wanted = frozenset(terms)
+            rates[name] = sum(1 for sig in signatures if wanted <= sig) / len(signatures) if signatures else 0.0
+        return rates
 
 
 class Census:
@@ -152,31 +247,57 @@ class Census:
         misses: Iterable[MissRow],
         legit: Iterable[Mapping[str, Any]],
         facts_version: str = FACTS_VERSION,
+        *,
+        train_classes: Iterable[str] | None = None,
+        candidate_terms: Iterable[Term] | None = None,
     ) -> Report:
-        """Classify and route every miss of a window against the established legit releases' facts (same version)."""
+        """Classify and route every miss of a window against the established legit releases' facts (same version).
+
+        `train_classes` are the attack classes the train units show: a miss of another class (one with a class named) is a
+        NEW CLASS. `candidate_terms` are the terms a candidate would use: with them, a miss whose terms of that set are all held
+        by one legit release is a FACTS EXIST BUT DO NOT SEPARATE miss, not one for the generators."""
         legit_signatures = [
             Signature.of(f) for f in legit if f.get("facts_version") == facts_version
         ]
         report = Report(window)
+        known = None if train_classes is None else frozenset(train_classes)
+        candidate = None if candidate_terms is None else frozenset(candidate_terms)
         for row in misses:
             if row.facts.get("facts_version") != facts_version:
                 report.stale += 1
                 continue
-            report.verdicts.append(Census.one(row, legit_signatures))
+            report.verdicts.append(Census.one(row, legit_signatures, known, candidate))
         report.verdicts.sort(key=lambda v: v.key)
         return report
 
     @staticmethod
-    def one(row: MissRow, legit: list[frozenset[Term]]) -> Verdict:
+    def one(
+        row: MissRow,
+        legit: list[frozenset[Term]],
+        known_classes: frozenset[str] | None = None,
+        candidate_terms: frozenset[Term] | None = None,
+    ) -> Verdict:
         eligible, held = Census.eligibility(row)
         gaps = ReadingGaps.of(row.facts)
         distance: int | None = None
-        if gaps:
+        cause = Cause.of(row, gaps)
+        if cause:
+            klass = NOT_DETECTION
+        elif gaps:
             klass = READING_GAP
+        elif known_classes is not None and row.attack_class and row.attack_class not in known_classes:
+            klass = NEW_CLASS
         else:
-            distance = Signature.distance(Signature.of(row.facts), legit)
-            klass = NO_SEPARATING_FACT if distance == 0 else FACTS_EXIST
+            signature = Signature.of(row.facts)
+            distance = Signature.distance(signature, legit)
+            if distance == 0:
+                klass = NO_SEPARATING_FACT
+            elif candidate_terms is not None and Signature.distance(signature & candidate_terms, legit) == 0:
+                klass = DO_NOT_SEPARATE
+            else:
+                klass = FACTS_EXIST
         # Held, fresh, sealed, excluded and silver-labelled misses are counted in their class, with the reason, and go nowhere
         # (a reader built from a held unit's shape is as much a leak as a rule built from it).
         route = ROUTES[klass] if eligible else COUNTED_ONLY
-        return Verdict(row.key, row.family, klass, gaps, distance, eligible, held, route)
+        cost = Cost.klass(row) if klass == READING_GAP else ""
+        return Verdict(row.key, row.family, klass, gaps, distance, eligible, held, route, cause, cost)

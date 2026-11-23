@@ -194,7 +194,7 @@ class Units:
                 self.over_memory(acc)
                 return True, selected
 
-            acc.scanned(entry.rel_path)
+            acc.scanned(entry.rel_path, loaded)
             acc.bytes_scanned += len(loaded.raw)
 
             language = Units.language_of(entry, implied_languages, loaded)
@@ -209,7 +209,7 @@ class Units:
                 if 0 < self.config.limits.max_memory_bytes <= retained:
                     self.archive_over_memory(acc, entry)
                     return True, selected
-                acc.scanned(member.path)
+                acc.scanned(member.path, member.content)
                 acc.bytes_scanned += len(member.content.raw)
                 acc.ledger_tree.append(member.path)
                 yield member

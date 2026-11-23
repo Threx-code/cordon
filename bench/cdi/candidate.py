@@ -15,9 +15,16 @@ from __future__ import annotations
 from typing import Any
 
 from . import schemas
+from .manifests import ManifestConflict, Manifests
 
 _KINDS = frozenset({"rule", "signal_combination", "feature", "model_update", "ecosystem_logic"})
 _LANES = frozenset({"rule_pack", "model"})
+#: What a declarative rule may name: its id and version, where it applies and what it emits. A key outside this list is
+#: code (a script, a handler, an expression to run) or something the loader does not read, and a candidate carrying one is
+#: refused before it exists.
+_DECLARATIVE_KEYS = frozenset(
+    {"rule_schema_version", "id", "enforcement", "signal", "emits", "scope"}
+)
 
 
 class FactoryRejection(Exception):
@@ -49,6 +56,7 @@ class CandidateFactory:
         kind: str,
         lane: str,
         source_misses: list[dict[str, Any]],
+        manifests: Manifests,
         mechanism_addressed: str,
         evidence: str,
         provenance: str,
@@ -69,12 +77,17 @@ class CandidateFactory:
             raise FactoryRejection(f"lane {lane!r} not in {sorted(_LANES)}")
         if lane == "rule_pack" and not rule_pack:
             raise FactoryRejection("a rule_pack candidate must carry a declarative rule_pack")
+        if rule_pack:
+            CandidateFactory.require_declarative(rule_pack)
         if not source_misses:
             raise FactoryRejection("a candidate must derive from at least one miss")
-        # The two-gate rule: every source miss must be train/dev (split is manifest-owned, passed in
-        # on the miss record). A val/held/fresh miss reaching the factory is leakage; refuse it.
+        # The two-gate rule: every source miss must be train/dev. The split is read from the dataset manifests by the miss's artifact digest, never from the miss.
+        # A val/held/fresh miss reaching the factory is leakage; refuse it. An artifact the manifests do not list, or list in two splits, is refused too.
         for m in source_misses:
-            split = m.get("dataset_membership")
+            try:
+                split = manifests.of_miss(m)
+            except ManifestConflict as conflict:
+                raise FactoryRejection(f"miss {m.get('miss_id')!r}: {conflict}") from conflict
             if split not in schemas.FACTORY_SPLITS:
                 raise FactoryRejection(
                     f"miss {m.get('miss_id')!r} split {split!r} is not train/dev; factory refuses it"
@@ -106,7 +119,7 @@ class CandidateFactory:
 
     @staticmethod
     def file_exfil_candidate(
-        source_misses: list[dict[str, Any]], train_dataset_digest: str
+        source_misses: list[dict[str, Any]], train_dataset_digest: str, manifests: Manifests
     ) -> dict[str, Any]:
         return CandidateFactory.make_candidate(
             candidate_id="cdi.skill.file_exfil",
@@ -114,6 +127,7 @@ class CandidateFactory:
             kind="rule",
             lane="rule_pack",
             source_misses=source_misses,
+            manifests=manifests,
             mechanism_addressed="a local file uploaded to a host off this machine (skills class a)",
             evidence="agent_intent file-exfil intent → SUSPECT.AGENT.INTENT.001 (HIGH, third-party)",
             provenance="skills dev scan, wild family misses (train/dev split)",
@@ -141,3 +155,47 @@ class CandidateFactory:
         rejected["status"] = "rejected"
         rejected["rejection_reason"] = reason
         return schemas.Schemas.validate("CandidateDetector", rejected)
+
+    @staticmethod
+    def require_declarative(rule_pack: dict[str, Any]) -> None:
+        """A rule pack names what to look for; it carries no code. Refused: a key the loader does not read (which is how
+        a script or a handler would ride along), and a value that is not text or a plain mapping of text."""
+        outside = sorted(set(rule_pack) - _DECLARATIVE_KEYS)
+        if outside:
+            raise FactoryRejection(
+                f"a candidate is a declarative rule, not code: {', '.join(outside)} is not part of one"
+            )
+        for key, value in rule_pack.items():
+            plain = isinstance(value, str) or (
+                isinstance(value, dict)
+                and all(isinstance(k, str) and isinstance(v, str) for k, v in value.items())
+            )
+            if not plain:
+                raise FactoryRejection(
+                    f"a candidate is a declarative rule, not code: {key} holds more than text"
+                )
+
+    @staticmethod
+    def judged(candidate: dict[str, Any], decision: dict[str, Any]) -> dict[str, Any]:
+        """The candidate after the gate: rejected, with the reasons the gate gave, when the decision rejects it. A decision
+        for another candidate is refused, so one candidate's reasons are never written onto another."""
+        if decision.get("candidate_id") != candidate["candidate_id"]:
+            raise FactoryRejection("that decision is for another candidate")
+        if decision.get("outcome") != "reject":
+            return candidate
+        return CandidateFactory.reject(
+            candidate, f"the gate rejected it: {CandidateFactory.why_rejected(decision)}"
+        )
+
+    @staticmethod
+    def why_rejected(decision: dict[str, Any]) -> str:
+        """The gates that did not pass, each with the reason it wrote, and any reason ids the decision lists; or that the
+        gate rejected it without saying why."""
+        gates = decision.get("gates") if isinstance(decision.get("gates"), dict) else {}
+        failed = [
+            f"{name} ({gate.get('reason') or 'no reason given'})"
+            for name, gate in sorted(gates.items())
+            if isinstance(gate, dict) and gate.get("result") not in ("pass", "not_applicable")
+        ]
+        failed += sorted(str(r) for r in decision.get("reason_ids") or [])
+        return "; ".join(failed) or "no reason given"

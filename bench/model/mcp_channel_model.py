@@ -20,7 +20,7 @@ otherwise, so a file without the block scores as before. `digest` is what the id
 hash of everything that scores a channel, so a change to the description channel cannot pass.
 
     docker run --rm --network none -v "$PWD:/s:ro" -v RETRAINED:/r:ro -v OUT:/o -e PYTHONPATH=/s/src \\
-      python:3.12-slim python /s/bench/model/mcp_channel_model.py /r/mcp-descriptions.json.gz \\
+      python:3.12-slim python /s/bench/model/train.py --area mcp-channel /r/mcp-descriptions.json.gz \\
       --channel return --out /o
 """
 
@@ -124,4 +124,9 @@ class McpChannelModel:
 
 
 if __name__ == "__main__":
+    try:
+        from bench.model.area import EntryPoint
+    except ImportError:  # run as a script from this directory
+        from area import EntryPoint
+    EntryPoint.require(__file__)
     McpChannelModel.main()

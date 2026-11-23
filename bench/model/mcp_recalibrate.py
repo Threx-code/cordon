@@ -17,7 +17,7 @@ rule on that larger pool, and changes nothing else.
 ```
 
     docker run --rm --network none -v "$PWD:/s:ro" -v DEVSET:/d:ro -v OUT:/o -e PYTHONPATH=/s/src \\
-      python:3.12-slim python /s/bench/model/mcp_recalibrate.py /d/devset.jsonl --out /o
+      python:3.12-slim python /s/bench/model/train.py --area mcp-lines /d/devset.jsonl --out /o
 """
 
 from __future__ import annotations
@@ -167,4 +167,9 @@ class McpRecalibrate:
 
 
 if __name__ == "__main__":
+    try:
+        from bench.model.area import EntryPoint
+    except ImportError:  # run as a script from this directory
+        from area import EntryPoint
+    EntryPoint.require(__file__)
     McpRecalibrate.main()

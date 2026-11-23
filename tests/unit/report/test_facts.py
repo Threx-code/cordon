@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
 from cordon_scanner import Scanner
+from cordon_scanner.contracts.digests import ArtifactDigests
 from cordon_scanner.engine.registry import Registry
 from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.config.settings import Config
@@ -13,7 +15,7 @@ from cordon_scanner.foundation.models import Hook, Location
 from cordon_scanner.foundation.results import Dependency, Repository, ScanResult
 from cordon_scanner.report.base import ReportOptions
 from cordon_scanner.report.facts import FACTS_VERSION, ScanFacts
-from support import BENIGN, Support, requires_corpus
+from support import BENIGN, ROOT, Support, requires_corpus
 
 #: Text the package wrote, which must never reach the record: its paths and file names, a message, a host.
 PACKAGE_TEXT = (
@@ -341,8 +343,8 @@ class TestEachFileCarriesHowItIsReached:
         assert entry["reach_depth"] <= 4
         assert "a-name-the-package-chose" not in json.dumps(record)
 
-    def test_the_version_is_four(self) -> None:
-        assert FACTS_VERSION == "4"
+    def test_the_version_is_five(self) -> None:
+        assert FACTS_VERSION == "5"
 
     def test_a_real_scan_classes_a_chain_and_an_orphan(self, tmp_path: Path) -> None:
         (tmp_path / "package.json").write_text(
@@ -461,3 +463,144 @@ class TestPerExtensionCounts:
             assert ScanFacts.extension(path) == (
                 raw if not raw or raw in {"js", "gz", "node"} else "other"
             )
+
+
+class TestFactsVersionFiveBinariesAndToolList:
+    """Version 5 adds the native files a scan read, by digest, and the tools a package declares whole as data, by count and
+    digest. Everything version 4 carried keeps its value."""
+
+    GOLDEN = ROOT / "tests" / "unit" / "contracts" / "tool_list_digests.golden.json"
+    NEW = ("binaries", "binaries_truncated", "tool_list")
+
+    @staticmethod
+    def scan(path: Path) -> dict:
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(path)
+        return ScanFacts.of(result)["package"]
+
+    @staticmethod
+    def package(path: Path, **files: bytes) -> Path:
+        (path / "package.json").write_text(
+            json.dumps({"name": "p", "version": "1.0.0", "main": "index.js"}), encoding="utf-8"
+        )
+        (path / "index.js").write_text("module.exports = 1;\n", encoding="utf-8")
+        for name, content in files.items():
+            (path / name.replace("__", ".")).write_bytes(content)
+        return path
+
+    def test_a_real_scan_lists_the_digest_of_each_native_file_and_no_other(
+        self, tmp_path: Path
+    ) -> None:
+        elf, macho = b"\x7fELF" + bytes(64), b"\xcf\xfa\xed\xfe" + bytes(32)
+        self.package(
+            tmp_path, prebuilt__node=elf, libquiet__so=macho, notes__txt=b"ELF is only a word here"
+        )
+        package = self.scan(tmp_path)
+        assert package["binaries"] == sorted(hashlib.sha256(b).hexdigest() for b in (elf, macho))
+        assert package["binaries_truncated"] is False
+
+    def test_a_windows_executable_is_native_only_when_its_name_says_so(
+        self, tmp_path: Path
+    ) -> None:
+        pe = b"MZ" + bytes(64)
+        self.package(tmp_path, tool__exe=pe, readme__txt=pe)
+        assert self.scan(tmp_path)["binaries"] == [hashlib.sha256(pe).hexdigest()]
+
+    def test_a_package_with_no_native_file_reports_an_empty_list_not_a_missing_one(
+        self, tmp_path: Path
+    ) -> None:
+        package = self.scan(self.package(tmp_path))
+        assert package["binaries"] == [] and package["binaries_truncated"] is False
+
+    def test_the_same_file_twice_is_one_digest(self, tmp_path: Path) -> None:
+        elf = b"\x7fELF" + bytes(64)
+        self.package(tmp_path, a__so=elf, b__so=elf)
+        assert self.scan(tmp_path)["binaries"] == [hashlib.sha256(elf).hexdigest()]
+
+    def test_the_list_is_capped_and_says_it_was(self) -> None:
+        digests = tuple(f"{i:064x}" for i in range(300))
+        package = ScanFacts.of(FactsKit.result(binaries=digests))["package"]
+        assert package["binaries"] == list(digests[:256])
+        assert package["binaries_truncated"] is True
+
+    def test_a_file_that_could_not_be_hashed_whole_makes_the_list_a_part(self) -> None:
+        package = ScanFacts.of(FactsKit.result(binaries=("ab" * 32,), binaries_complete=False))[
+            "package"
+        ]
+        assert package["binaries"] == ["ab" * 32] and package["binaries_truncated"] is True
+
+    def test_a_scan_that_did_not_collect_them_says_nothing(self) -> None:
+        package = ScanFacts.of(FactsKit.result())["package"]
+        assert package["binaries"] is None and package["binaries_truncated"] is False
+
+    def test_the_tool_list_digest_is_the_one_in_the_shared_vectors(self) -> None:
+        vectors = {
+            v["name"]: v for v in json.loads(self.GOLDEN.read_text(encoding="utf-8"))["vectors"]
+        }
+        vector = vectors["two tools"]
+        package = ScanFacts.of(FactsKit.result(tool_list=tuple(vector["tools"])))["package"]
+        assert package["tool_list"] == {"count": len(vector["tools"]), "digest": vector["digest"]}
+
+    def test_the_record_carries_the_count_and_digest_never_a_tools_text(self) -> None:
+        tools = (
+            {
+                "name": "wipe-everything",
+                "description": "Deletes it all",
+                "inputSchema": {"type": "object"},
+            },
+        )
+        text = json.dumps(ScanFacts.of(FactsKit.result(tool_list=tools)))
+        assert "wipe-everything" not in text and "Deletes it all" not in text
+
+    def test_a_manifest_that_declares_whole_tools_gives_their_digest(self, tmp_path: Path) -> None:
+        tools = [
+            {"name": "search", "description": "Find things", "inputSchema": {"type": "object"}},
+            {"name": "read", "description": "Read one", "inputSchema": {"type": "object"}},
+        ]
+        self.package(tmp_path)
+        (tmp_path / "manifest.json").write_text(json.dumps({"tools": tools}), encoding="utf-8")
+        listed = self.scan(tmp_path)["tool_list"]
+        assert listed == {"count": 2, "digest": ArtifactDigests.of_tool_list(tools)}
+
+    def test_a_list_that_leaves_out_a_schema_a_description_or_a_name_is_not_a_tool_list(
+        self, tmp_path: Path
+    ) -> None:
+        for partial in (
+            {"name": "a", "description": "d"},
+            {"name": "a", "inputSchema": {}},
+            {"description": "d", "inputSchema": {}},
+            {"name": "", "description": "d", "inputSchema": {}},
+            "a",
+        ):
+            for child in tmp_path.iterdir():
+                child.unlink()
+            self.package(tmp_path)
+            (tmp_path / "manifest.json").write_text(
+                json.dumps({"tools": [partial]}), encoding="utf-8"
+            )
+            assert self.scan(tmp_path)["tool_list"] is None
+
+    def test_two_files_that_each_declare_tools_are_not_read_as_one_list(
+        self, tmp_path: Path
+    ) -> None:
+        tools = [{"name": "a", "description": "d", "inputSchema": {}}]
+        self.package(tmp_path)
+        (tmp_path / "manifest.json").write_text(json.dumps({"tools": tools}), encoding="utf-8")
+        (tmp_path / "server.json").write_text(json.dumps({"tools": tools}), encoding="utf-8")
+        assert self.scan(tmp_path)["tool_list"] is None
+
+    def test_what_version_four_held_is_unchanged_and_only_the_new_fields_and_the_digest_differ(
+        self,
+    ) -> None:
+        plain = ScanFacts.of(FactsKit.result())
+        richer = ScanFacts.of(
+            FactsKit.result(
+                binaries=("ab" * 32,),
+                tool_list=({"name": "a", "description": "d", "inputSchema": {}},),
+            )
+        )
+        assert {k: v for k, v in plain.items() if k not in ("package", "digest")} == {
+            k: v for k, v in richer.items() if k not in ("package", "digest")
+        }
+        strip = lambda record: {k: v for k, v in record["package"].items() if k not in self.NEW}  # noqa: E731
+        assert strip(plain) == strip(richer)
+        assert plain["facts_version"] == "5" and set(self.NEW) <= set(plain["package"])

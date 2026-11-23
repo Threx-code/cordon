@@ -405,3 +405,57 @@ class TestAChangeDetectorIsLearnedFromPairs:
         run = Distiller().distill([])
         assert run.candidate is None
         assert Distiller().generator == "G2"
+
+
+class TestWhatMutationFoundLoose:
+    """The survivors of the first mutation run of `pairs.py`, each pinned: the digests a pair names, a local dependency counted apart, a record
+    without dependencies, a fall in the extension counts, and a pair record with no field."""
+
+    def test_the_pair_names_the_digests_of_both_records(self) -> None:
+        before, after = PairKit.before(), PairKit.after_all_six()
+        pair = PairFacts.of(before, after, previous_is_clean=True)
+        assert (pair["previous"], pair["current"]) == (before["digest"], after["digest"])
+
+    def test_a_new_local_dependency_is_counted_apart_from_a_direct_one(self) -> None:
+        previous = PairKit.facts([], direct=2, local=0)
+        current = PairKit.facts([], direct=2, local=1)
+        pair = PairFacts.of(previous, current, previous_is_clean=True)
+        assert (pair["new_direct_dependencies"], pair["new_local_dependencies"]) == (0, 1)
+
+    def test_records_without_a_dependency_table_have_no_new_dependency(self) -> None:
+        bare = {"facts_version": FACTS_VERSION, "package": {}, "files": []}
+        pair = PairFacts.of(bare, bare, previous_is_clean=True)
+        assert (pair["new_direct_dependencies"], pair["new_local_dependencies"]) == (0, 0)
+
+    def test_a_fall_in_the_extension_counts_is_not_a_new_native_file(self) -> None:
+        previous = PairKit.facts([], extensions={"node": 3, "so": 2})
+        current = PairKit.facts([], extensions={"node": 1, "so": 2})
+        assert PairFacts.of(previous, current, previous_is_clean=True)["new_binary_files"] == 0
+
+    def test_a_pair_record_with_no_field_has_no_term(self) -> None:
+        assert PairTerms.of({}) == set()
+
+    def test_a_new_direct_and_a_new_local_dependency_make_one_dependency_term(self) -> None:
+        pair = {"new_direct_dependencies": 1, "new_local_dependencies": 1}
+        assert PairTerms.of(pair) == {("change", "dependency")}
+
+
+class TestWhatMutationLeftLooseInThePairs:
+    def test_a_record_with_no_dependency_table_against_one_with_a_direct_dependency(self) -> None:
+        bare = {"facts_version": FACTS_VERSION, "package": {}, "files": []}
+        current = PairKit.facts([], direct=1)
+        pair = PairFacts.of(bare, current, previous_is_clean=True)
+        assert pair["new_direct_dependencies"] == 1
+
+    def test_a_new_local_dependency_alone_is_a_dependency_term(self) -> None:
+        assert PairTerms.of({"new_direct_dependencies": 0, "new_local_dependencies": 1}) == {
+            ("change", "dependency")
+        }
+
+    def test_the_publisher_term_comes_back_when_the_withheld_set_is_emptied(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(PairTerms, "WITHHELD", frozenset())
+        assert ("change", "publisher") in PairTerms.of({"publisher_changed": True})
+        assert ("change", "publisher") not in PairTerms.of({"publisher_changed": False})
+        assert ("change", "publisher") not in PairTerms.of({})

@@ -13,6 +13,7 @@ from support import ROOT as REPO
 
 sys.path.insert(0, str(REPO))
 
+from bench.cdi.census import Signature
 from bench.cdi.distill import Unit
 from bench.cdi.siblings import KIND, Siblings
 
@@ -244,3 +245,83 @@ class TestOnlyAdmittedReleasesFormAFamily:
         cores, refused = Siblings().families(SiblingKit.family("fam-a", 4) + sealed)
         assert cores == []
         assert refused["split_sealed"] == 1_000
+
+
+class TestWhatMutationFoundLoose:
+    """The survivors of the first mutation run of `siblings.py`, each pinned: the defaults, an immutable core, who forms a family, the exact edges
+    of the two refusals, the legit count a core reports, and a refusal counted once per family."""
+
+    def test_the_defaults_are_the_ones_the_design_names(self) -> None:
+        siblings = Siblings()
+        assert (siblings.support, siblings.min_core, siblings.budget) == (1.0, 3, 0.005)
+
+    def test_a_core_cannot_be_changed(self) -> None:
+        import dataclasses
+
+        cores, _ = Siblings().families(SiblingKit.family("fam-a", 4) + SiblingKit.legit(1_000))
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            cores[0].family = "other"  # type: ignore[misc]
+
+    def test_only_a_malicious_unit_with_a_family_forms_one(self) -> None:
+        nameless = [replace(u, family="") for u in SiblingKit.family("x", 4)]
+        legit_with_a_family = [replace(u, family="fam-l") for u in SiblingKit.legit(1_000)]
+        cores, refused = Siblings().families(nameless + legit_with_a_family)
+        assert (cores, refused) == ([], {})
+
+    def test_a_core_of_exactly_the_minimum_is_used_and_one_term_short_is_not(self) -> None:
+        units = SiblingKit.family("fam-a", 4) + SiblingKit.legit(1_000)
+        size = len(Siblings().core_of([Signature.of(u.facts) for u in units[:4]]))
+        used, _ = Siblings(min_core=size).families(units)
+        short, refused = Siblings(min_core=size + 1).families(units)
+        assert [c.family for c in used] == ["fam-a"]
+        assert (short, refused) == ([], {"core_too_small": 1})
+
+    def test_a_core_whose_legit_bound_equals_the_budget_is_used(self) -> None:
+        from statistics import NormalDist
+
+        from bench.cdi.distill import Wilson
+
+        bound = Wilson.upper(0, 1_000, NormalDist().inv_cdf(1 - 0.05))
+        units = SiblingKit.family("fam-a", 4) + SiblingKit.legit(1_000)
+        assert [c.family for c in Siblings(budget=bound).families(units)[0]] == ["fam-a"]
+        assert Siblings(budget=bound - 1e-9).families(units)[0] == []
+
+    def test_a_core_reports_how_many_legit_releases_hold_it(self) -> None:
+        holding = [replace(u, key="legit-holds", family="") for u in SiblingKit.family("copy", 1)]
+        units = (
+            SiblingKit.family("fam-a", 4)
+            + SiblingKit.legit(1_000)
+            + [replace(holding[0], label="legit")]
+        )
+        cores, _ = Siblings(budget=0.02).families(units)
+        assert [(c.family, c.legit_fires, c.legit_units) for c in cores] == [("fam-a", 1, 1_001)]
+
+    def test_each_refusal_is_counted_once_per_family(self) -> None:
+        plain = [(True, ("import_entry",), ("egress",))]
+        small = [
+            Unit(f"s{i}", "mal", f"small{i}", "npm", "s0", "train", SiblingKit.facts(plain))
+            for i in range(2)
+        ]
+        _, refused = Siblings().families(small + SiblingKit.legit(1_000))
+        assert refused == {"core_too_small": 2}
+        shape = [(True, ("import_entry",), ("decode", "egress"))]
+        common = [
+            Unit(f"c{i}", "mal", f"common{i}", "npm", "s0", "train", SiblingKit.facts(shape))
+            for i in range(2)
+        ]
+        _, refused = Siblings().families(common + SiblingKit.legit(1_000, decoding_share=10))
+        assert refused == {"over_legit_budget": 2}
+
+
+class TestASimilarityIsGivenToSixDecimals:
+    def test_one_term_of_three_is_a_third_to_six_decimals(self) -> None:
+        from bench.cdi.siblings import FamilyCore
+
+        core = FamilyCore(
+            "fam-a", frozenset({("file", "any", "egress")}), frozenset({"m"}), 0, 1_000
+        )
+        facts = SiblingKit.facts([(False, (), ("egress",))])
+        facts["package"]["hooks"] = [{"kind": "postinstall", "programs": []}]
+        assert len(Signature.of(facts)) == 3
+        (hit,) = Siblings.find([core], [("fresh", facts)])
+        assert hit["similarity"] == 0.333333
