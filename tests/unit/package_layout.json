@@ -973,6 +973,7 @@
   "test_composites.py": "decide",
   "test_semantics.py": "detect/agents",
   "test_agents.py": "detect/agents",
+  "test_agents_never_raise.py": "detect/agents",
   "test_agent_planting.py": "detect/agents",
   "test_remote_control.py": "detect/agents",
   "test_aibom.py": "report",

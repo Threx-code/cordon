@@ -114,7 +114,7 @@ class ExtensionNames:
 
     @staticmethod
     def _semver(ref: str) -> tuple[int, int, int] | None:
-        match = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", ref)
+        match = re.fullmatch(r"v?(\d{1,9})\.(\d{1,9})\.(\d{1,9})", ref)
         return (int(match.group(1)), int(match.group(2)), int(match.group(3))) if match else None
 
     @staticmethod
