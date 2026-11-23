@@ -16,6 +16,7 @@ import json
 from typing import Any, ClassVar
 
 from cordon_scanner.intel.provenance import _ed25519
+from cordon_scanner.rules.feed_floor import FeedFloor
 from cordon_scanner.rules.warn_list import WarnList
 
 
@@ -45,6 +46,20 @@ class PackSignatures:
             return bool(_ed25519.Ed25519.verify(bytes.fromhex(public), message, bytes.fromhex(sig)))
         except ValueError:
             return False
+
+    @classmethod
+    def delivered_status(cls) -> str:
+        """`on`, or `off: <why>` when this release refuses every delivered rule pack because it pins no key to check its two signatures against (the scan's intel status carries it)."""
+        if not FeedFloor.REQUIRE_PACK_SIGNATURES:
+            return "on"
+        missing = [
+            name
+            for name, keys in (("lab", cls.LAB_KEYS), ("pack-signer", cls.PACK_KEYS))
+            if not keys
+        ]
+        if missing:
+            return f"off: no {' or '.join(missing)} key is pinned, so no delivered rule pack can be verified and the bundled rules run alone"
+        return "on"
 
     @classmethod
     def warn_problem(cls, entry: dict[str, Any], statement: dict[str, Any]) -> str | None:

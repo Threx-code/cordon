@@ -137,10 +137,9 @@ class TestTheReleaseDefault:
         import importlib
 
         floor = importlib.import_module("cordon_scanner.rules.feed_floor")
-        assert (
-            "REQUIRE_PACK_SIGNATURES: ClassVar[bool] = True"
-            in (ROOT / "src/cordon_scanner/rules/feed_floor.py").read_text()
-        )
+        assert "REQUIRE_PACK_SIGNATURES: ClassVar[bool] = True" in (
+            ROOT / "src/cordon_scanner/rules/feed_floor.py"
+        ).read_text(encoding="utf-8")
         assert floor.FeedFloor is FeedFloor
         assert LAB not in PackSignatures.LAB_KEYS and SIGNER not in PackSignatures.PACK_KEYS
 
@@ -151,31 +150,25 @@ class TestTheScanSaysDeliveredPacksAreOff:
     def test_a_release_with_no_pinned_key_says_off_and_names_the_missing_keys(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from cordon_scanner.intel.malware.feed import IntelStatus
-
         monkeypatch.setattr(FeedFloor, "REQUIRE_PACK_SIGNATURES", True)
-        status = IntelStatus("package", None).to_dict()["delivered_packs"]
+        status = PackSignatures.delivered_status()
         assert (
             status.startswith("off: no lab or pack-signer key is pinned")
             and "bundled rules run alone" in status
         )
 
     def test_with_both_keys_pinned_it_says_on(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from cordon_scanner.intel.malware.feed import IntelStatus
-
         monkeypatch.setattr(FeedFloor, "REQUIRE_PACK_SIGNATURES", True)
         monkeypatch.setattr(PackSignatures, "LAB_KEYS", (LAB,))
         monkeypatch.setattr(PackSignatures, "PACK_KEYS", (SIGNER,))
-        assert IntelStatus("package", None).to_dict()["delivered_packs"] == "on"
+        assert PackSignatures.delivered_status() == "on"
 
     def test_with_only_the_pack_key_missing_it_names_that_one(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from cordon_scanner.intel.malware.feed import IntelStatus
-
         monkeypatch.setattr(FeedFloor, "REQUIRE_PACK_SIGNATURES", True)
         monkeypatch.setattr(PackSignatures, "LAB_KEYS", (LAB,))
-        assert "no pack-signer key" in IntelStatus("package", None).to_dict()["delivered_packs"]
+        assert "no pack-signer key" in PackSignatures.delivered_status()
 
     def test_a_scan_result_carries_it_in_its_intel_status(
         self, tmp_path, monkeypatch: pytest.MonkeyPatch

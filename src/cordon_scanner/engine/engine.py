@@ -74,6 +74,7 @@ from cordon_scanner.foundation.results import (
 )
 from cordon_scanner.foundation.scoring import RiskScorer
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
+from cordon_scanner.rules.pack_signatures import PackSignatures
 from cordon_scanner.sources.base import FileSource, WorkingTreeSource
 from cordon_scanner.sources.registry import ArchiveReader
 from cordon_scanner.version import SCHEMA_VERSION, __version__
@@ -440,7 +441,7 @@ class Engine:
                 )
             )
         self._reuse_status(acc)
-        return status.to_dict()
+        return {**status.to_dict(), "delivered_packs": PackSignatures.delivered_status()}
 
     def _reuse_status(self, acc: Accumulator) -> None:
         """The code-reuse index (item 54), when this build ships one: an index that is malformed,
