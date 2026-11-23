@@ -14,10 +14,20 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final
 from cordon_scanner.version import __version__
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
     from cordon_scanner.cloud.local_store import LocalStore
     from cordon_scanner.foundation.results import ScanResult
 
 KIND: Final = "facts-counts"
+AUDIT_KIND: Final = "facts-audit"
+HOST_FLOOR: Final = 5
+"""A host leaves a machine only when this many organisations report it."""
+ANONYMITY_FLOOR: Final = 5
+"""A counts record leaves a machine only when this many scans share its ecosystem and verdict."""
+FORBIDDEN_KEYS: Final = frozenset(
+    {"path", "paths", "path_digest", "config_hash", "rulepack_hash", "pack_hash", "hosts", "names"}
+)
 
 
 class FactsExport:
@@ -49,13 +59,80 @@ class FactsExport:
             "rules": dict(sorted(fired.items())),
         }
 
+    @staticmethod
+    def silver(
+        result: ScanResult, organisations: Mapping[str, int] | None = None
+    ) -> dict[str, Any]:
+        """The counts record plus the hosts the scan reached that at least `HOST_FLOOR` organisations report.
+
+        `organisations` is the delivered list of hosts with the number of organisations reporting each; a host
+        not on it, or on it below the floor, is dropped, and with no list no host is kept."""
+        record = FactsExport.counts(result)
+        seen = organisations or {}
+        reached = {h for hosts, _ in (result.destinations or {}).values() for h in hosts}
+        record["hosts"] = sorted(h for h in reached if seen.get(h, 0) >= HOST_FLOOR)
+        record["hosts_dropped"] = len(reached) - len(record["hosts"])
+        return record
+
+    @staticmethod
+    def anonymity_problems(
+        records: Sequence[Mapping[str, Any]], floor: int = ANONYMITY_FLOOR
+    ) -> list[str]:
+        """Why a batch of counts records may not leave the machine: a forbidden key, or a group of scans (same
+        ecosystem and verdict) smaller than `floor`."""
+        problems = [
+            f"a record carries {key!r}"
+            for key in sorted({k for r in records for k in r} & FORBIDDEN_KEYS)
+        ]
+        groups = Counter(
+            (r.get("ecosystem"), tuple(sorted(r.get("verdicts", {})))) for r in records
+        )
+        problems += [
+            f"{n} scans share {g[0]}/{'+'.join(g[1])}, fewer than {floor}"
+            for g, n in sorted(groups.items(), key=str)
+            if n < floor
+        ]
+        return problems
+
     @classmethod
-    def queue(cls, mode: str, store: LocalStore, result: ScanResult) -> bool:
-        """Queue the counts record when the mode asks for it; whether anything was queued."""
-        if cls.mode_of(mode) == "off" or (mode == "silver" and not cls.consent()):
+    def release(cls, store: LocalStore, floor: int = ANONYMITY_FLOOR) -> list[dict[str, Any]]:
+        """The queued counts records, or `ValueError` when a group is below the floor or a record is not counts only."""
+        records = [json.loads(item.body) for item in store.pending() if item.kind == KIND]
+        problems = cls.anonymity_problems(records, floor)
+        if problems:
+            raise ValueError("the facts cannot leave this machine: " + "; ".join(problems))
+        return records
+
+    @classmethod
+    def queue(
+        cls,
+        mode: str,
+        store: LocalStore,
+        result: ScanResult,
+        *,
+        consent: bool | None = None,
+        organisations: Mapping[str, int] | None = None,
+    ) -> bool:
+        """Queue the record the mode asks for; whether anything was queued. `silver` needs consent and then
+        carries the hosts at or above the floor, with one audit record of how many hosts were kept and dropped."""
+        if cls.mode_of(mode) == "off":
             return False
-        body = json.dumps(cls.counts(result), sort_keys=True, separators=(",", ":")).encode()
-        return store.enqueue(KIND, body)
+        if mode == "silver" and not (cls.consent() if consent is None else consent):
+            return False
+        record = cls.silver(result, organisations) if mode == "silver" else cls.counts(result)
+        queued = store.enqueue(
+            KIND, json.dumps(record, sort_keys=True, separators=(",", ":")).encode()
+        )
+        if queued and mode == "silver":
+            audit = {
+                "hosts_sent": len(record["hosts"]),
+                "hosts_dropped": record["hosts_dropped"],
+                "floor": HOST_FLOOR,
+            }
+            store.enqueue(
+                AUDIT_KIND, json.dumps(audit, sort_keys=True, separators=(",", ":")).encode()
+            )
+        return queued
 
 
-__all__ = ["KIND", "FactsExport"]
+__all__ = ["ANONYMITY_FLOOR", "AUDIT_KIND", "HOST_FLOOR", "KIND", "FactsExport"]

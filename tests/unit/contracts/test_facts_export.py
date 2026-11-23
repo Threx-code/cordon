@@ -6,6 +6,7 @@ the device outbox holding counts and rule ids only, never a package name, path, 
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import socket
 from pathlib import Path
@@ -14,7 +15,13 @@ from typing import Any
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.cloud.agent.facts_export import KIND, FactsExport
+from cordon_scanner.cloud.agent.facts_export import (
+    ANONYMITY_FLOOR,
+    AUDIT_KIND,
+    HOST_FLOOR,
+    KIND,
+    FactsExport,
+)
 from cordon_scanner.cloud.local_store import LocalStore
 from cordon_scanner.foundation.config.settings import Config
 
@@ -121,3 +128,93 @@ class TestSilverWaitsForConsent:
         result = Scan.result(tmp_path / "pkg")
         with pytest.raises(ValueError, match="facts_export is one of"):
             FactsExport.queue("everything", LocalStore(tmp_path / "store"), result)
+
+
+class TestSilverCarriesOnlyHostsManyOrganisationsReport:
+    COMMON = "registry.example.invalid"
+    RARE = "only-we-use-this.example.invalid"
+
+    def result(self, tmp_path: Path) -> Any:
+        (tmp_path / "pkg").mkdir()
+        result = Scan.result(tmp_path / "pkg")
+        return dataclasses.replace(
+            result, destinations={"lib/index.js": ((self.COMMON, self.RARE, SECRET_HOST), ())}
+        )
+
+    def test_a_host_seen_by_fewer_than_the_floor_is_dropped(self, tmp_path: Path) -> None:
+        store = LocalStore(tmp_path / "store")
+        seen = {self.COMMON: HOST_FLOOR, self.RARE: HOST_FLOOR - 1}
+        assert FactsExport.queue(
+            "silver", store, self.result(tmp_path), consent=True, organisations=seen
+        )
+        (record,) = Scan.pending(store)
+        assert record["hosts"] == [self.COMMON] and record["hosts_dropped"] == 2
+        assert self.RARE not in json.dumps(record) and SECRET_HOST not in json.dumps(record)
+
+    def test_with_no_delivered_list_no_host_is_kept(self, tmp_path: Path) -> None:
+        store = LocalStore(tmp_path / "store")
+        FactsExport.queue("silver", store, self.result(tmp_path), consent=True)
+        (record,) = Scan.pending(store)
+        assert record["hosts"] == []
+
+    def test_silver_is_sent_only_with_consent_and_then_leaves_an_audit_record(
+        self, tmp_path: Path
+    ) -> None:
+        result = self.result(tmp_path)
+        store = LocalStore(tmp_path / "store")
+        seen = {self.COMMON: HOST_FLOOR}
+        assert FactsExport.queue("silver", store, result, organisations=seen) is False
+        assert (
+            FactsExport.queue("silver", store, result, consent=False, organisations=seen) is False
+        )
+        assert store.pending() == []
+        assert FactsExport.queue("silver", store, result, consent=True, organisations=seen) is True
+        audit = [json.loads(i.body) for i in store.pending() if i.kind == AUDIT_KIND]
+        assert audit == [{"floor": HOST_FLOOR, "hosts_dropped": 2, "hosts_sent": 1}]
+
+
+class TestCountsLeaveOnlyInGroupsAtTheFloor:
+    @staticmethod
+    def record(ecosystem: str = "npm", verdict: str = "block") -> dict[str, Any]:
+        return {
+            "scanner": "1",
+            "ecosystem": ecosystem,
+            "files_scanned": 3,
+            "verdicts": {verdict: 1},
+            "rules": {"X.1": 1},
+        }
+
+    def test_a_group_below_the_floor_fails_the_export(self, tmp_path: Path) -> None:
+        store = LocalStore(tmp_path / "store")
+        for n in range(ANONYMITY_FLOOR - 1):
+            store.enqueue(KIND, json.dumps({**self.record(), "files_scanned": n}).encode())
+        with pytest.raises(ValueError, match="fewer than"):
+            FactsExport.release(store)
+
+    def test_a_group_at_the_floor_is_released(self, tmp_path: Path) -> None:
+        store = LocalStore(tmp_path / "store")
+        for n in range(ANONYMITY_FLOOR):
+            store.enqueue(KIND, json.dumps({**self.record(), "files_scanned": n}).encode())
+        assert len(FactsExport.release(store)) == ANONYMITY_FLOOR
+
+    @pytest.mark.parametrize(
+        "key", ["path_digest", "config_hash", "rulepack_hash", "paths", "hosts"]
+    )
+    def test_a_record_with_a_path_key_or_a_hash_of_the_configuration_or_a_private_pack_is_refused(
+        self, key: str
+    ) -> None:
+        problems = FactsExport.anonymity_problems([{**self.record(), key: "x"}] * ANONYMITY_FLOOR)
+        assert problems == [f"a record carries {key!r}"]
+
+    def test_the_counts_record_a_scan_makes_has_none_of_those_keys(self, tmp_path: Path) -> None:
+        (tmp_path / "pkg").mkdir()
+        record = FactsExport.counts(Scan.result(tmp_path / "pkg"))
+        assert not set(record) & {
+            "path",
+            "paths",
+            "path_digest",
+            "config_hash",
+            "rulepack_hash",
+            "pack_hash",
+            "hosts",
+        }
