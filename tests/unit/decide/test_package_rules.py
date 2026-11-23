@@ -321,14 +321,10 @@ class TestARenderedPackCarriesN:
             "predicate": [["file", "unreached", "egress"]],
             "predicate_digest": "ab" * 32,
             "train": {"families": 4, "legit_upper": 0.004, "legit_units": 1500, "legit_hits": 3},
-            "confirm": {"families": 3, "legit_upper": 0.005},
+            "confirm": {"families": 3, "legit_upper": 0.005, "legit_n": 1500, "legit_fires": 3},
         }
-        text = PackRenderer.render(candidate, "LEARNED.TEST.001")
-        assert (
-            "      n: 1500\n" in text
-            and "      legit_rate: 0.002000\n" in text
-            and "      families: 4\n" in text
-        )
+        text = PackRenderer.render(candidate, "LEARNED.TEST.001", batch="batch-one")
+        assert "n: 1500}" in text and "legit_rate: 0.002" in text and "families: 4" in text
 
 
 class TestADistilledPredicateRendersToAPackThatFiresOnItsFixtureOnly:
@@ -338,13 +334,13 @@ class TestADistilledPredicateRendersToAPackThatFiresOnItsFixtureOnly:
         "predicate": [["file", "unreached", "egress", "spawn"]],
         "predicate_digest": "cd" * 32,
         "train": {"families": 4, "legit_upper": 0.004, "legit_units": 1500, "legit_hits": 3},
-        "confirm": {"families": 3, "legit_upper": 0.005},
+        "confirm": {"families": 3, "legit_upper": 0.005, "legit_n": 1500, "legit_fires": 3},
     }
 
     def rendered(self) -> str:
         from bench.cdi.distill import PackRenderer
 
-        return PackRenderer.render(self.CANDIDATE, "LEARNED.TEST.001")
+        return PackRenderer.render(self.CANDIDATE, "LEARNED.TEST.001", batch="batch-one")
 
     def test_it_fires_on_the_fixture(self, tmp_path) -> None:
         result = PackageKit.scan(

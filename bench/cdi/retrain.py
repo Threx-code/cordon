@@ -32,7 +32,9 @@ class RetrainRefused(ValueError):
 class TrainingList:
     @staticmethod
     def build(
-        standing: Iterable[str], captures: Iterable[Mapping[str, Any]], held_out: frozenset[str] = frozenset()
+        standing: Iterable[str],
+        captures: Iterable[Mapping[str, Any]],
+        held_out: frozenset[str] = frozenset(),
     ) -> dict[str, Any]:
         """The standing ids plus each capture labelled by two distinct reviewers. A capture is `{"id", "reviewers": [...]}`."""
         ids = set(standing)
@@ -52,7 +54,9 @@ class TrainingList:
 
 class Cadence:
     @staticmethod
-    def due(now: float, last_run: float | None, every_seconds: float, new_batch: bool) -> str | None:
+    def due(
+        now: float, last_run: float | None, every_seconds: float, new_batch: bool
+    ) -> str | None:
         """Why a retrain runs now (`batch` or `cadence`), or None when it does not."""
         if new_batch:
             return "batch"
@@ -77,8 +81,12 @@ class Retrain:
         """One retrain. `train(ids)` returns the model's description (`model`, `training_list_sha`); `evidence(model)` the numbers
         `ModelAcceptance` reads; `shadow(model)` records the shadow run."""
         model = dict(train(list(training["ids"])))
-        if not model.get("model") or not str(model.get("training_list_sha", "")).startswith("sha256:"):
-            raise RetrainRefused("the trainer gave no model or no training list hash: it did not run through the entry point")
+        if not model.get("model") or not str(model.get("training_list_sha", "")).startswith(
+            "sha256:"
+        ):
+            raise RetrainRefused(
+                "the trainer gave no model or no training list hash: it did not run through the entry point"
+            )
         report = ModelAcceptance.report(evidence(model))
         shadow_run: dict[str, Any] | None = None
         if report["accepted"]:
@@ -170,5 +178,3 @@ class RetrainCheck:
                     f"{area}: the new line blocks {after} of {len(shared)} established legit units, the last one {before}"
                 )
         return reasons
-
-

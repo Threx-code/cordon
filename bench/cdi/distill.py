@@ -34,7 +34,6 @@ from dataclasses import dataclass, field
 from statistics import NormalDist
 from typing import TYPE_CHECKING, Any, Final
 
-from bench.cdi.gate import Gate
 from bench.cdi.leakage import Leakage
 
 from cordon_scanner.rules.fact_terms import FactTerms
@@ -445,9 +444,13 @@ class PackRenderer:
         learned = ""
         if batch is not None:
             if not PackRenderer.BATCH.fullmatch(batch):
-                raise ValueError(f"a batch label is 1 to 64 of letters, digits and . _ : -, not {batch!r}")
+                raise ValueError(
+                    f"a batch label is 1 to 64 of letters, digits and . _ : -, not {batch!r}"
+                )
             if not confirm.get("legit_n"):
-                raise ValueError("the candidate has no confirm legit count: its rate cannot be stated")
+                raise ValueError(
+                    "the candidate has no confirm legit count: its rate cannot be stated"
+                )
             rate = confirm["legit_fires"] / confirm["legit_n"]
             high = max(float(confirm["legit_upper"]), rate)
             learned = (

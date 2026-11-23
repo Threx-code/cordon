@@ -1,7 +1,8 @@
-# ruff: noqa
+# ruff: noqa: F401, PLR, C901, ANN, S, ARG, RUF012, E501, D, N, SIM, PERF, B, FBT, TRY, EM, RET, PT, UP, FURB, PLW, PLC, A, T20, ERA, INP, SLF, PIE, TC, ISC, RSE
 """The JavaScript token scan as it was before template interpolations were scanned in place (a reference copy, kept only so an equivalence test can hold the new scan to it).
 
 It re-slices the text for each `${}` and reads its tokens from the slice, then shifts them back. Do not use it anywhere else."""
+
 from __future__ import annotations
 
 import json
@@ -45,7 +46,6 @@ _PUNCT_BY_FIRST: Final = {c: tuple(p for p in _PUNCT if p[0] == c) for c in {p[0
 _NAME_START: Final = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$")
 _NAME_CHAR: Final = _NAME_START | frozenset("0123456789")
 _NUMBER: Final = re.compile(r"0[xX][0-9a-fA-F]{1,16}|\d{1,20}(?:\.\d{1,20})?(?:[eE][-+]?\d{1,4})?")
-
 
 
 class ReferenceScan:
@@ -243,7 +243,9 @@ class ReferenceScan:
                 if j > start:
                     if len(got) > 1:
                         got.append(Tok("punct", "+", start, start))
-                    got.append(Tok("str", ReferenceScan._unquote("`" + text[start:j] + "`"), start, j))
+                    got.append(
+                        Tok("str", ReferenceScan._unquote("`" + text[start:j] + "`"), start, j)
+                    )
                 if c == "`":
                     got.append(Tok("punct", ")", j, j + 1))
                     out.extend(got)
@@ -310,4 +312,3 @@ class ReferenceScan:
             return re.sub(r"\\x([0-9a-fA-F]{2})", lambda x: chr(int(x.group(1), 16)), body)
 
     # -- the entry point -------------------------------------------------------------------------
-
