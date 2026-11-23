@@ -64,6 +64,8 @@ except ImportError:  # pragma: no cover - script invocation puts bench/model on 
     _sys.path.insert(0, str(_pl.Path(__file__).resolve().parents[2]))
     from bench.tools.content import Content
 
+from bench.model.capacity import Capacity
+
 #: Findings the benign measure does not count: a secret, a policy choice, a known vulnerability or
 #: the scan's own notes are not a malware verdict (review 98).
 NOT_MALWARE = ("SECRET.", "POLICY.", "VULNERABLE.", "OPERATIONAL.")
@@ -475,6 +477,24 @@ class VerdictTrain:
         return float(grid[lo])
 
     @staticmethod
+    def search_capacity(x, y, families: list[str], build, grid=None, folds=None) -> dict[str, Any]:
+        """The capacity record for rows `x`, `y` whose malware families (one name per row) are `families`: each grid point is fitted on the rows of the fit families and scored by the share of held-out malware scored above the 99th percentile of held-out legitimate rows."""
+        import numpy as np
+
+        names = np.array(families)
+
+        def score(point: dict[str, float], fit: set[str], held: set[str]) -> float:
+            tr = np.flatnonzero(np.isin(names, list(fit)))
+            te = np.flatnonzero(np.isin(names, list(held)))
+            if len(set(y[tr])) < 2 or len(set(y[te])) < 2:
+                return 0.0
+            p = build(point).fit(x[tr], y[tr]).predict_proba(x[te])[:, 1]
+            line = float(np.quantile(p[y[te] == 0], 0.99))
+            return float((p[y[te] == 1] > line).mean())
+
+        return Capacity.select(sorted(set(families)), score, grid, folds)
+
+    @staticmethod
     def own_trees(separate: Iterable[str], malware: Mapping[str, int], minimum: int) -> list[str]:
         """The areas asked to have trees of their own that have enough work-half malware to separate them: each other area keeps the shared trees (and, below `minimum`, is add-only)."""
         return [area for area in separate if malware.get(area, 0) >= minimum]
@@ -638,6 +658,13 @@ class VerdictTrain:
             "work-half malware out-of-fold (0.98), instead of the lowest line within --budget",
         )
         p.add_argument("--jobs", type=int, default=4, help="LightGBM threads")
+        p.add_argument(
+            "--capacity-search",
+            action="store_true",
+            help="set the tree count, leaves, learning rate and minimum leaf by family-grouped "
+            "cross-validation on the work half, fit with the chosen values and record the grid, "
+            "the curve and the choice in the model",
+        )
         p.add_argument(
             "--keep-rule-min",
             type=int,
@@ -922,15 +949,22 @@ class VerdictTrain:
 
         monotone = [_mono(k) for k in names]
 
-        def model():
+        def model(point: dict[str, float] | None = None):
+            shape = {
+                "trees": 300,
+                "leaves": 31,
+                "learning_rate": 0.08,
+                "min_leaf": 20,
+                **(point or {}),
+            }
             if a.learner == "lightgbm":
                 import lightgbm
 
                 return lightgbm.LGBMClassifier(
-                    n_estimators=300,
-                    learning_rate=0.08,
-                    num_leaves=31,
-                    min_child_samples=20,
+                    n_estimators=int(shape["trees"]),
+                    learning_rate=shape["learning_rate"],
+                    num_leaves=int(shape["leaves"]),
+                    min_child_samples=int(shape["min_leaf"]),
                     reg_lambda=1.0,
                     colsample_bytree=0.5 if len(names) > 5000 else 1.0,
                     monotone_constraints=monotone,
@@ -943,15 +977,25 @@ class VerdictTrain:
                     verbose=-1,
                 )
             return HistGradientBoostingClassifier(
-                max_iter=300,
-                learning_rate=0.08,
-                max_leaf_nodes=31,
+                max_iter=int(shape["trees"]),
+                learning_rate=shape["learning_rate"],
+                max_leaf_nodes=int(shape["leaves"]),
+                min_samples_leaf=int(shape["min_leaf"]),
                 l2_regularization=1.0,
                 monotonic_cst=monotone,
                 random_state=a.seed,
             )
 
         xw, yw = matrix(work), np.array([r["label"] for r in work])
+        capacity = None
+        if a.capacity_search:
+            capacity = cls.search_capacity(xw, yw, [r["family"] for r in work], model)
+            chosen = capacity["chosen"]
+            _model = model
+
+            def model(point: dict[str, float] | None = None, _m=_model, _c=chosen):
+                return _m(point or _c)
+
         # xw now holds every work feature; the CV and the per-area fits read it, not the dicts. The
         # work rows' dicts are needed again only for `r:` rule keys (has_code, attribution), so drop
         # their bulky code/package columns here to free ~half the resident feature dicts before the
@@ -1181,6 +1225,8 @@ class VerdictTrain:
 
         fitted = {x: model().fit(xw[idx], yw[idx]) for x, idx in groups.items()}
         exported = cls.export(fitted["*"], names)
+        if capacity is not None:
+            exported = Capacity.attach(exported, capacity)
         # On the WORK half, every fit: the shipped trees must score what the fitted model scores.
         sample = groups["*"][:400]
         if sample:
