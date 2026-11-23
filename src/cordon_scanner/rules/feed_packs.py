@@ -112,6 +112,17 @@ class FeedPacks:
         return tuple(pack for _, pack in cls._select(loader, bundled_ids, shadow=shadow))
 
     @classmethod
+    def skipped(
+        cls, loader: PackFiles, bundled_ids: Iterable[str], *, shadow: bool | None = None
+    ) -> tuple[tuple[str, str], ...]:
+        """The delivered rules this scan could not evaluate (a term written for a meaning this scanner does not know), as (rule id, reason): a gap in what it checked, said and counted, never a rule run with another meaning."""
+        return tuple(
+            gap
+            for _, pack in cls._select(loader, bundled_ids, shadow=shadow)
+            for gap in pack.skipped
+        )
+
+    @classmethod
     def loaded(
         cls, loader: PackFiles, bundled_ids: Iterable[str], *, shadow: bool | None = None
     ) -> tuple[str, ...]:
@@ -170,6 +181,8 @@ class FeedPacks:
                 continue
             from cordon_scanner.rules.tester import RuleTester
 
+            for rule_id, why in pack.skipped:
+                logger.warning("feed rule %s not evaluated: %s", rule_id, why)
             if RuleTester.run(pack):
                 # Its own samples fail: the rule would load and match nothing, or the wrong thing.
                 logger.warning("feed rule pack %s not loaded: it fails its own samples", name)
@@ -213,7 +226,7 @@ class FeedPacks:
                 if digest not in seen:
                     seen.add(digest)
                     rules.append(compiled)
-            if rules:
+            if rules or pack.skipped:
                 kept.append((candidate, replace(pack, rules=tuple(rules))))
         return kept
 

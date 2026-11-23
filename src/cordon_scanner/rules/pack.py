@@ -236,6 +236,7 @@ class RulePack:
     description: str = ""
     content_hash: str = ""
     expires: str = ""
+    skipped: tuple[tuple[str, str], ...] = ()
 
     def __len__(self) -> int:
         return len(self.rules)

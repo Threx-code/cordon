@@ -36,7 +36,7 @@ from cordon_scanner.foundation.paths import PackagePaths
 from cordon_scanner.foundation.rule_model import Rule, RuleProvenance, RuleTests
 from cordon_scanner.foundation.text.literals import LiteralGate
 from cordon_scanner.rules.derivations import PatternDerivations
-from cordon_scanner.rules.fact_terms import FactTerms
+from cordon_scanner.rules.fact_terms import FactTerms, RuleSkipped, UnknownTermVersion
 from cordon_scanner.rules.learned import LearnedBlock
 from cordon_scanner.rules.pack import CompiledMatch, CompiledRule, RulePack
 from cordon_scanner.rules.patterns import PatternCompiler
@@ -155,7 +155,7 @@ class RuleLoader:
     def load_text(self, text: str, *, source: str = "<string>") -> RulePack:
         data = RestrictedYamlParser._load_yaml_subset(text, source=source)
         pack = self._parse_pack_header(data, source=source)
-        rules = self._parse_rules(data, pack_id=pack["id"], source=source)
+        rules, skipped = self._parse_rules(data, pack_id=pack["id"], source=source)
 
         return RulePack(
             id=pack["id"],
@@ -164,6 +164,7 @@ class RuleLoader:
             source=pack.get("source", ""),
             description=pack.get("description", ""),
             expires=pack.get("expires", ""),
+            skipped=skipped,
             rules=tuple(rules),
             content_hash=hashlib.sha256(text.encode("utf-8")).hexdigest()[:16],
         )
@@ -269,13 +270,14 @@ class RuleLoader:
 
     def _parse_rules(
         self, data: Mapping[str, Any], *, pack_id: str, source: str
-    ) -> list[CompiledRule]:
+    ) -> tuple[list[CompiledRule], tuple[tuple[str, str], ...]]:
         raw_rules = data.get("rules")
         if not isinstance(raw_rules, list) or not raw_rules:
             raise RulePackError(f"{source}: `rules` must be a non-empty list")
 
         seen: set[str] = set()
         out: list[CompiledRule] = []
+        skipped: list[tuple[str, str]] = []
 
         for index, raw in enumerate(raw_rules):
             where = f"{source}: rules[{index}]"
@@ -300,9 +302,12 @@ class RuleLoader:
                 raise RulePackError(f"{where}: duplicate rule id {rule_id!r}")
             seen.add(rule_id)
 
-            out.append(self._parse_rule(raw, rule_id=rule_id, pack_id=pack_id, where=where))
+            try:
+                out.append(self._parse_rule(raw, rule_id=rule_id, pack_id=pack_id, where=where))
+            except RuleSkipped as skip:
+                skipped.append((rule_id, str(skip)))
 
-        return out
+        return out, tuple(skipped)
 
     def _parse_rule(
         self, raw: Mapping[str, Any], *, rule_id: str, pack_id: str, where: str
@@ -549,6 +554,8 @@ class RuleLoader:
             ):
                 try:
                     FactTerms.of_spec(term)
+                except UnknownTermVersion as problem:
+                    raise RuleSkipped(f"{where}: package term {term!r}: {problem}") from None
                 except ValueError as problem:
                     raise RulePackError(f"{where}: package term {term!r}: {problem}") from None
         proximity = int(raw.get("proximity", 0))
