@@ -1558,6 +1558,7 @@
   "test_manifest_cache.py": "engine/pipeline",
   "test_member_refusal_class.py": "sources",
   "test_analysis_facts.py": "engine/isolation",
+  "test_family_k_features.py": "engine/isolation",
   "test_supervisor.py": "engine/isolation",
   "test_isolated_detection.py": "engine/isolation",
   "test_worker_facts.py": "engine/isolation",
