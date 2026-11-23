@@ -31,8 +31,17 @@ class Emitted:
 
 
 class TestTheLearnedBlock:
-    def test_it_has_exactly_the_four_keys_the_scanner_reads(self) -> None:
-        assert set(Emitted.rule()["learned"]) == {"families", "legit_rate", "interval", "batch"}
+    def test_it_has_the_four_keys_the_scanner_requires_and_the_count_it_was_measured_on(
+        self,
+    ) -> None:
+        assert set(Emitted.rule()["learned"]) == {
+            "families",
+            "legit_rate",
+            "interval",
+            "batch",
+            "n",
+        }
+        assert Emitted.rule()["learned"]["n"] == Emitted.candidate()["confirm"]["legit_n"]
 
     def test_families_is_the_number_the_rule_was_learned_from(self) -> None:
         block = Emitted.rule()["learned"]
