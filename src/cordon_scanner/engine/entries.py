@@ -22,7 +22,7 @@ class PackageEntries:
         """The files of a published package that run when it is used rather than installed: npm's
         `main` (or `index.js`), `bin` and `exports` targets; a wheel's or sdist's top-level
         `__init__.py`. Their module top level runs on `require()`, `import` or the command, on
-        every consumer, with no hook in the manifest (review 98, REC-2)."""
+        every consumer, with no hook in the manifest."""
         members: dict[str, str] = {}
         for unit in units:
             _, sep, member = unit.path.partition("!")
@@ -125,7 +125,7 @@ class PackageEntries:
     @staticmethod
     def repository(units: list[FileUnit], distribution: str) -> str:
         """The published package's own `repository` URL, or "": a string, or an object's `url`, as
-        its manifest declares it (review 98, FP-2)."""
+        its manifest declares it."""
         return RegistryFacts.published_repository(
             distribution, PackageEntries.manifest(units, distribution)
         )
@@ -134,15 +134,15 @@ class PackageEntries:
 class PythonScripts:
     """The modules a Python package's commands run (`console_scripts`, `gui_scripts`, a Poetry
     `scripts` table): `pkg-run = pkg.cli:main` runs pkg/cli.py's top level on every invocation,
-    whether or not `__init__` imports it (S2, lead 2026-11-10: a payload in syntax newer than the
-    scanner's Python, placed only in the command's module, ran unread). Read from every place a
+    whether or not `__init__` imports it (a payload in syntax newer than the
+    scanner's Python, placed only in the command's module, would run unread). Read from every place a
     distribution declares them: a wheel's or egg-info's entry_points.txt, pyproject.toml,
     setup.cfg, and a literal `entry_points=` in setup.py."""
 
     GROUPS: ClassVar[tuple[str, ...]] = ("console_scripts", "gui_scripts")
     #: A setup.py whose `entry_points=` or `scripts=` is not a literal: its commands could name
     #: any module, test files included, so every `.py` of that archive is running for the
-    #: unparsed check (fail closed; lead, 2026-11-10).
+    #: unparsed check (fail closed).
     UNKNOWN: ClassVar[str] = "*"
 
     @staticmethod
@@ -173,6 +173,86 @@ class PythonScripts:
                 if ("/" + member).endswith((f"/{stem}.py", f"/{stem}/__init__.py")):
                     found.add(unit.path)
         return frozenset(found)
+
+    @staticmethod
+    def directory(units: list[FileUnit]) -> frozenset[str]:
+        """The `.py` files a plain directory scan (a cloned repository) reads as running: the modules `pyproject.toml`, `setup.cfg` and an
+        `entry_points.txt` name for commands and entry points, and the `__init__.py` of each top-level package. Files in a test or documentation
+        folder are left out, and a `setup.py` whose entry points are not literal names none (a repository, unlike a published archive, holds
+        tests and examples that nothing runs)."""
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
+
+        paths = {
+            u.path
+            for u in units
+            if "!" not in u.path and u.path.endswith(".py") and not u.content.is_binary
+        }
+        modules: set[str] = set()
+        for unit in units:
+            if "!" in unit.path or unit.content.is_binary:
+                continue
+            name = unit.path.rsplit("/", 1)[-1]
+            for target in (
+                *PythonScripts._declared(name, unit.content.text),
+                *PythonScripts._plugins(name, unit.content.text),
+            ):
+                module = target.split(":", 1)[0].strip()
+                if module and module != PythonScripts.UNKNOWN:
+                    modules.add(module)
+        found: set[str] = set()
+        for module in modules:
+            stem = module.replace(".", "/")
+            found |= {
+                p for p in paths if ("/" + p).endswith((f"/{stem}.py", f"/{stem}/__init__.py"))
+            }
+        inits = {p for p in paths if p.rsplit("/", 1)[-1] == "__init__.py"}
+        for path in inits:
+            folder = path.rpartition("/")[0]
+            if folder and f"{folder.rpartition('/')[0]}/__init__.py".lstrip("/") not in inits:
+                found.add(path)
+        return frozenset(p for p in found if not SourcePaths.is_test_material(p))
+
+    @staticmethod
+    def _plugins(name: str, text: str) -> list[str]:
+        """The `module:function` targets of EVERY entry-point group a manifest declares (plugins a host loads), not only the commands."""
+        if name == "pyproject.toml":
+            import tomllib
+
+            try:
+                groups = tomllib.loads(text).get("project", {}).get("entry-points", {})
+            except (tomllib.TOMLDecodeError, ValueError, RecursionError):
+                return []
+            return (
+                [
+                    v
+                    for g in groups.values()
+                    if isinstance(g, dict)
+                    for v in g.values()
+                    if isinstance(v, str)
+                ]
+                if isinstance(groups, dict)
+                else []
+            )
+        if name in ("setup.cfg", "entry_points.txt"):
+            import configparser
+
+            parser = configparser.ConfigParser(interpolation=None)
+            try:
+                parser.read_string(text)
+            except (configparser.Error, ValueError):
+                return []
+            if name == "setup.cfg":
+                if not parser.has_section("options.entry_points"):
+                    return []
+                values = [v for _, v in parser.items("options.entry_points")]
+                return [
+                    ln.split("=", 1)[1]
+                    for value in values
+                    for ln in value.splitlines()
+                    if "=" in ln
+                ]
+            return [v for section in parser.sections() for _, v in parser.items(section)]
+        return []
 
     @staticmethod
     def _declared(name: str, text: str) -> list[str]:

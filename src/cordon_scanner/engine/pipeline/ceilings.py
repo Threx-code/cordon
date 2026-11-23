@@ -69,6 +69,13 @@ class Ceilings:
         return path.rsplit("!", 1)[-1].lower().endswith(Ceilings._VERDICT_SOURCES)
 
     @staticmethod
+    def model_refusals() -> dict[str, str] | None:
+        """The delivered models a scan turned down and why, for its stats (`Verdict.model_refusals`)."""
+        from cordon_scanner.decide.verdict import Verdict
+
+        return Verdict.model_refusals()
+
+    @staticmethod
     def verdict_manifests(units: Sequence[FileUnit]) -> dict[str, bytes]:
         """The manifests the package verdict reads, by path."""
         return {

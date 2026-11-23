@@ -57,8 +57,30 @@ class RuleSource(JsonRecord):
 
 
 @dataclass(frozen=True, slots=True)
+class DegradeSource(JsonRecord):
+    """What a point may do when the facts that would refresh a decision cannot be had (spec 8.4)."""
+
+    MAX_SERVE_HOURS: ClassVar[int] = 168
+
+    serve_last_allow_hours: int | None = None
+    """How long an earlier ALLOW for the same digest, policy, environment and scope may stand in for a decision that is held back
+    only by required evidence that cannot be fetched or intelligence older than the policy allows. Default 24, at most 168, 0 turns it off."""
+
+    def __post_init__(self) -> None:
+        if self.serve_last_allow_hours is not None:
+            Checks.whole(
+                "DegradeSource",
+                "serve_last_allow_hours",
+                self.serve_last_allow_hours,
+                high=self.MAX_SERVE_HOURS,
+            )
+
+
+@dataclass(frozen=True, slots=True)
 class DefaultsSource(JsonRecord):
     """The policy's defaults as written; what is not stated is inherited, or the library's default."""
+
+    NESTED: ClassVar[dict[str, type[JsonRecord]]] = {"degrade": DegradeSource}
 
     on_incomplete: dict[str, str] | str | None = None
     unresolved: str | None = None
@@ -69,6 +91,7 @@ class DefaultsSource(JsonRecord):
     bundle_max_age: str | int | None = None
     warn_until_measured: tuple[str, ...] | None = None
     clock_bucket_s: int | None = None
+    degrade: DegradeSource | None = None
 
 
 @dataclass(frozen=True, slots=True)

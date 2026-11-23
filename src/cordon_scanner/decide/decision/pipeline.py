@@ -16,10 +16,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import ClassVar
 
+from cordon_scanner.decide.decision.bounds import Bounds
 from cordon_scanner.decide.decision.compiler import PolicyCompiler
 from cordon_scanner.decide.decision.evidence import Approval, FindingFact
 from cordon_scanner.decide.decision.facts import Facts, Matcher
-from cordon_scanner.decide.decision.outcome import Reason, States
+from cordon_scanner.decide.decision.outcome import Reason, Relaxation, States
+from cordon_scanner.decide.decision.reason_map import ReasonMap
 from cordon_scanner.decide.decision.records import Instants
 from cordon_scanner.decide.decision.table import CompiledPolicy, CompiledRule
 
@@ -48,6 +50,9 @@ class Draft:
     obligations: set[str] = field(default_factory=set)
     fired: list[Fired] = field(default_factory=list)
     stopped: bool = False  # a hard stop: nothing after it runs
+    relaxations: set[Relaxation] = field(
+        default_factory=set
+    )  # fail-closed defaults the policy relaxed and the call used
 
     def raise_to(self, state: str) -> None:
         self.state = States.stricter(self.state, state)
@@ -105,7 +110,7 @@ class Completeness:
         if not evidence.complete:
             found.append((incomplete, Reason("R204", "the scan did not complete")))
         for gap in sorted(evidence.gaps, key=lambda item: (item.rule_id, item.path)):
-            where = f" at {gap.path}" if gap.path else ""
+            where = f" at {Bounds.path(gap.path)}" if gap.path else ""
             found.append(
                 (
                     defaults.on_gaps,
@@ -118,20 +123,37 @@ class Completeness:
                 )
             )
         provenance = evidence.provenance
-        if provenance is not None and not provenance.verified and cls._reads_provenance(policy):
+        if provenance is not None and not provenance.verified and cls.reads_provenance(policy):
             found.append(
                 (incomplete, Reason("R205", "provenance is present but cannot be verified"))
             )
         return found
 
     @staticmethod
+    def setting_of(reason: Reason) -> str:
+        """The policy default that gave a shortfall its level: `unresolved` for R203, `on_gaps` for an unexamined
+        part of the content, `on_incomplete` for everything else."""
+        if reason.code == "R203":
+            return "unresolved"
+        if reason.code == "R204" and reason.rule_id is not None:
+            return "on_gaps"
+        return "on_incomplete"
+
+    @staticmethod
     def _over(age: int | None, limit: int | None) -> bool:
         return age is not None and limit is not None and age > limit
 
-    @staticmethod
-    def _reads_provenance(policy: CompiledPolicy) -> bool:
+    PROVENANCE_FIELDS: ClassVar[tuple[str, ...]] = (
+        "provenance.slsa_level",
+        "signature.signer",
+        "publisher.age_days",
+    )
+
+    @classmethod
+    def reads_provenance(cls, policy: CompiledPolicy) -> bool:
+        """Whether any rule of the policy reads a fact that comes from verified provenance."""
         return any(
-            item.field in ("provenance.slsa_level", "signature.signer")
+            item.field in cls.PROVENANCE_FIELDS
             for rule in policy.rules
             for item in (*rule.applies_to, *rule.when, *rule.require)
         )
@@ -165,10 +187,10 @@ class RuleStage:
     @classmethod
     def _reasons(cls, rule: CompiledRule, findings: tuple[FindingFact, ...]) -> list[Reason]:
         if findings:
-            code = rule.reason or cls._code_of(findings)
+            fallback = cls._code_of(findings)
             return [
                 Reason(
-                    code,
+                    rule.reason or ReasonMap.of(item.rule_id) or fallback,
                     f"policy rule {rule.id}: {item.rule_id} ({item.severity}, {item.confidence})",
                     rule_id=item.rule_id,
                     path=item.path or None,
@@ -207,12 +229,14 @@ class Overrides:
             added = [Reason("R901", f"approved for this digest by {approval.id} (covers: {names})")]
             if conditions:
                 added.append(
-                    Reason("R703", "allowed with conditions: " + "; ".join(approval.conditions))
+                    Reason(
+                        "R703", "allowed with conditions: " + Bounds.conditions(approval.conditions)
+                    )
                 )
             kept = [item for item in fired if item not in blocking]
             return kept, added, States.ALLOW_WITH_CONDITIONS if conditions else States.ALLOW
         standing: list[Fired] = []
-        added = []
+        added = cls._expired(facts)
         lifted: list[str] = []
         for item in fired:
             lowered = cls._exception(facts, item, permitted) if item in blocking else None
@@ -250,6 +274,19 @@ class Overrides:
         return None
 
     @staticmethod
+    def _expired(facts: Facts) -> list[Reason]:
+        """R701: an approval that speaks for this digest in this scope ran out (it was not revoked), and a rule still asks for more.
+        It changes nothing in the outcome: it says why the approval that would have lifted it does not."""
+        return [
+            Reason("R701", f"approval {item.id} expired at {item.expires_at}")
+            for item in sorted(facts.evidence.approvals, key=lambda entry: entry.id)
+            if item.kind != "exception"
+            and not item.revoked
+            and not item.active(facts.clock)
+            and item.covers(facts.artifact.digest, facts.context.scope_path)
+        ]
+
+    @staticmethod
     def _exception(facts: Facts, item: Fired, permitted: str) -> tuple[Approval, str] | None:
         """The exception that covers this rule's outcome, and the state it gives: the outcome the exception
         names (ALLOW when it names none), no more than the policy permits (`defaults.exceptions`); an ALLOW
@@ -274,7 +311,7 @@ class Overrides:
 
 
 class QualityGuard:
-    """Step 6 (invariant I10): a content rule in an ecosystem not yet measured reviews, it does not block."""
+    """Step 6: a content rule in an ecosystem not yet measured reviews, it does not block."""
 
     ALIASES: ClassVar[dict[str, str]] = {"agent_skill": "skills", "mcp_server": "mcp"}
 

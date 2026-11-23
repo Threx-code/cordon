@@ -45,6 +45,7 @@ json = cordon_scanner.report.json_:JsonReporter
 junit = cordon_scanner.report.junit:JunitReporter
 markdown = cordon_scanner.report.markdown:MarkdownReporter
 sarif = cordon_scanner.report.sarif:SarifReporter
+statement = cordon_scanner.report.statement:StatementReporter
 text = cordon_scanner.report.text:TextReporter
 vex = cordon_scanner.report.vex:VexReporter
 

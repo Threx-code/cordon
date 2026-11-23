@@ -164,3 +164,87 @@ class TestTheFactsCarryDestinationsAsDigests:
         assert helper["domains"] == [DestinationHosts.digest("example.com")]
         assert record["package"]["hosts_distinct"] == 1
         assert "example.com" not in _json.dumps(record)
+
+
+class TestARederivedRuleIsNotCoveredByTheOldSuppression:
+    """A learned finding's fingerprint holds the digest of the predicate that made it, so a suppression written against one predicate never covers a finding of the same id made by another.
+
+    A re-derived rule can keep its id and change what it matches on. A suppression is matched by fingerprint; the fingerprint is made from the rule id, the file and the match hash, and the match
+    hash of a learned finding includes the predicate digest."""
+
+    SAME_ID_NEW_PREDICATE = RULE.replace("where: unreached", "where: reach:unreached")
+
+    @staticmethod
+    def fingerprints(root, rule: str) -> set[str]:
+        root.mkdir(parents=True, exist_ok=True)
+        result = PackageKit.scan(root, index="module.exports = (a, b) => a + b;\n", rule=rule)
+        return {f.fingerprint for f in result.findings if f.rule_id.startswith("LEARNED.")}
+
+    def test_the_same_predicate_gives_the_same_fingerprint(self, tmp_path) -> None:
+        first, second = (
+            self.fingerprints(tmp_path / "a", RULE),
+            self.fingerprints(tmp_path / "b", RULE),
+        )
+        assert first and first == second
+
+    def test_the_same_id_with_a_new_predicate_gives_another_fingerprint(self, tmp_path) -> None:
+        old = self.fingerprints(tmp_path / "a", RULE)
+        new = self.fingerprints(tmp_path / "b", self.SAME_ID_NEW_PREDICATE)
+        assert old and new and not old & new
+
+
+LEARNED_BLOCK = """    learned:
+      families: 4
+      legit_rate: 0.0004
+      interval: [0.0, 0.0009]
+      batch: batch-one
+"""
+
+
+class TestAFindingShowsWhereItsRuleCameFrom:
+    """A learned finding's explanation carries the four things the rule was learned from: how many families, how often legitimate packages fire it with the interval that rate lies in, the batch, and the facts
+    the package satisfied."""
+
+    @staticmethod
+    def rule_with(block: str) -> str:
+        return RULE.replace("    match:\n", f"{block}    match:\n")
+
+    def test_the_four_fields_are_in_the_explanation(self, tmp_path) -> None:
+        result = PackageKit.scan(
+            tmp_path,
+            index="module.exports = (a, b) => a + b;\n",
+            rule=self.rule_with(LEARNED_BLOCK),
+        )
+        (finding,) = [f for f in result.findings if f.rule_id == "LEARNED.TEST.001"]
+        basis = finding.explanation.basis
+        assert "families=4" in basis and "legit_rate=0.0004" in basis
+        assert "interval=0.0000-0.0009" in basis and "batch=batch-one" in basis
+        assert any(
+            code.startswith("facts=") and "egress" in code and "spawn" in code for code in basis
+        )
+
+    def test_a_rule_without_the_block_shows_none_of_them(self, tmp_path) -> None:
+        result = PackageKit.scan(tmp_path, index="module.exports = (a, b) => a + b;\n")
+        (finding,) = [f for f in result.findings if f.rule_id == "LEARNED.TEST.001"]
+        assert finding.explanation.basis == ()
+
+    @pytest.mark.parametrize(
+        "block",
+        [
+            "    learned: {families: 0, legit_rate: 0.1, interval: [0.0, 0.2], batch: b}\n",
+            "    learned: {families: 3, legit_rate: 1.5, interval: [0.0, 2.0], batch: b}\n",
+            "    learned: {families: 3, legit_rate: 0.1, interval: [0.2, 0.3], batch: b}\n",
+            "    learned: {families: 3, legit_rate: 0.1, interval: [0.0], batch: b}\n",
+            "    learned: {families: 3, legit_rate: 0.1, interval: [0.0, 0.2], batch: 'a b'}\n",
+            "    learned: {families: 3, legit_rate: 0.1, interval: [0.0, 0.2]}\n",
+            "    learned: {families: 3, legit_rate: 0.1, interval: [0.0, 0.2], batch: b, extra: 1}\n",
+            "    learned: yes\n",
+        ],
+    )
+    def test_a_block_that_is_not_of_that_form_is_refused_at_load(
+        self, tmp_path, block: str
+    ) -> None:
+        pack = tmp_path / "bad.yaml"
+        pack.write_text(self.rule_with(block), encoding="utf-8")
+        with pytest.raises(RulePackError, match="learned"):
+            RuleLoader().load_file(pack)

@@ -429,6 +429,8 @@ class ScanStats:
     view_files: Mapping[str, int] | None = None
     """What the decoded view read (`foundation/collector` ScanCounts, note 18): files viewed, differing,
     partial, refused, and its CPU milliseconds; only with `CORDON_DETECTOR_CLOCK=1`."""
+    model_refusals: Mapping[str, str] | None = None
+    """The delivered models the scan turned down and why (`FeedModels.refusals`); absent when none was, so a scan's output does not vary with models nobody delivered."""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -449,6 +451,7 @@ class ScanStats:
                 else {}
             ),
             **({"view_files": dict(self.view_files)} if self.view_files is not None else {}),
+            **({"model_refusals": dict(self.model_refusals)} if self.model_refusals else {}),
         }
 
 

@@ -206,6 +206,7 @@ github = "cordon_scanner.report.github:GithubReporter"
 codeclimate = "cordon_scanner.report.codeclimate:CodeClimateReporter"
 vex = "cordon_scanner.report.vex:VexReporter"
 facts = "cordon_scanner.report.facts:FactsReporter"
+statement = "cordon_scanner.report.statement:StatementReporter"
 
 [project.entry-points."cordon_scanner.ecosystem_facts"]
 # What classifying a dependency asks of the ecosystems (foundation.dependencies.EcosystemFacts):

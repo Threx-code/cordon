@@ -1,10 +1,10 @@
-"""The scan context built in a supervised worker (item 56, phase (b)): the parent parses no manifest,
+"""The scan context built in a supervised worker: the parent parses no manifest,
 lockfile, SBOM, hook or closure.
 
 Everything between the walk and the finished `ScanContext` parses scanned content: the hooks written
 inline, the deobfuscation lift, the dependency graph (manifests, lockfiles, an SBOM target,
 .gitmodules), the hook paths and their import and require closures, the skill and server sources. It
-runs here, in one worker per scan under item 28's bounds, as the very same steps the parent ran, and
+runs here, in one worker per scan under the worker's bounds, as the very same steps the parent ran, and
 comes back as one JSON document the parent checks before it believes any of it:
 
 ```
@@ -19,7 +19,7 @@ comes back as one JSON document the parent checks before it believes any of it:
 
 A worker that dies, hangs, overruns, raises or answers with a refused document leaves the scan with
 only what the walk gives (`tree_paths`), and a blocking gap at the scan's scope: incomplete scans
-block (item 27). The parent never runs a step in-process. `IsolationUnavailable` is never caught.
+block. The parent never runs a step in-process. `IsolationUnavailable` is never caught.
 """
 
 from __future__ import annotations
@@ -118,7 +118,7 @@ class ContextWork:
         step's failure is reported at, whether the archive is an image, and the inventory's held
         manifest-hook places.
 
-        Each step runs in its own guard (note 56's review, change 1): one that raises is that step's
+        Each step runs in its own guard: one that raises is that step's
         blocking gap, and the steps after it still run. In the order of what blocks (change 2): the
         inventory's manifest hooks, the hooks written inline, the lift (the closures read lifted
         units), what runs at install and its closures, and only then the dependency graph."""
@@ -349,6 +349,12 @@ class ContextRun:
             "install context",
             lambda: engine.stages.install_context(units, acc, ctx, ()),
             replace(ctx, tree_paths=frozenset(u.path for u in units)),
+        )
+        # A directory scan has no published package to say what runs.
+        self.ctx = self.guarded(
+            "unparsed running files",
+            lambda: engine.archive_stages.unparsed_directory(units, acc, self.ctx),
+            self.ctx,
         )
         self.dependencies, self.ingested = self.guarded(
             "dependencies", lambda: engine.stages.dependencies(units, acc, root), ((), ())
@@ -744,7 +750,7 @@ class ContextFacts:
 class ContextStage:
     """The parent's step: the context worker run, its answer applied, or the gap that says why not."""
 
-    #: What the context worker may use (item 28's bounds): the detection pool's, for one unit the
+    #: What the context worker may use: the detection pool's, for one unit the
     #: size of the whole scan, and the scan's own deadline over it (`Supervisor.deadline`).
     RULE = "OPERATIONAL.WORKER.CONTEXT_FAILED"
 
@@ -964,8 +970,7 @@ class ContextStage:
 
     def archive_dependencies(self, acc: Accumulator) -> tuple[Dependency, ...]:
         """The archive's graph the context worker built, its findings, coverage and the records
-        outside the install set applied to `acc` here, where the parent built it before (item 56
-        (b), part 2). None held (the worker failed, or its graph step did): no graph, and the gap
+        outside the install set applied to `acc` here, where the parent built it before. None held (the worker failed, or its graph step did): no graph, and the gap
         that failure already left."""
         graph, self.archive_graph = self.archive_graph, None
         if graph is None:

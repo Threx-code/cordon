@@ -412,6 +412,86 @@
 }
 },
 {
+"id": "int:slack/incoming-webhooks",
+"kind": "third_party_integration",
+"parts": {
+"integration": "incoming-webhooks",
+"vendor": "slack"
+}
+},
+{
+"id": "int:slack/incoming-webhooks",
+"kind": "third_party_integration",
+"parts": {
+"integration": "Incoming Webhooks",
+"vendor": "Slack"
+}
+},
+{
+"id": "int:stripe/payments-api",
+"kind": "third_party_integration",
+"parts": {
+"integration": "payments-api",
+"vendor": "stripe"
+}
+},
+{
+"id": "int:github/copilot-chat",
+"kind": "third_party_integration",
+"parts": {
+"integration": "Copilot Chat",
+"vendor": "GitHub"
+}
+},
+{
+"id": "int:zapier/zaps",
+"kind": "third_party_integration",
+"parts": {
+"integration": "zaps",
+"vendor": "zapier"
+}
+},
+{
+"id": "int:salesforce/rest-api",
+"kind": "third_party_integration",
+"parts": {
+"integration": "REST API",
+"vendor": "Salesforce"
+}
+},
+{
+"id": "int:atlassian/jira-cloud",
+"kind": "third_party_integration",
+"parts": {
+"integration": "jira-cloud",
+"vendor": "atlassian"
+}
+},
+{
+"id": "int:openai/responses-api",
+"kind": "third_party_integration",
+"parts": {
+"integration": "responses-api",
+"vendor": "openai"
+}
+},
+{
+"id": "int:google/drive",
+"kind": "third_party_integration",
+"parts": {
+"integration": "drive",
+"vendor": "google"
+}
+},
+{
+"id": "int:microsoft/graph",
+"kind": "third_party_integration",
+"parts": {
+"integration": "Graph",
+"vendor": "Microsoft"
+}
+},
+{
 "id": "pkg:npm/0x0lobersyko",
 "kind": "package",
 "parts": {
@@ -15921,86 +16001,6 @@
 "parts": {
 "ecosystem": "gem",
 "name": "test_gem_push"
-}
-},
-{
-"id": "pkg:gem/test-queue-split",
-"kind": "package",
-"parts": {
-"ecosystem": "gem",
-"name": "test-queue-split"
-}
-},
-{
-"id": "pkg:gem/test-unit-notify",
-"kind": "package",
-"parts": {
-"ecosystem": "gem",
-"name": "test-unit-notify"
-}
-},
-{
-"id": "pkg:gem/TEST_BENCH-OUTPUT",
-"kind": "package",
-"parts": {
-"ecosystem": "gem",
-"name": "TEST_BENCH-OUTPUT"
-}
-},
-{
-"id": "pkg:gem/test_dummy",
-"kind": "package",
-"parts": {
-"ecosystem": "gem",
-"name": "test_dummy"
-}
-},
-{
-"id": "pkg:gem/test_runner",
-"kind": "package",
-"parts": {
-"ecosystem": "gem",
-"name": "test_runner"
-}
-},
-{
-"id": "pkg:gem/thrift",
-"kind": "package",
-"parts": {
-"ecosystem": "gem",
-"name": "thrift"
-}
-},
-{
-"id": "pkg:gem/TITLE",
-"kind": "package",
-"parts": {
-"ecosystem": "gem",
-"name": "TITLE"
-}
-},
-{
-"id": "pkg:gem/translation",
-"kind": "package",
-"parts": {
-"ecosystem": "gem",
-"name": "translation"
-}
-},
-{
-"id": "pkg:gem/tty-command",
-"kind": "package",
-"parts": {
-"ecosystem": "gem",
-"name": "tty-command"
-}
-},
-{
-"id": "pkg:gem/turbolinks",
-"kind": "package",
-"parts": {
-"ecosystem": "gem",
-"name": "turbolinks"
 }
 }
 ]

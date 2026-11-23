@@ -1,4 +1,4 @@
-"""Typed predicates: the only conditions a policy rule can state (design spec 6.1, I11).
+"""Typed predicates: the only conditions a policy rule can state (design spec 6.1).
 
 A predicate is a map from a field of a closed list to a value. The value is a literal (equality, or
 "contains" for a list-valued field), `{"in": [...]}` (or the name of one of the policy's lists),
@@ -19,6 +19,7 @@ from fnmatch import fnmatchcase
 from typing import Any, ClassVar
 
 from cordon_scanner.contracts.subjects import SubjectKind
+from cordon_scanner.decide.decision.capabilities import AgentCapabilities
 from cordon_scanner.decide.decision.evidence import Context, FindingFact
 from cordon_scanner.decide.decision.records import JsonRecord, PolicyError
 
@@ -56,6 +57,9 @@ class Fields:
             FieldSpec("version.age_days", "int"),
             FieldSpec("provenance.slsa_level", "int"),
             FieldSpec("signature.signer", "text"),
+            FieldSpec("publisher.age_days", "int"),
+            FieldSpec("name.lookalike", "enum", ("present", "absent")),
+            FieldSpec("registry.host", "text"),
             FieldSpec("approval", "enum", ("present", "absent")),
             FieldSpec("context.point", "enum", Context.POINTS),
             FieldSpec("context.environment", "text"),
@@ -63,6 +67,7 @@ class Fields:
             FieldSpec("context.actor", "text"),
             FieldSpec("intel.known_malware", "bool"),
             FieldSpec("intel.advisory", "bool"),
+            FieldSpec(AgentCapabilities.FIELD, "tags", AgentCapabilities.NAMES),
         )
     }
     #: The operators of each kind.
@@ -173,6 +178,8 @@ class PredicateCompiler:
             return str(value)
         if not isinstance(value, str) or not value:
             raise PolicyError(f"{where}: expected a non-empty string")
+        if spec.kind == "tags" and spec.values and "*" not in value and value not in spec.values:
+            raise PolicyError(f"{where}: {value!r} is not one of {', '.join(spec.values)}")
         return value
 
     @staticmethod

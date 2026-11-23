@@ -72,6 +72,12 @@ class SubjectCatalogue:
             (),
             "a build artifact of one tenant, by scope and name",
         ),
+        SubjectKind.THIRD_PARTY_INTEGRATION: (
+            "int:",
+            ("vendor", "integration"),
+            (),
+            "a third-party integration: an external API, SaaS app or connector a tenant allows software or an agent to call",
+        ),
     }
 
     #: Parts that take one of a short list of values: part -> the values `canonical_id` accepts.

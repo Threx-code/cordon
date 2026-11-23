@@ -138,6 +138,21 @@ class ContractGoldens:
                 ("team-a", "lib/core/v2"),
             )
         ),
+        *(
+            (SubjectKind.THIRD_PARTY_INTEGRATION, {"vendor": v, "integration": i})
+            for v, i in (
+                ("slack", "incoming-webhooks"),
+                ("Slack", "Incoming Webhooks"),
+                ("stripe", "payments-api"),
+                ("GitHub", "Copilot Chat"),
+                ("zapier", "zaps"),
+                ("Salesforce", "REST API"),
+                ("atlassian", "jira-cloud"),
+                ("openai", "responses-api"),
+                ("google", "drive"),
+                ("Microsoft", "Graph"),
+            )
+        ),
     ]
 
     @classmethod

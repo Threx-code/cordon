@@ -75,13 +75,13 @@ class Fixture:
 
 
 class InProcess:
-    """The context as the parent computed it before item 56 (b), beside the worker's."""
+    """The context as the parent computed it before the step moved into the worker, beside the worker's."""
 
     compared: ClassVar[list[str]] = []
 
     @staticmethod
     def old(stage: ContextStage, kind: str, units: list[Any], ctx: Any, root: Path) -> Any:
-        """The steps as the parent ran them before item 56 (b), in this process: for a tree, the
+        """The steps as the parent ran them before the step moved into the worker, in this process: for a tree, the
         inventory read with its manifests' hooks and the files read again under it, as `_scan` did."""
         from cordon_scanner.engine.isolation.documents import Documents
 
@@ -110,6 +110,7 @@ class InProcess:
                 units.extend(engine.units.deobfuscated(units))
                 dependencies, ingested = engine.stages.dependencies(units, acc, root)
                 ctx = engine.stages.install_context(units, acc, ctx, dependencies)
+                ctx = engine.archive_stages.unparsed_directory(units, acc, ctx)
             else:
                 units = list(units)
                 dependencies, ingested = (), ()
@@ -486,7 +487,7 @@ class TestTheRecordCodec:
                 assert str(f.type) in Codec.CHECKS, f"{kind.__name__}.{f.name}: {f.type}"
 
 
-#: One small, hand-written manifest per ecosystem reader (item 56 (b), part 2's review, condition 3), each in a
+#: One small, hand-written manifest per ecosystem reader, each in a
 #: directory of its own. Benign, written for this test.
 MANIFESTS = {
     "actions/.github/workflows/ci.yml": "on: push\njobs:\n  b:\n    runs-on: ubuntu-latest\n"

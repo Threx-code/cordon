@@ -34,7 +34,7 @@ import time
 import zipfile
 import zlib
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.foundation.files.names import Names
@@ -886,27 +886,16 @@ class ArchiveReader:
         member_path: str,
         nested: bool,
         limits: Limits,
-        rejected: list[tuple[str, str, str]] | None,
     ) -> tuple[bytes, bool]:
-        """A nested archive's bytes, held to be opened in memory. One kept on disk is read back
-        within the size a member could always be held at; past it, it is not opened and its
-        contents are reported unexamined."""
+        """A nested archive's bytes, to be opened. One kept on disk is read back into memory within the size a member could always be held at;
+        a larger one is read from its kept file through a memory map, so it is examined all the same and only the pages being read are in memory."""
         inner = member.data
         if not (nested and isinstance(inner, SpilledBytes)):
             return inner, nested
         if inner.size <= ArchiveReader.member_limit(limits):
             return inner.read_whole(), True
-        if rejected is not None:
-            rejected.append(
-                (
-                    member_path,
-                    Rejection.SIZE,
-                    f"a nested archive of {inner.size} bytes, past the "
-                    f"{ArchiveReader.member_limit(limits)} bytes one is opened at; "
-                    "its contents were not examined",
-                )
-            )
-        return inner, False
+        # The extractors slice, measure and read the buffer in windows; a map does all three, so it stands in for the bytes.
+        return cast("bytes", inner.mapped()), True
 
     @staticmethod
     def _walk_members(
@@ -929,9 +918,7 @@ class ArchiveReader:
             # named one is: bytes appended past a gzip's end marker were never decompressed.
             claimed = ArchiveReader.is_archive(member.name)
             nested = claimed or ArchiveSignatures.opens(member.data)
-            inner, nested = ArchiveReader._held_nested(
-                member, member_path, nested, limits, rejected
-            )
+            inner, nested = ArchiveReader._held_nested(member, member_path, nested, limits)
             digest = hashlib.sha256(inner).digest() if nested else b""
             too_deep = nested and depth >= limits.max_archive_depth
             if too_deep and rejected is not None:

@@ -12,6 +12,7 @@ from typing import Any, ClassVar
 
 from cordon_scanner.contracts.digests import ArtifactDigests
 from cordon_scanner.contracts.subjects import SubjectKind
+from cordon_scanner.decide.decision.capabilities import AgentCapabilities
 from cordon_scanner.decide.decision.records import Checks, DecisionError, Instants, JsonRecord
 
 
@@ -26,16 +27,28 @@ class ArtifactRef(JsonRecord):
     ecosystem: str | None = None
     namespace: str | None = None
     tags: tuple[str, ...] = ()
+    capabilities: tuple[str, ...] | None = None
+    """The capabilities an agent declares (`AgentCapabilities.NAMES`), what `agent.capabilities` reads; `None` (left out of the record) for anything that is not an agent."""
     released_at: str | None = None
+    registry: str | None = None
+    """The host the artifact was served from (`registry.npmjs.org`), when known: what `registry.host` reads (R505)."""
 
     def __post_init__(self) -> None:
         Checks.one_of("ArtifactRef", "kind", self.kind, tuple(kind.value for kind in SubjectKind))
         Checks.text("ArtifactRef", "subject_id", self.subject_id)
         Checks.strings("ArtifactRef", "tags", self.tags)
+        if self.capabilities is not None:
+            Checks.strings("ArtifactRef", "capabilities", self.capabilities)
+        if AgentCapabilities.unknown(self.capabilities or ()):
+            raise DecisionError(
+                f"ArtifactRef.capabilities: {', '.join(AgentCapabilities.unknown(self.capabilities or ()))} not in the vocabulary"
+            )
         if self.digest is not None and not ArtifactDigests.is_digest(self.digest):
             raise DecisionError(f"ArtifactRef.digest: {self.digest!r} is not a sha256 digest")
         if self.released_at is not None:
             Instants.parse(self.released_at)
+        if self.registry is not None:
+            Checks.text("ArtifactRef", "registry", self.registry)
 
     def age_days(self, clock: datetime) -> int | None:
         """Whole days since the release at `clock`, or `None` when the release time is not known."""
@@ -164,14 +177,18 @@ class Provenance(JsonRecord):
     slsa_level: int = 0
     signer: str | None = None
     verified: bool = True
+    publisher_first_seen: str | None = None
+    """When the publisher account first published this subject's namespace (ISO 8601), from the registry: what `publisher.age_days` reads (R502)."""
 
     def __post_init__(self) -> None:
         Checks.whole("Provenance", "slsa_level", self.slsa_level, high=4)
+        if self.publisher_first_seen is not None:
+            Instants.parse(self.publisher_first_seen)
 
 
 @dataclass(frozen=True, slots=True)
 class Approval(JsonRecord):
-    """An approval or an exception, bound to digests and an expiry (spec 5.3 step 5, I2)."""
+    """An approval or an exception, bound to digests and an expiry (spec 5.3 step 5)."""
 
     KINDS: ClassVar[tuple[str, ...]] = ("approve", "approve_with_conditions", "exception")
 
@@ -248,6 +265,8 @@ class EvidenceSet(JsonRecord):
     integrity_ok: bool | None = None
     unresolved: bool = False
     required_missing: tuple[str, ...] = ()
+    lookalike_of: str | None = None
+    """The popular name this subject's name resembles, from the name analysis: what `name.lookalike` reads (R504)."""
 
     def __post_init__(self) -> None:
         Checks.strings("EvidenceSet", "required_missing", self.required_missing)

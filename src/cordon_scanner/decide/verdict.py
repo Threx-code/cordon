@@ -99,11 +99,30 @@ class VerdictModel:
         if bundled is None:
             return None
         delivered = FeedModels.delivered(path.name)
-        if delivered is not None:
-            model = VerdictModel._read(delivered)
-            if model is not None and FeedModels.newer(model.get("version"), bundled.get("version")):
-                return model
+        if delivered is None:
+            return bundled
+        model = VerdictModel._read(delivered)
+        if model is None:
+            FeedModels.refuse(path.name, VerdictModel._why_unusable(delivered))
+        elif not VerdictModel._complete(model):
+            FeedModels.refuse(path.name, "incomplete")
+        elif FeedModels.newer(model.get("version"), bundled.get("version")):
+            FeedModels.accepted(path.name)
+            return model
+        else:
+            versioned = FeedModels.versioned(model.get("version"))
+            FeedModels.refuse(path.name, "not_fresher" if versioned else "unversioned")
         return bundled
+
+    @staticmethod
+    def _why_unusable(path: Path) -> str:
+        """Why the model file at `path` cannot be scored with: it is a model of another feature schema or fold (`other_schema`) or it is not a model (`unreadable`)."""
+        try:
+            with gzip.open(path, "rt", encoding="utf-8") as handle:
+                model: Any = json.load(handle)
+        except (OSError, ValueError, EOFError):
+            return "unreadable"
+        return "other_schema" if isinstance(model, dict) else "unreadable"
 
     @staticmethod
     def _read(path: Path) -> dict[str, Any] | None:
@@ -123,6 +142,20 @@ class VerdictModel:
         ):
             return model
         return None
+
+    @staticmethod
+    def _complete(model: dict[str, Any]) -> bool:
+        """Whether the model holds every section a scan reads when it applies it: the features, the baseline, the trees, a block line for the fallback area and the floor.
+        A model without them would end a scan that has findings in an error, so it is not used."""
+        areas = model.get("areas")
+        return (
+            isinstance(model.get("features"), list)
+            and isinstance(model.get("trees"), list)
+            and isinstance(model.get("baseline"), (int, float))
+            and isinstance(areas, dict)
+            and Verdict.FALLBACK in areas
+            and isinstance(model.get("floor"), list)
+        )
 
     @staticmethod
     def inputs(model: dict[str, Any], features: dict[str, float]) -> dict[str, float]:
@@ -179,6 +212,11 @@ class Verdict:
     def line(areas: dict[str, Any], area: str) -> float:
         """The score at which `area` blocks: the model's line for it, scaled by `LINE_SCALE`."""
         return float(areas.get(area, areas[Verdict.FALLBACK])) * Verdict.LINE_SCALE.get(area, 1.0)
+
+    @staticmethod
+    def model_refusals() -> dict[str, str] | None:
+        """The delivered models a scan turned down and why, or None when it turned none down: what a scan's stats say about the models it did not use."""
+        return FeedModels.refusals() or None
 
     _PYPI: ClassVar[re.Pattern[str]] = re.compile(r"^[^/]+/PKG-INFO$|^[^/]+\.dist-info/METADATA$")
     #: Each ecosystem's layout, read on the outermost archive only (a jar bundled in a Gradle

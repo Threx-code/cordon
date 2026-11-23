@@ -15,6 +15,7 @@ into that name: `CanonicalIds.canonical_id(kind, parts)`.
   agent              agent:<product>
   source repository  repo:<scm>/<owner>/<name>
   build artifact     art:<tenant-scope>/<name>
+  third-party integ. int:<vendor>/<integration>                          version or contract digest
 ```
 
 Pure and total: the same parts give the same id on every platform and in every run (no locale, no
@@ -44,6 +45,7 @@ class SubjectKind(StrEnum):
     AGENT = "agent"
     SOURCE_REPOSITORY = "source_repository"
     BUILD_ARTIFACT = "build_artifact"
+    THIRD_PARTY_INTEGRATION = "third_party_integration"
 
 
 class InvalidSubject(ValueError):
@@ -176,6 +178,8 @@ class SubjectParts:
 
     @classmethod
     def remote(cls, locator: str) -> str:
+        if any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in locator.strip()):
+            raise InvalidSubject(f"locator: {locator!r} has a blank or a control character in it")
         url = urlsplit(locator.strip())
         if url.scheme.lower() != "https" or not url.hostname:
             raise InvalidSubject(f"locator: {locator!r} is not an https URL")
@@ -194,7 +198,8 @@ class CanonicalIds:
         package: ecosystem, name, [namespace]; container_image: name, [registry]; ci_action: host
         (github | gitlab), owner, repo, [path]; ide_extension: marketplace, publisher, name;
         agent_skill: source, locator; mcp_server: transport, locator; ai_model: provider, name;
-        agent: product; source_repository: scm, owner, name; build_artifact: scope, name."""
+        agent: product; source_repository: scm, owner, name; build_artifact: scope, name;
+        third_party_integration: vendor, integration."""
         kind = SubjectKind(kind)
         build = {
             SubjectKind.PACKAGE: cls._package,
@@ -207,6 +212,7 @@ class CanonicalIds:
             SubjectKind.AGENT: cls._agent,
             SubjectKind.SOURCE_REPOSITORY: cls._repository,
             SubjectKind.BUILD_ARTIFACT: cls._artifact,
+            SubjectKind.THIRD_PARTY_INTEGRATION: cls._integration,
         }[kind]
         return build(parts)
 
@@ -349,6 +355,21 @@ class CanonicalIds:
         if scm != "git":
             owner, name = owner.lower(), name.lower()
         return f"repo:{scm}/{owner}/{name}"
+
+    @classmethod
+    def _integration(cls, parts: Mapping[str, str]) -> str:
+        """`int:<vendor>/<integration>`: an external API, SaaS app or connector a tenant allows software or an agent to call.
+        Both names are case-insensitive and a run of blanks in one is written as one `-`."""
+        vendor = cls._dashed(SubjectParts.need(parts, "vendor"), "vendor")
+        integration = cls._dashed(SubjectParts.need(parts, "integration"), "integration")
+        return f"int:{vendor}/{integration}"
+
+    @staticmethod
+    def _dashed(text: str, field: str) -> str:
+        name = "-".join(text.lower().split())
+        if not _SEGMENT.fullmatch(name):
+            raise InvalidSubject(f"{field}: {name!r} is not a name")
+        return name
 
     @classmethod
     def _artifact(cls, parts: Mapping[str, str]) -> str:

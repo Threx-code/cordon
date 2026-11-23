@@ -31,6 +31,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import random
 import re
 import secrets
 import shutil
@@ -280,6 +281,11 @@ class ArchiveExpander:
     """The parent's side: the expander run, its answer checked, the members replayed."""
 
     RULE = "OPERATIONAL.ARCHIVE.REJECTED"
+    #: How many times a scan waits for other scans to free the temp space and expands the archive again, and the pause (seconds): a random
+    #: time between PAUSE_LEAST and PAUSE_LEAST plus up to PAUSE_STEP for each wait so far, so scans that ran out together do not start together.
+    SPACE_WAITS: ClassVar[int] = 12
+    PAUSE_LEAST: ClassVar[float] = 0.5
+    PAUSE_STEP: ClassVar[float] = 3.0
 
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
@@ -311,10 +317,15 @@ class ArchiveExpander:
         if self.spill is None:
             self.spill = SpillDirectory()
         size = path.stat().st_size
-        short = self._short_of_space(size)
-        if short is not None:
-            self._refuse(acc, path, short)
-            return None, iter(())
+        waited = 0
+        while (short := self._short_of_space(size)) is not None:
+            # Other scans may hold the space at this moment: wait for them as the expansion below does, and refuse only when the waits are spent.
+            pause = self._pause(waited, deadline)
+            if pause is None:
+                self._refuse(acc, path, short)
+                return None, iter(())
+            time.sleep(pause)
+            waited += 1
         engine, config = self.engine, self.engine.config
         template = getattr(engine, "_template", None)
         module = f"{ParallelScanner.__module__}:ParallelScanner"
@@ -329,23 +340,36 @@ class ArchiveExpander:
                 (type(engine), config.to_dict(), str(path.parent), (), repository, operator, {}),
             )
         scan_deadline = None if deadline == float("inf") else deadline
-        supervisor = Supervisor(
-            ParallelScanner.start_context(), setup, f"{__name__}:ExpandWork.run",
-            ParallelScanner.BOUNDS, 1, deadline=scan_deadline,
-        )  # fmt: skip
-        supervisor.template = template
-        item = (str(path), path.name, scan_deadline, str(self.spill.path))
-        outcome = supervisor.run([Unit(0, item, size)])
-        why = ""
-        accepted = None
-        if 0 in outcome.results and isinstance(outcome.results[0], str):
-            accepted, why = self.accept(outcome.results[0], path.name)
-        elif 0 in outcome.failed:
-            why = f"its expander ended: {outcome.failed[0]}"
-        elif outcome.unstarted:
-            why = "the scan's time budget was spent while it was being expanded"
-        else:
-            why = "its expander gave no answer"
+        while True:
+            supervisor = Supervisor(
+                ParallelScanner.start_context(), setup, f"{__name__}:ExpandWork.run",
+                ParallelScanner.BOUNDS, 1, deadline=scan_deadline,
+            )  # fmt: skip
+            supervisor.template = template
+            item = (str(path), path.name, scan_deadline, str(self.spill.path))
+            outcome = supervisor.run([Unit(0, item, size)])
+            why = ""
+            accepted = None
+            if 0 in outcome.results and isinstance(outcome.results[0], str):
+                accepted, why = self.accept(outcome.results[0], path.name)
+            elif 0 in outcome.failed:
+                why = f"its expander ended: {outcome.failed[0]}"
+            elif outcome.unstarted:
+                why = "the scan's time budget was spent while it was being expanded"
+            else:
+                why = "its expander gave no answer"
+            if accepted is None or not self._ran_out_of_space(accepted[2]):
+                break
+            pause = self._pause(waited, deadline)
+            if pause is None:
+                break
+            # The machine's temp space was shared with other scans at that moment. What this archive
+            # holds did not change, so the result must not either: its partial files are released, the
+            # scan waits for the others to finish, and it expands the archive again.
+            self.spill.remove()
+            self.spill = SpillDirectory()
+            time.sleep(pause)
+            waited += 1
         if accepted is None:
             self._refuse(acc, path, why)
             return None, iter(())
@@ -354,6 +378,27 @@ class ArchiveExpander:
             acc.append(finding)
         acc.absorb(complete, tuple(gaps))
         return image, self._replay(members, reader_rejected, error, rejected, import_library)
+
+    @classmethod
+    def _ran_out_of_space(cls, rejected: object) -> bool:
+        """Whether a member the reader refused was refused because the temp space ran out."""
+        return isinstance(rejected, list) and any(
+            isinstance(entry, (list, tuple))
+            and len(entry) == 3
+            and RefusalReasons.NO_SPACE.search(entry[2]) is not None
+            for entry in rejected
+        )
+
+    @classmethod
+    def _pause(cls, waited: int, deadline: float) -> float | None:
+        """How long to wait before expanding again after the temp space ran out, or None when the waits are spent or the scan's time is."""
+        if waited >= cls.SPACE_WAITS:
+            return None
+        most = cls.PAUSE_LEAST + (1 + min(waited, 6)) * cls.PAUSE_STEP
+        seconds = random.uniform(cls.PAUSE_LEAST, most)  # noqa: S311 - spreads retries, not a secret
+        if deadline != float("inf") and time.monotonic() + seconds >= deadline:
+            return None
+        return seconds
 
     def _short_of_space(self, size: int) -> str | None:
         """Why the expansion cannot be started, when the spill directory has less free space than the archive's own

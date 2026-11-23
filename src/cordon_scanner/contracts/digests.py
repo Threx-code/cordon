@@ -70,6 +70,27 @@ class ArtifactDigests:
         return cls.of_bytes("".join(lines).encode("utf-8"))
 
     @classmethod
+    def of_git_commit(cls, commit: str) -> str:
+        """A CI action's artifact: the commit its tag or branch points at (row BP-3-5). The commit id is a SHA-1 or SHA-256 object
+        name of 40 or 64 hex digits; the digest is the sha256 of `git-commit\\0<id in lower case>`, so it has the one form every
+        schema takes, and the same commit is the same digest however the tool wrote the id. A moved tag is another commit, so another
+        digest: a decision made for the old one is not the new one's."""
+        text = commit.strip().lower()
+        if len(text) not in (40, 64) or not all(char in "0123456789abcdef" for char in text):
+            raise ValueError(f"{commit!r} is not a git commit id (40 or 64 hex digits)")
+        return cls.of_bytes(f"git-commit\0{text}".encode())
+
+    @classmethod
+    def of_contract(cls, contract: Mapping[str, Any]) -> str:
+        """A third-party integration's artifact: the digest of the contract it declares (an OpenAPI document or a connector
+        manifest, parsed to a mapping): the sha256 of the JSON written with sorted keys, no blanks and UTF-8 with text in NFC
+        (`canonical_json`), so the same contract is one digest however it was serialised, and a contract that changes is another
+        artifact. A contract kept as bytes, exactly as served, is `of_bytes`."""
+        if not isinstance(contract, Mapping) or not contract:
+            raise ValueError("a contract is a non-empty document")
+        return cls.of_bytes(cls.canonical_json(cls._canonical(contract)))
+
+    @classmethod
     def of_tool_list(cls, tools: Iterable[Mapping[str, Any]]) -> str:
         """A remote MCP server's artifact: the sha256 of its tools/list response canonicalised. Each
         tool keeps its name, description and input schema (the other fields of a response are not what the

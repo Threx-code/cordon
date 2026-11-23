@@ -200,9 +200,10 @@ class Pools:
 
     @classmethod
     def artifacts(cls, golden_ids: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """12 subjects from the golden ids fixture: the first of each kind, then two more packages."""
+        """12 subjects from the golden ids fixture: the first of each of the ten kinds the goldens were recorded with, then two
+        more packages. The eleventh kind (`third_party_integration`) is left out of the pool so the recorded decisions stay what they were."""
         picked: list[dict[str, Any]] = []
-        seen: set[str] = set()
+        seen: set[str] = {"third_party_integration"}
         for entry in golden_ids:
             if entry["kind"] not in seen:
                 seen.add(entry["kind"])

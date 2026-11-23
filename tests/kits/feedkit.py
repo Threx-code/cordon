@@ -99,7 +99,11 @@ class FeedKit:
         )
 
     @staticmethod
-    def rule_packs(packs: dict[str, tuple[str, str]], disabled: tuple[str, ...] = ()) -> bytes:
+    def rule_packs(
+        packs: dict[str, tuple[str, str]],
+        disabled: tuple[str, ...] = (),
+        tombstones: tuple[str, ...] = (),
+    ) -> bytes:
         """A delivered rule-pack set: {pack file: (yaml, enforcement)} plus the index."""
         files = {name: text.encode() for name, (text, _) in packs.items()}
         files["rulepacks.json"] = json.dumps(
@@ -109,6 +113,7 @@ class FeedKit:
                     for name, (_, enforcement) in packs.items()
                 ],
                 "disabled_rules": list(disabled),
+                "tombstones": list(tombstones),
             }
         ).encode()
         buffer = io.BytesIO()
