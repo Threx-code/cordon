@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 from statistics import NormalDist
 from typing import TYPE_CHECKING, Any, Final
 
+from bench.cdi.gate import Gate
 from bench.cdi.leakage import Leakage
 
 from cordon_scanner.rules.fact_terms import FactTerms
@@ -231,6 +232,8 @@ class Distiller:
                 "predicate_digest": Terms.digest(predicate),
                 "size": size,
                 "train": {
+                    "legit_units": space.legit_mask.bit_count(),
+                    "legit_hits": space.legit_fires(space.mask_of(predicate)),
                     "families": -neg_families,
                     "legit_upper": round(upper, 6),
                     "worst_stratum_upper": worst,
@@ -449,7 +452,7 @@ class PackRenderer:
             high = max(float(confirm["legit_upper"]), rate)
             learned = (
                 f"    learned: {{families: {int(train['families'])}, legit_rate: {round(rate, 6)!r}, "
-                f"interval: [0.0, {round(high, 6)!r}], batch: {batch}}}\n"
+                f"interval: [0.0, {round(high, 6)!r}], batch: {batch}, n: {int(confirm['legit_n'])}}}\n"
             )
         said = "; ".join(" ".join(t) for t in candidate["predicate"])
         message = (
@@ -466,11 +469,11 @@ class PackRenderer:
             "    category: suspicious\n"
             f"    severity: {severity}\n"
             f"    confidence: {confidence}\n"
+            f"{learned}"
             f"    title: '{PackRenderer.quoted('Machine-made: ' + said)}'\n"
             f"    message: '{PackRenderer.quoted(message)}'\n"
             "    remediation: 'Read what the named file does and why nothing in the package starts it; report a false "
             "positive from the finding.'\n"
-            f"{learned}"
             "    match:\n"
             "      kind: composite\n"
             "      scope: package\n"

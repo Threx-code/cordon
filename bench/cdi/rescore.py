@@ -60,6 +60,8 @@ class Rescore:
             "predicate_digest": Terms.digest(predicate),
             "size": len(predicate),
             "train": {
+                "legit_units": train.legit_mask.bit_count(),
+                "legit_hits": train.legit_fires(train.mask_of(predicate)),
                 "families": train.families(train.mask_of(predicate)),
                 "legit_upper": round(train_upper, 6),
                 "worst_stratum_upper": worst,

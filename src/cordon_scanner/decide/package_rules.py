@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.foundation.capabilities import MatchKind
 from cordon_scanner.foundation.models import (
+    Confidence,
     Evidence,
     EvidenceKind,
     Explanation,
@@ -34,6 +35,7 @@ from cordon_scanner.foundation.models import (
 )
 from cordon_scanner.foundation.results import NO_RISK
 from cordon_scanner.rules.fact_terms import UNREACHED, FactTerms, Term
+from cordon_scanner.rules.learned import LearnedBlock
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
@@ -157,8 +159,15 @@ class PackageRules:
             f"legit_rate={learned['legit_rate']:.4f}",
             f"interval={low:.4f}-{high:.4f}",
             f"batch={learned['batch']}",
+            *((f"n={learned['n']}",) if "n" in learned else ()),
             f"facts={said}",
         )
+
+    @staticmethod
+    def confidence_of(rule: Any) -> Confidence:
+        """A learned rule's confidence is the one its measured rate earns; any other rule keeps the one it declares."""
+        learned = rule.raw.get("learned")
+        return LearnedBlock.confidence(learned) if isinstance(learned, dict) else rule.confidence
 
     @staticmethod
     def finding(compiled: CompiledRule, path: str, satisfied: Sequence[Term]) -> Finding:
@@ -169,7 +178,7 @@ class PackageRules:
             rule_id=rule.id,
             category=rule.category,
             severity=rule.severity,
-            confidence=rule.confidence,
+            confidence=PackageRules.confidence_of(rule),
             message=rule.message,
             location=Location(path=path),
             evidence=Evidence(

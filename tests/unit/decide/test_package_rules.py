@@ -15,6 +15,7 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.errors import RulePackError
+from cordon_scanner.foundation.models import Confidence
 from cordon_scanner.report.facts import ScanFacts
 from cordon_scanner.rules.fact_terms import FactTerms
 from cordon_scanner.rules.loader import RuleLoader
@@ -248,3 +249,82 @@ class TestAFindingShowsWhereItsRuleCameFrom:
         pack.write_text(self.rule_with(block), encoding="utf-8")
         with pytest.raises(RulePackError, match="learned"):
             RuleLoader().load_file(pack)
+
+
+class TestAMeasuredRateSetsTheConfidence:
+    """A learned finding's confidence is what its measured rate earns (1 minus the interval's upper bound), and the policy's
+    minimum-confidence floor holds or enforces it like any other finding."""
+
+    @staticmethod
+    def block(upper: float, *, n: int | None = 2000) -> str:
+        count = f", n: {n}" if n is not None else ""
+        return (
+            "    learned: {families: 4, legit_rate: 0.0, interval: [0.0, "
+            f"{upper}], batch: b{count}}}\n"
+        )
+
+    def finding(self, tmp_path, upper: float):
+        rule = RULE.replace("    match:\n", f"{self.block(upper)}    match:\n")
+        result = PackageKit.scan(tmp_path, index="module.exports = (a, b) => a + b;\n", rule=rule)
+        (found,) = [f for f in result.findings if f.rule_id == "LEARNED.TEST.001"]
+        return found
+
+    def test_two_measured_rates_give_two_confidences(self, tmp_path) -> None:
+        (tmp_path / "a").mkdir()
+        (tmp_path / "b").mkdir()
+        tight = self.finding(tmp_path / "a", 0.002)
+        loose = self.finding(tmp_path / "b", 0.2)
+        assert tight.confidence > loose.confidence
+        assert (str(tight.confidence), str(loose.confidence)) == ("high", "low")
+
+    def test_the_declared_confidence_of_a_rule_with_no_block_is_kept(self, tmp_path) -> None:
+        result = PackageKit.scan(tmp_path, index="module.exports = (a, b) => a + b;\n")
+        (found,) = [f for f in result.findings if f.rule_id == "LEARNED.TEST.001"]
+        assert str(found.confidence) == "medium"
+
+    def test_a_floor_above_the_confidence_holds_the_finding_at_warn(self, tmp_path) -> None:
+        from cordon_scanner.decide.policy import PolicyGate
+
+        found = self.finding(tmp_path, 0.2)
+        policy = Config.default().policy
+        assert (
+            PolicyGate._fails(found, replace(policy, min_confidence_to_fail=Confidence.HIGH))
+            is False
+        )
+        assert (
+            PolicyGate._fails(found, replace(policy, min_confidence_to_fail=Confidence.LOW)) is True
+        )
+
+    def test_the_basis_names_the_number_of_legitimate_units(self, tmp_path) -> None:
+        assert "n=2000" in self.finding(tmp_path, 0.002).explanation.basis
+
+    @pytest.mark.parametrize("n", [0, -3, 1.5, "many", True])
+    def test_a_count_that_is_not_a_positive_integer_is_refused_at_load(self, tmp_path, n) -> None:
+        pack = tmp_path / "bad.yaml"
+        pack.write_text(
+            RULE.replace(
+                "    match:\n",
+                self.block(0.01, n=None).replace("b}", f"b, n: {n!r}" + "}") + "    match:\n",
+            ),
+            encoding="utf-8",
+        )
+        with pytest.raises(RulePackError, match="learned"):
+            RuleLoader().load_file(pack)
+
+
+class TestARenderedPackCarriesN:
+    def test_the_block_holds_the_rate_its_interval_and_the_units_it_was_measured_on(self) -> None:
+        from bench.cdi.distill import PackRenderer
+
+        candidate = {
+            "predicate": [["file", "unreached", "egress"]],
+            "predicate_digest": "ab" * 32,
+            "train": {"families": 4, "legit_upper": 0.004, "legit_units": 1500, "legit_hits": 3},
+            "confirm": {"families": 3, "legit_upper": 0.005},
+        }
+        text = PackRenderer.render(candidate, "LEARNED.TEST.001")
+        assert (
+            "      n: 1500\n" in text
+            and "      legit_rate: 0.002000\n" in text
+            and "      families: 4\n" in text
+        )
