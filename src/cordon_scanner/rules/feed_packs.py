@@ -30,6 +30,7 @@ if TYPE_CHECKING:
 
 from cordon_scanner.rules.feed_floor import FeedFloor
 from cordon_scanner.rules.pack import RulePack
+from cordon_scanner.rules.pack_time import PackTime
 
 logger = logging.getLogger("cordon_scanner.intel.malware.feed_rules")
 
@@ -187,6 +188,10 @@ class FeedPacks:
                 # Its own samples fail: the rule would load and match nothing, or the wrong thing.
                 logger.warning("feed rule pack %s not loaded: it fails its own samples", name)
                 continue
+            over = PackTime.problem(pack)
+            if over is not None:
+                logger.warning("feed rule pack %s not run: %s", name, over)
+                pack = cls._refused(pack, over)
             ids = {rule.id for rule in pack.rules}
             if ids & taken:
                 continue  # a delivered pack adds detection; it never replaces a bundled rule
@@ -194,7 +199,10 @@ class FeedPacks:
             if enforcement == "shadow":
                 pack = cls._shadowed(pack)
             out.append((str(entry.get("candidate_id", ""))[:128], pack))
-        out = cls._without_repeats(sorted(out, key=lambda entry: (entry[1].id, entry[1].version)))
+        out = cls._within_total_budget(
+            sorted(out, key=lambda entry: (entry[1].id, entry[1].version))
+        )
+        out = cls._without_repeats(out)
         disabled = cls.disabled(index, delivered={r.id for _, p in out for r in p.rules})
         if disabled:
             out = [
@@ -228,6 +236,23 @@ class FeedPacks:
                     rules.append(compiled)
             if rules or pack.skipped:
                 kept.append((candidate, replace(pack, rules=tuple(rules))))
+        return kept
+
+    @staticmethod
+    def _refused(pack: RulePack, why: str) -> RulePack:
+        """A pack not run: no rules, and each of its rules recorded as one the scan did not evaluate, with the reason."""
+        return replace(
+            pack, rules=(), skipped=(*pack.skipped, *((c.rule.id, why) for c in pack.rules))
+        )
+
+    @classmethod
+    def _within_total_budget(cls, out: list[tuple[str, RulePack]]) -> list[tuple[str, RulePack]]:
+        """The packs in order, until the time they took together passes the per-scan budget: a pack after that is not run and says why."""
+        spent, kept = 0.0, []
+        for candidate, pack in out:
+            spent += PackTime.measure(pack)
+            why = PackTime.total_problem(spent)
+            kept.append((candidate, cls._refused(pack, why) if why else pack))
         return kept
 
     @staticmethod
