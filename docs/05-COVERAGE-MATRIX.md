@@ -1153,16 +1153,16 @@ rather than a document.
 
 ## Generated infrastructure policy
 
-**862 policies**, over the resources the providers say have the attribute each control is about. Which resources those are is a fact rather than a memory, so it is read from the schema rather than typed: a policy naming an attribute a provider does not have can never fire, and looks exactly like a clean scan.
+**881 policies**, over the resources the providers say have the attribute each control is about. Which resources those are is a fact rather than a memory, so it is read from the schema rather than typed: a policy naming an attribute a provider does not have can never fire, and looks exactly like a clean scan.
 
 | Control family | Policies |
 |---|---|
 | `AUTOMOUNT_TOKEN` | 18 |
 | `BACKUP` | 11 |
 | `BOOT_INTEGRITY` | 17 |
-| `CMEK` | 319 |
-| `DELETION_PROTECTION` | 56 |
-| `ENCRYPT_AT_REST` | 58 |
+| `CMEK` | 330 |
+| `DELETION_PROTECTION` | 61 |
+| `ENCRYPT_AT_REST` | 60 |
 | `ENCRYPT_IN_TRANSIT` | 19 |
 | `FORCE_DESTROY` | 31 |
 | `GOVERNANCE` | 9 |
@@ -1177,7 +1177,7 @@ rather than a document.
 | `PRIVILEGED` | 19 |
 | `PRIVILEGE_ESCALATION` | 16 |
 | `PUBLIC_ACCESS` | 79 |
-| `PUBLIC_IP` | 12 |
+| `PUBLIC_IP` | 13 |
 | `RESILIENCE` | 9 |
 | `RETENTION` | 17 |
 | `RUN_AS_ROOT` | 15 |
@@ -1185,7 +1185,7 @@ rather than a document.
 | `WEAK_TLS` | 27 |
 | `WRITABLE_ROOT` | 17 |
 
-Severity: 544 low, 209 medium, 109 high.
+Severity: 561 low, 209 medium, 111 high.
 
 Built from:
 
@@ -1194,7 +1194,7 @@ Built from:
   registry.terraform.io/hashicorp/azurerm          4.81.0
   registry.terraform.io/hashicorp/google           6.50.0
   registry.terraform.io/hashicorp/kubernetes       2.38.0
-  AWS CloudFormation resource specification        265.0.0
+  AWS CloudFormation resource specification        273.0.0
 ```
 
 Regenerate after a provider release:
