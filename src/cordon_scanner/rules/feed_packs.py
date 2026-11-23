@@ -27,7 +27,9 @@ if TYPE_CHECKING:
     from pathlib import Path
     from typing import Any
 
-    from cordon_scanner.rules.pack import RulePack
+
+from cordon_scanner.rules.feed_floor import FeedFloor
+from cordon_scanner.rules.pack import RulePack
 
 logger = logging.getLogger("cordon_scanner.intel.malware.feed_rules")
 
@@ -128,11 +130,13 @@ class FeedPacks:
     def _select(
         cls, loader: PackFiles, bundled_ids: Iterable[str], *, shadow: bool | None
     ) -> list[tuple[str, RulePack]]:
-        from cordon_scanner.foundation.models import Category, Confidence, Severity
-
         shadow = FeedRules.shadow_enabled() if shadow is None else shadow
         taken = set(bundled_ids)
         index = FeedRules.index()
+        set_problem = FeedFloor.set_problem(index)
+        if set_problem is not None:
+            logger.warning("feed rule packs not loaded: %s", set_problem)
+            return []
         retired = frozenset(str(item) for item in index.get("tombstones") or ())
         out: list[tuple[str, RulePack]] = []
         for entry in index.get("packs") or ():
@@ -156,7 +160,11 @@ class FeedPacks:
                 # A bad delivered pack never breaks the scan: it runs on what is bundled.
                 logger.warning("feed rule pack %s not loaded: %s", name, exc)
                 continue
-            problem = PackLimits.pack_problem(pack) or PackLimits.id_problem(pack, retired)
+            problem = (
+                PackLimits.pack_problem(pack)
+                or PackLimits.id_problem(pack, retired)
+                or FeedFloor.pack_problem(pack)
+            )
             if problem is not None:
                 logger.warning("feed rule pack %s not loaded: %s", name, problem)
                 continue
@@ -171,30 +179,7 @@ class FeedPacks:
                 continue  # a delivered pack adds detection; it never replaces a bundled rule
             taken |= ids
             if enforcement == "shadow":
-                pack = replace(
-                    pack,
-                    id=f"shadow:{pack.id}",
-                    rules=tuple(
-                        replace(
-                            compiled,
-                            # LOW, where the hardening tier records what decides nothing: INFO is
-                            # below the default report threshold, so nobody would see it. Severity
-                            # alone is not enough either: a `malicious` rule's category floor lifts
-                            # it back to HIGH, so a shadow rule blocked (found end to end). Demoted
-                            # in category too, marked by pack, and said in its message.
-                            rule=replace(
-                                compiled.rule,
-                                severity=Severity.LOW,
-                                confidence=Confidence.LOW,
-                                category=Category.POLICY,
-                                rulepack=f"shadow:{compiled.rule.rulepack}",
-                                message=f"[shadow: would {compiled.rule.category.value}] "
-                                f"{compiled.rule.message}",
-                            ),
-                        )
-                        for compiled in pack.rules
-                    ),
-                )
+                pack = cls._shadowed(pack)
             out.append((str(entry.get("candidate_id", ""))[:128], pack))
         out = cls._without_repeats(sorted(out, key=lambda entry: (entry[1].id, entry[1].version)))
         disabled = cls.disabled(index, delivered={r.id for _, p in out for r in p.rules})
@@ -231,6 +216,36 @@ class FeedPacks:
             if rules:
                 kept.append((candidate, replace(pack, rules=tuple(rules))))
         return kept
+
+    @staticmethod
+    def _shadowed(pack: RulePack) -> RulePack:
+        """A pack that blocks nothing: every rule reports at low severity and confidence, demoted in category, marked by pack and said in its message."""
+        from cordon_scanner.foundation.models import Category, Confidence, Severity
+
+        return replace(
+            pack,
+            id=f"shadow:{pack.id}",
+            rules=tuple(
+                replace(
+                    compiled,
+                    # LOW, where the hardening tier records what decides nothing: INFO is
+                    # below the default report threshold, so nobody would see it. Severity
+                    # alone is not enough either: a `malicious` rule's category floor lifts
+                    # it back to HIGH, so a shadow rule blocked (found end to end). Demoted
+                    # in category too, marked by pack, and said in its message.
+                    rule=replace(
+                        compiled.rule,
+                        severity=Severity.LOW,
+                        confidence=Confidence.LOW,
+                        category=Category.POLICY,
+                        rulepack=f"shadow:{compiled.rule.rulepack}",
+                        message=f"[shadow: would {compiled.rule.category.value}] "
+                        f"{compiled.rule.message}",
+                    ),
+                )
+                for compiled in pack.rules
+            ),
+        )
 
     @staticmethod
     def disabled(index: dict[str, Any], *, delivered: set[str]) -> frozenset[str]:

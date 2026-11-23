@@ -55,7 +55,9 @@ them greppable and lets a policy target a family.
 
 SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
 
-_PACK_KEYS = frozenset({"id", "version", "license", "source", "requires_engine", "description"})
+_PACK_KEYS = frozenset(
+    {"id", "version", "license", "source", "requires_engine", "description", "expires"}
+)
 
 _ENGINE_REQUIREMENT = re.compile(r"(>=|<=|==|>|<)\s*(\d{1,9}(?:\.\d{1,9}){0,3})")
 """One comparator clause in a `requires_engine` string."""
@@ -161,6 +163,7 @@ class RuleLoader:
             license=pack["license"],
             source=pack.get("source", ""),
             description=pack.get("description", ""),
+            expires=pack.get("expires", ""),
             rules=tuple(rules),
             content_hash=hashlib.sha256(text.encode("utf-8")).hexdigest()[:16],
         )
@@ -206,6 +209,11 @@ class RuleLoader:
         requirement = pack.get("requires_engine")
         if requirement:
             RuleLoader._check_engine_requirement(str(requirement), source=source)
+        expires = pack.get("expires")
+        if expires is not None and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(expires)):
+            raise RulePackError(
+                f"{source}: pack.expires must be an ISO date (YYYY-MM-DD), got {expires!r}"
+            )
 
         return {k: str(v) for k, v in pack.items()}
 

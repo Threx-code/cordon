@@ -830,6 +830,7 @@
   "report/statement": "report/statement",
   "report/text": "report/text",
   "report/vex": "report/vex",
+  "rules/feed_floor": "rules/feed_floor",
   "rules/feed_packs": "rules/feed_packs",
   "rules/derivations": "rules/derivations",
   "rules/learned": "rules/learned",

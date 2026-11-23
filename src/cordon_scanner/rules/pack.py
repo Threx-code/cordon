@@ -235,6 +235,7 @@ class RulePack:
     source: str = ""
     description: str = ""
     content_hash: str = ""
+    expires: str = ""
 
     def __len__(self) -> int:
         return len(self.rules)
