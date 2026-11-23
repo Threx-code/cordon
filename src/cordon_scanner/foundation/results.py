@@ -433,6 +433,8 @@ class ScanStats:
     """The delivered models the scan turned down and why (`FeedModels.refusals`); absent when none was, so a scan's output does not vary with models nobody delivered."""
     rule_gaps: Mapping[str, str] | None = None
     """The delivered rules the scan could not evaluate (a term written for a version the scanner does not know), by rule id and reason; absent when none was, so a scan's output does not vary without cause."""
+    rules_demoted: Mapping[str, str] | None = None
+    """The delivered rules the scan ran as warnings (one fired on a bundled benign fixture, or the device's record says it blocked too much), by rule id and reason; absent when none was."""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -455,6 +457,7 @@ class ScanStats:
             **({"view_files": dict(self.view_files)} if self.view_files is not None else {}),
             **({"model_refusals": dict(self.model_refusals)} if self.model_refusals else {}),
             **({"rule_gaps": dict(self.rule_gaps)} if self.rule_gaps else {}),
+            **({"rules_demoted": dict(self.rules_demoted)} if self.rules_demoted else {}),
         }
 
 

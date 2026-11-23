@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.cloud.facts_export import KIND, FactsExport
+from cordon_scanner.cloud.agent.facts_export import KIND, FactsExport
 from cordon_scanner.cloud.local_store import LocalStore
 from cordon_scanner.foundation.config.settings import Config
 

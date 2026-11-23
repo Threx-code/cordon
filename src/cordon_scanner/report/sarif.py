@@ -304,10 +304,14 @@ class SarifReporter(BaseReporter):
     @staticmethod
     def _rule_gaps(result: ScanResult) -> dict[str, Any]:
         """The delivered rules the scan could not evaluate, as a count and each rule id with its reason; nothing when there were none."""
-        gaps = result.stats.rule_gaps
-        if not gaps:
-            return {}
-        return {"ruleGaps": {"count": len(gaps), "rules": dict(sorted(gaps.items()))}}
+        found: dict[str, Any] = {}
+        for key, record in (
+            ("ruleGaps", result.stats.rule_gaps),
+            ("ruleDemotions", result.stats.rules_demoted),
+        ):
+            if record:
+                found[key] = {"count": len(record), "rules": dict(sorted(record.items()))}
+        return found
 
     @staticmethod
     def _notification(f: Finding) -> dict[str, Any]:

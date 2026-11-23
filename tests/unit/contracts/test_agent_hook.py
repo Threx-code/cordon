@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from cordon_scanner.cloud.agent_hook import AgentCalls, AgentHook
+from cordon_scanner.cloud.agent.agent_hook import AgentCalls, AgentHook
 from cordon_scanner.cloud.local_store import LocalStore
 from cordon_scanner.cloud.runtime import CordonRuntime, ScanEvidence, Sources
 from cordon_scanner.contracts.digests import ArtifactDigests

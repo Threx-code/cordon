@@ -237,6 +237,7 @@ class RulePack:
     content_hash: str = ""
     expires: str = ""
     skipped: tuple[tuple[str, str], ...] = ()
+    demoted: tuple[tuple[str, str], ...] = ()
 
     def __len__(self) -> int:
         return len(self.rules)

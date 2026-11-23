@@ -23,11 +23,13 @@ from cordon_scanner.foundation.errors import ConfigError, RulePackError
 from cordon_scanner.intel.malware.feed_rules import PACK_FILE, FeedRules
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping
     from pathlib import Path
     from typing import Any
 
 
+from cordon_scanner.rules.benign_fixtures import BenignFixtures
+from cordon_scanner.rules.demotion import RuleDemotion
 from cordon_scanner.rules.feed_floor import FeedFloor
 from cordon_scanner.rules.pack import RulePack
 from cordon_scanner.rules.pack_time import PackTime
@@ -107,10 +109,28 @@ class FeedPacks:
 
     @classmethod
     def packs(
-        cls, loader: PackFiles, bundled_ids: Iterable[str], *, shadow: bool | None = None
+        cls,
+        loader: PackFiles,
+        bundled_ids: Iterable[str],
+        *,
+        shadow: bool | None = None,
+        demote: Mapping[str, str] | None = None,
     ) -> tuple[RulePack, ...]:
-        """The delivered packs this scan loads: verified, not colliding, shadow only when asked."""
-        return tuple(pack for _, pack in cls._select(loader, bundled_ids, shadow=shadow))
+        """The delivered packs this scan loads: verified, not colliding, shadow only when asked. `demote` names rules (by id, with the reason) the caller's own record says to run as warnings."""
+        return tuple(
+            pack for _, pack in cls._select(loader, bundled_ids, shadow=shadow, demote=demote)
+        )
+
+    @classmethod
+    def demoted(
+        cls, loader: PackFiles, bundled_ids: Iterable[str], *, shadow: bool | None = None
+    ) -> tuple[tuple[str, str], ...]:
+        """The delivered rules this scan runs as warnings, as (rule id, reason): a gap in what can block, said and counted."""
+        return tuple(
+            item
+            for _, pack in cls._select(loader, bundled_ids, shadow=shadow)
+            for item in pack.demoted
+        )
 
     @classmethod
     def skipped(
@@ -140,7 +160,12 @@ class FeedPacks:
 
     @classmethod
     def _select(
-        cls, loader: PackFiles, bundled_ids: Iterable[str], *, shadow: bool | None
+        cls,
+        loader: PackFiles,
+        bundled_ids: Iterable[str],
+        *,
+        shadow: bool | None,
+        demote: Mapping[str, str] | None = None,
     ) -> list[tuple[str, RulePack]]:
         shadow = FeedRules.shadow_enabled() if shadow is None else shadow
         taken = set(bundled_ids)
@@ -182,8 +207,7 @@ class FeedPacks:
                 continue
             from cordon_scanner.rules.tester import RuleTester
 
-            for rule_id, why in pack.skipped:
-                logger.warning("feed rule %s not evaluated: %s", rule_id, why)
+            cls._say_skipped(pack)
             if RuleTester.run(pack):
                 # Its own samples fail: the rule would load and match nothing, or the wrong thing.
                 logger.warning("feed rule pack %s not loaded: it fails its own samples", name)
@@ -192,6 +216,10 @@ class FeedPacks:
             if over is not None:
                 logger.warning("feed rule pack %s not run: %s", name, over)
                 pack = cls._refused(pack, over)
+            fired = dict.fromkeys(
+                BenignFixtures.firing(pack), "it fired on a bundled benign fixture"
+            )
+            pack = RuleDemotion.apply(pack, {**fired, **(demote or {})})
             ids = {rule.id for rule in pack.rules}
             if ids & taken:
                 continue  # a delivered pack adds detection; it never replaces a bundled rule
@@ -237,6 +265,11 @@ class FeedPacks:
             if rules or pack.skipped:
                 kept.append((candidate, replace(pack, rules=tuple(rules))))
         return kept
+
+    @staticmethod
+    def _say_skipped(pack: RulePack) -> None:
+        for rule_id, why in pack.skipped:
+            logger.warning("feed rule %s not evaluated: %s", rule_id, why)
 
     @staticmethod
     def _refused(pack: RulePack, why: str) -> RulePack:

@@ -18,7 +18,7 @@ from typing import Any
 
 from test_agent_hook import APPROVER, DENY, Scan, World
 
-from cordon_scanner.cloud.agent_hook import AgentHook
+from cordon_scanner.cloud.agent.agent_hook import AgentHook
 from kits.bundle_kit import T0
 
 BUDGET_MS = 300.0
