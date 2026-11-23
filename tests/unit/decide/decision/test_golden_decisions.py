@@ -266,3 +266,112 @@ class TestPropertiesOverTheGoldenCases:
             assert Variants.decide(case).state == "BLOCK", case
             checked += 1
         assert checked >= 100
+
+
+BRIDGE = "legacy.py"
+"""The harness that runs `PolicyGate` and `decide()` on one pair to compare them: it may default a missing day to today, and the decision function never imports it."""
+LIBRARY = sorted(
+    p
+    for p in (ROOT / "src" / "cordon_scanner" / "decide" / "decision").glob("*.py")
+    if p.name != BRIDGE
+)
+
+
+class Reaches:
+    """What `decide()` and the modules around it must never reach: a file, the network, a process, the clock, the environment or a source of chance."""
+
+    MODULES: ClassVar[frozenset[str]] = frozenset(
+        {"os", "sys", "time", "socket", "ssl", "subprocess", "urllib", "http", "shutil", "tempfile", "pathlib", "io", "random", "secrets", "uuid", "logging", "threading", "multiprocessing", "sqlite3", "glob"}
+    )  # fmt: skip
+    CALLS: ClassVar[frozenset[str]] = frozenset(
+        {"open", "input", "print", "exec", "eval", "__import__"}
+    )
+    ATTRIBUTES: ClassVar[frozenset[str]] = frozenset(
+        {"now", "utcnow", "today", "getenv", "environ", "monotonic", "perf_counter"}
+    )
+
+    @classmethod
+    def imports(cls, path: Path) -> list[str]:
+        import ast
+
+        found = []
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            names = [a.name for a in node.names] if isinstance(node, ast.Import) else []
+            if isinstance(node, ast.ImportFrom) and node.module and not node.level:
+                names = [node.module]
+            found += [f"{path.name}: imports {n}" for n in names if n.split(".")[0] in cls.MODULES]
+        return found
+
+    @classmethod
+    def calls(cls, path: Path) -> list[str]:
+        import ast
+
+        found = []
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id in cls.CALLS
+            ):
+                found.append(f"{path.name}:{node.lineno} calls {node.func.id}")
+            if isinstance(node, ast.Attribute) and node.attr in cls.ATTRIBUTES:
+                found.append(f"{path.name}:{node.lineno} reads .{node.attr}")
+        return found
+
+
+class Tripwire(dict[str, str]):
+    """An environment that fails when anything reads it."""
+
+    def __getitem__(self, key: str) -> str:
+        raise AssertionError("decide() read the environment")
+
+    def get(self, key: str, default: Any = None) -> Any:
+        raise AssertionError("decide() read the environment")
+
+
+class TestNothingIsReachedInsideDecide:
+    """The library has no I/O, clock or environment access (an import and call audit), and a decision made with every such door shut is the decision made with them open."""
+
+    def test_the_library_has_modules_to_audit(self) -> None:
+        assert len(LIBRARY) >= 10 and any(p.name == "decider.py" for p in LIBRARY)
+
+    def test_nothing_in_the_library_imports_the_comparison_harness(self) -> None:
+        text = [p.read_text(encoding="utf-8") for p in LIBRARY]
+        assert not [t for t in text if "decision.legacy" in t or "import legacy" in t]
+
+    def test_no_module_imports_a_file_network_process_clock_or_chance_module(self) -> None:
+        assert [line for path in LIBRARY for line in Reaches.imports(path)] == []
+
+    def test_no_module_opens_a_file_or_reads_the_clock_or_the_environment(self) -> None:
+        assert [line for path in LIBRARY for line in Reaches.calls(path)] == []
+
+    def test_a_hundred_cases_are_decided_the_same_with_every_door_shut(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import builtins
+        import socket
+        import time
+
+        inputs, policies = Computed.inputs(), Computed.policies()
+        expected = Computed.decisions()[:100]
+
+        def shut(*args: object, **kwargs: object) -> Any:
+            raise AssertionError("decide() reached outside itself")
+
+        for target, name in (
+            (builtins, "open"),
+            (socket, "socket"),
+            (time, "time"),
+            (time, "monotonic"),
+            (time, "perf_counter"),
+            (os, "getenv"),
+            (subprocess, "run"),
+            (subprocess, "Popen"),
+        ):
+            monkeypatch.setattr(target, name, shut)
+        monkeypatch.setattr(os, "environ", Tripwire())
+        shut_decisions = [
+            json.loads(DecisionGoldens.envelope(inputs, case, policies[case[0]]))
+            for case in inputs["cases"][:100]
+        ]
+        assert shut_decisions == expected
