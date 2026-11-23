@@ -1069,6 +1069,7 @@
   "test_retrain_check.py": "bench/cdi",
   "test_pretest.py": "bench/cdi",
   "test_verdict_train_fold.py": "bench",
+  "test_capacity.py": "bench",
   "test_mcp_recalibrate.py": "bench",
   "test_mcp_channel_model.py": "bench",
   "test_mcp_devset_listed.py": "bench",
