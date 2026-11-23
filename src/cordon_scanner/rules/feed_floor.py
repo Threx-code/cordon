@@ -24,8 +24,8 @@ class FeedFloor:
     MIN_SIGNED: ClassVar[str] = "2026-11-01"
     """The earliest signing day this release accepts (an ISO date)."""
 
-    REQUIRE_EXPIRY: ClassVar[bool] = False
-    """Whether a pack without an expiry is refused. Off until every emitter writes one."""
+    REQUIRE_EXPIRY: ClassVar[bool] = True
+    """Whether a pack without an expiry is refused: every emitted pack names the day it expires."""
 
     @staticmethod
     def today() -> str:
