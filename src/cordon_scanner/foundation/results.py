@@ -204,6 +204,8 @@ class Dependency:
     scope: Scope = Scope.RUNTIME
     resolved_from: str | None = None
     integrity: str | None = None
+    hashes: tuple[str, ...] = ()
+    """Every hash the lockfile lists for the artefact (`LockEntry.hashes`); `integrity` is the first of them. A revocation matches any of them."""
     parents: tuple[str, ...] = ()
     declared_spec: str | None = None
     project: str | None = None
@@ -359,6 +361,8 @@ class Dependency:
             value = getattr(self, key)
             if value is not None:
                 out[key] = value
+        if self.hashes:
+            out["hashes"] = list(self.hashes)
         if self.parents:
             out["parents"] = list(self.parents)
         source_type, source_url = self.source

@@ -340,6 +340,8 @@ class LockEntry:
     name: str
     version: str
     integrity: str | None = None
+    hashes: tuple[str, ...] = ()
+    """Every hash the lockfile lists for the artefact (one per wheel and the sdist for a Python package), in the order it lists them; `integrity` is the first. Empty where the format carries one hash or none."""
     resolved_from: str | None = None
     scope: Scope = Scope.RUNTIME
     dependencies: tuple[str, ...] = ()
@@ -871,6 +873,7 @@ class BaseEcosystem(
                 scope=entry.scope,
                 resolved_from=entry.resolved_from,
                 integrity=entry.integrity,
+                hashes=entry.hashes,
                 parents=tuple(sorted(parents.get(index, ()))),
                 project=project,
                 license=entry.license,

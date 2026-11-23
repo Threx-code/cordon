@@ -61,3 +61,50 @@ class TestTheUploadCarriesIntegrity:
     def test_a_pip_requirement_with_a_hash_carries_it(self, tmp_path: Path) -> None:
         deps = {d["name"]: d for d in Project.uploaded(tmp_path)}
         assert deps["requests"]["integrity"].endswith("ab" * 32)
+
+
+class TestEveryListedHashReachesThePlatform:
+    """A package listed with a hash per wheel carries all of them (`hashes`), and `integrity` stays the first."""
+
+    A, B, C = ("sha256:" + c * 64 for c in "abc")
+
+    @staticmethod
+    def uploaded(root: Path, files: dict[str, str]) -> dict[str, dict]:
+        for name, text in files.items():
+            (root / name).write_text(text, encoding="utf-8")
+        result = Scanner(Config.default().with_overrides(use_cache=False, offline=True)).scan(root)
+        return {
+            d["name"]: d for d in json.loads(SignedResults.results_bytes(result))["dependencies"]
+        }
+
+    def test_a_requirements_entry_with_three_hashes(self, tmp_path: Path) -> None:
+        text = f"requests==2.31.0 \\\n    --hash={self.A} \\\n    --hash={self.B} \\\n    --hash={self.C}\n"
+        dep = self.uploaded(tmp_path, {"requirements.txt": text})["requests"]
+        assert dep["hashes"] == [self.A, self.B, self.C] and dep["integrity"] == self.A
+
+    def test_a_poetry_entry_with_three_files(self, tmp_path: Path) -> None:
+        lock = (
+            '[[package]]\nname = "requests"\nversion = "2.31.0"\ndescription = ""\noptional = false\npython-versions = ">=3.7"\n'
+            f'files = [\n    {{file = "a.whl", hash = "{self.A}"}},\n    {{file = "b.whl", hash = "{self.B}"}},\n'
+            f'    {{file = "c.tar.gz", hash = "{self.C}"}},\n]\n\n[metadata]\nlock-version = "2.0"\npython-versions = "^3.8"\ncontent-hash = "x"\n'
+        )
+        project = '[tool.poetry]\nname = "demo"\nversion = "1.0.0"\n[tool.poetry.dependencies]\npython = "^3.8"\nrequests = "2.31.0"\n'
+        dep = self.uploaded(tmp_path, {"poetry.lock": lock, "pyproject.toml": project})["requests"]
+        assert dep["hashes"] == [self.A, self.B, self.C] and dep["integrity"] == self.A
+
+    def test_a_uv_entry_with_an_sdist_and_two_wheels(self, tmp_path: Path) -> None:
+        lock = (
+            'version = 1\nrequires-python = ">=3.8"\n\n[[package]]\nname = "requests"\nversion = "2.31.0"\n'
+            'source = { registry = "https://pypi.org/simple" }\n'
+            f'sdist = {{ url = "https://example.invalid/r.tar.gz", hash = "{self.A}" }}\n'
+            f'wheels = [\n    {{ url = "https://example.invalid/r1.whl", hash = "{self.B}" }},\n'
+            f'    {{ url = "https://example.invalid/r2.whl", hash = "{self.C}" }},\n]\n'
+        )
+        project = '[project]\nname = "demo"\nversion = "1.0.0"\nrequires-python = ">=3.8"\ndependencies = ["requests==2.31.0"]\n'
+        dep = self.uploaded(tmp_path, {"uv.lock": lock, "pyproject.toml": project})["requests"]
+        assert dep["hashes"] == [self.A, self.B, self.C] and dep["integrity"] == self.A
+
+    def test_an_entry_with_one_hash_lists_it_once(self, tmp_path: Path) -> None:
+        text = f"requests==2.31.0 --hash={self.A}\n"
+        dep = self.uploaded(tmp_path, {"requirements.txt": text})["requests"]
+        assert dep["hashes"] == [self.A] and dep["integrity"] == self.A
