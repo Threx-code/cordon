@@ -1,0 +1,12 @@
+{
+  "corpus_sha256": "7559d209b794dc6f56556501500e808dd1adad255f6df29189505a172be80715",
+  "measured": {
+    "p99_ratio": [235.0, 259.1, 142.3, 249.8, 220.8, 400.2],
+    "peak_kb": [10706, 12478, 10580, 10447, 10446, 10445]
+  },
+  "budget": {
+    "p99_ratio": 600.0,
+    "peak_kb": 16000
+  },
+  "note": "p99_ratio is the p99 of per-package scan times (best of three) over a fixed pure-Python workload on the same machine; peak_kb is the traced peak. A budget is about 1.5x the worst measured value."
+}
