@@ -18,7 +18,7 @@ from support import ROOT
 sys.path.insert(0, str(ROOT))
 
 from bench.cdi import featureset
-from bench.cdi.featureset import EXTRACTOR, EXTRACTOR_VERSION, FeatureSetBuilder
+from bench.cdi.featureset import EXTRACTOR, EXTRACTOR_VERSION, PLACE_SLOT, SLOTS, FeatureSetBuilder
 
 ROW: dict[str, Any] = {
     "sha256": "ab" * 32,
@@ -59,10 +59,10 @@ class TestARecordedRowBecomesAFeatureSet:
         } <= names
         assert record["ecosystem"] == "npm" and record["artifact_id"] == "art:fx@1.0"
 
-    def test_the_slot_is_read_from_the_finding_path(self) -> None:
+    def test_the_slot_of_a_file_no_place_names_is_none_and_a_manifest_is_packaging(self) -> None:
         slots = {f["name"]: f["slot"] for f in Fx.build()["features"]}
         assert (
-            slots["finding:MALWARE.EXFIL.001"] == "code"
+            slots["finding:MALWARE.EXFIL.001"] == "none"
             and slots["finding:SUSPECT.INSTALL.SCRIPT.001"] == "packaging"
         )
 
@@ -202,7 +202,7 @@ class TestEveryFeatureCarriesItsProvenance:
 
     def test_the_slots_in_use_are_named(self) -> None:
         slots = {f["slot"] for f in Fx.build()["features"]}
-        assert slots <= {"code", "text", "packaging", "agent_text", "none"}
+        assert slots <= set(SLOTS)
 
 
 class TestAModelOnContentFeaturesScoresTheSameWithoutIntel:
@@ -239,3 +239,82 @@ class TestAModelOnContentFeaturesScoresTheSameWithoutIntel:
             for findings in ([*self.CONTENT, *self.INTEL], self.CONTENT)
         ]
         assert scores[0] == scores[1]
+
+
+class TestTheSlotIsTheRowsVocabulary:
+    """A feature's slot is one of install, build, import, when_called, opaque, packaging, agent_text and none, read from the places the scan row names."""
+
+    EXPECTED = (
+        "install",
+        "build",
+        "import",
+        "when_called",
+        "opaque",
+        "packaging",
+        "agent_text",
+        "none",
+    )
+
+    def row(self, places: dict[str, list[str]] | None, *paths: str) -> dict[str, Any]:
+        findings = [
+            [f"MALWARE.X.00{n}", "high", "high", "malicious", path, 1, "capability"]
+            for n, path in enumerate(paths)
+        ]
+        return {**ROW, "findings": findings, "places": places or {}}
+
+    def slots(self, places: dict[str, list[str]] | None, *paths: str) -> dict[str, str]:
+        return {
+            f["location"]["path"]: f["slot"]
+            for f in Fx.build(self.row(places, *paths))["features"]
+            if f["name"].startswith("finding:")
+        }
+
+    def test_the_vocabulary_is_the_rows(self) -> None:
+        assert SLOTS == self.EXPECTED
+
+    def test_every_place_the_scan_names_has_a_slot_in_it(self) -> None:
+        from cordon_scanner.rules.fact_terms import FactTerms
+
+        assert set(PLACE_SLOT) >= FactTerms.PLACES - {"skill_named"} | {"skill_named"} and set(
+            PLACE_SLOT.values()
+        ) <= set(SLOTS)
+
+    def test_a_file_in_each_place_gets_its_slot(self) -> None:
+        places = {
+            "install_hook": ["a.js"],
+            "ci_hook": ["b.js"],
+            "import_entry": ["c.js"],
+            "agent_tool": ["d.js"],
+        }
+        assert self.slots(places, "a.js", "b.js", "c.js", "d.js") == {
+            "a.js": "install",
+            "b.js": "build",
+            "c.js": "import",
+            "d.js": "when_called",
+        }
+
+    def test_a_file_in_two_places_takes_the_earlier_slot(self) -> None:
+        assert self.slots({"import_entry": ["a.js"], "install_hook": ["a.js"]}, "a.js") == {
+            "a.js": "install"
+        }
+
+    def test_a_compiled_or_minified_file_is_opaque_even_in_a_place(self) -> None:
+        assert self.slots({"install_hook": ["a.node", "b.min.js"]}, "a.node", "b.min.js") == {
+            "a.node": "opaque",
+            "b.min.js": "opaque",
+        }
+
+    def test_manifests_and_agent_text_keep_theirs_and_an_unplaced_file_is_none(self) -> None:
+        assert self.slots({}, "package.json", "SKILL.md", "lib/x.js") == {
+            "package.json": "packaging",
+            "SKILL.md": "agent_text",
+            "lib/x.js": "none",
+        }
+
+    def test_a_path_inside_an_archive_is_placed_by_its_member_name(self) -> None:
+        assert self.slots({"install_hook": ["pkg/a.js"]}, "x.tgz!pkg/a.js") == {
+            "x.tgz!pkg/a.js": "install"
+        }
+
+    def test_the_function_is_a_new_version_because_the_slots_changed(self) -> None:
+        assert EXTRACTOR_VERSION == "1.1.0"
