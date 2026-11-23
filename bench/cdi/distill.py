@@ -85,6 +85,10 @@ class Terms:
     def check(term: tuple[str, ...]) -> None:
         if term[0] in REFUSED_KINDS:
             raise ValueError(f"refused term kind: {term[0]}")
+        if term[0] in FactTerms.NOT_COMPUTABLE:
+            raise ValueError(
+                f"term kind {term[0]} is not scanner-computable (it needs the previous release)"
+            )
 
     @staticmethod
     def canonical(predicate: tuple[tuple[str, ...], ...]) -> str:

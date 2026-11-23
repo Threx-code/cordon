@@ -251,6 +251,18 @@ class TestACandidateShipsAsAnOrdinaryRule:
         with pytest.raises(ValueError, match="LEARNED"):
             PackRenderer.render(candidate, "SUSPECT.MCP.001")
 
+    def test_a_candidate_over_a_release_pair_term_is_not_rendered_as_a_pack_rule(self) -> None:
+        from bench.cdi.distill import PackRenderer
+
+        candidate = {
+            "predicate": [["change", "capability", "added", "egress"]],
+            "predicate_digest": "0" * 64,
+            "train": {"families": 3, "legit_upper": 0.001},
+            "confirm": {"families": 1, "legit_upper": 0.002},
+        }
+        with pytest.raises(ValueError, match="not scanner-computable"):
+            PackRenderer.render(candidate, "LEARNED.NPM.001")
+
 
 class TestOneDistillationReadsOneFactsVersion:
     def test_facts_of_two_versions_are_refused(self) -> None:

@@ -75,6 +75,8 @@ class FactTerms:
         PLACES | {ANY, UNREACHED} | frozenset(REACH_PREFIX + kind for kind in _REACH)
     )
     KINDS: ClassVar[frozenset[str]] = frozenset({"file", "package_rule", "hook"})
+    NOT_COMPUTABLE: ClassVar[frozenset[str]] = frozenset({"change"})
+    """Term kinds the scanner cannot compute from one release: a `change` term is over a release pair, and the scanner has no previous release. Every kind in `KINDS` is scanner-computable; a pack rule over one of these is refused, and such a detector ships feed-side or through `--previous-facts`."""
     REFUSED: ClassVar[frozenset[str]] = frozenset({"name", "host", "age", "publisher", "program"})
     CAPABILITIES: ClassVar[frozenset[str]] = frozenset(str(c) for c in Capability)
 
@@ -153,6 +155,10 @@ class FactTerms:
         if kind in FactTerms.REFUSED:
             raise ValueError(
                 f"refused term kind: {kind} (identities belong to intel; age and publisher only stratify)"
+            )
+        if kind in FactTerms.NOT_COMPUTABLE:
+            raise ValueError(
+                f"term kind {kind} is over a release pair and not scanner-computable: the scanner has no previous release"
             )
         if kind == "file":
             if not isinstance(value, Mapping):
