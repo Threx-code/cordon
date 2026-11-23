@@ -58,7 +58,6 @@ class TestTwoSignaturesAreRequired(Isolated):
     @pytest.fixture(autouse=True)
     def pinned(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(FeedFloor, "REQUIRE_PACK_SIGNATURES", True)
-        monkeypatch.setattr(FeedFloor, "REQUIRE_EXPIRY", False)
         monkeypatch.setattr(PackSignatures, "LAB_KEYS", (LAB,))
         monkeypatch.setattr(PackSignatures, "PACK_KEYS", (SIGNER,))
 
