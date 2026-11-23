@@ -340,18 +340,15 @@ class LockEntry:
     name: str
     version: str
     integrity: str | None = None
-    hashes: tuple[str, ...] = ()
-    """Every hash the lockfile lists for the artefact (one per wheel and the sdist for a Python package), in the order it lists them; `integrity` is the first. Empty where the format carries one hash or none."""
+    hashes: tuple[str, ...] = ()  # every hash listed; `integrity` is the first
     resolved_from: str | None = None
     scope: Scope = Scope.RUNTIME
     dependencies: tuple[str, ...] = ()
     direct: bool = False
 
     license: str | None = None
-    """As the lockfile itself declares it, verbatim -- not yet normalised or
-    classified (see `intel/licenses.py`). Populated only where the format
-    actually carries it (npm's v2/v3 `packages` map, from registry metadata
-    npm cached at lock time); absent elsewhere rather than guessed."""
+    """As the lockfile declares it, verbatim and not yet normalised or classified (see `intel/licenses.py`);
+    only where the format carries it (npm's v2/v3 `packages` map, from registry metadata), else absent."""
 
     local: bool = False
     """This entry is the project's own code, not something fetched.
