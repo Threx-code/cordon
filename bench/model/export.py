@@ -44,29 +44,30 @@ class ModelExport:
         trees = []
         for info in booster.dump_model()["tree_info"]:
             nodes: list[dict[str, Any]] = []
-
-            def walk(node: Mapping[str, Any]) -> int:
-                index = len(nodes)
-                nodes.append({})
-                if "leaf_value" in node:
-                    nodes[index] = {"leaf": True, "value": float(node["leaf_value"])}
-                    return index
-                if node.get("decision_type") != "<=":
-                    raise ExportRefused("a split that is not a numerical <= split cannot be exported")
-                left, right = walk(node["left_child"]), walk(node["right_child"])
-                nodes[index] = {
-                    "leaf": False,
-                    "feature": int(node["split_feature"]),
-                    "threshold": float(node["threshold"]),
-                    "left": left,
-                    "right": right,
-                    "missing_left": bool(node.get("default_left", True)),
-                }
-                return index
-
-            walk(info["tree_structure"])
+            cls._walk(info["tree_structure"], nodes)
             trees.append(nodes)
         return trees
+
+    @classmethod
+    def _walk(cls, node: Mapping[str, Any], nodes: list[dict[str, Any]]) -> int:
+        """Appends this node and its children to `nodes`, depth first, and returns the node's index."""
+        index = len(nodes)
+        nodes.append({})
+        if "leaf_value" in node:
+            nodes[index] = {"leaf": True, "value": float(node["leaf_value"])}
+            return index
+        if node.get("decision_type") != "<=":
+            raise ExportRefused("a split that is not a numerical <= split cannot be exported")
+        left, right = cls._walk(node["left_child"], nodes), cls._walk(node["right_child"], nodes)
+        nodes[index] = {
+            "leaf": False,
+            "feature": int(node["split_feature"]),
+            "threshold": float(node["threshold"]),
+            "left": left,
+            "right": right,
+            "missing_left": bool(node.get("default_left", True)),
+        }
+        return index
 
     @staticmethod
     def score(model: Mapping[str, Any], values: Sequence[float]) -> float:

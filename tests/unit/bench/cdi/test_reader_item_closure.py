@@ -6,6 +6,7 @@ import copy
 import sys
 
 import pytest
+
 from support import ROOT as REPO
 
 sys.path.insert(0, str(REPO))
@@ -51,10 +52,6 @@ class Helpers:
         return evidence
 
 
-
-
-
-
 class TestTheClosureRule:
     def test_complete_evidence_has_no_problems(self) -> None:
         assert ClosureEvidence.problems(GOOD) == []
@@ -75,7 +72,9 @@ class TestTheClosureRule:
         assert len(problems) == 1 and problems[0].startswith(part)
 
     def test_a_ratio_of_exactly_one_point_one_passes(self) -> None:
-        assert ClosureEvidence.problems(Helpers.changed(["heavy_tail", "sum_candidate"], 1100.0)) == []
+        assert (
+            ClosureEvidence.problems(Helpers.changed(["heavy_tail", "sum_candidate"], 1100.0)) == []
+        )
 
     def test_a_missing_part_is_a_problem_not_a_pass(self) -> None:
         for part in ("scale", "linearity", "heavy_tail", "legit_incomplete", "units_seen"):
@@ -88,7 +87,9 @@ class TestTheClosureRule:
 
 
 class TestAnItemWithTooFewUnitsSeenStaysOpen:
-    def test_evidence_with_too_few_units_is_refused_and_the_item_stays_open_after_a_clean_window(self) -> None:
+    def test_evidence_with_too_few_units_is_refused_and_the_item_stays_open_after_a_clean_window(
+        self,
+    ) -> None:
         tracker = Helpers.tracker_with_open_item()
         with pytest.raises(EvidenceRefused, match="fewer than 20 units"):
             tracker.attach_evidence(TRUNCATED, "JS", Helpers.changed(["units_seen"], 12))
@@ -104,12 +105,18 @@ class TestAnItemWithTooFewUnitsSeenStaysOpen:
             tracker.attach_evidence(TRUNCATED, "JS", evidence)
         assert len(refused.value.problems) == 2
 
-    def test_complete_evidence_lets_the_item_close_in_a_later_window_that_no_longer_shows_it(self) -> None:
+    def test_complete_evidence_lets_the_item_close_in_a_later_window_that_no_longer_shows_it(
+        self,
+    ) -> None:
         tracker = Helpers.tracker_with_open_item()
         reference = tracker.attach_evidence(TRUNCATED, "JS", GOOD)
         tracker.apply("w2", [])
         item = tracker.items[(TRUNCATED, "JS")]
-        assert item.status == CLOSED and item.acceptance == reference and reference.startswith("evidence:")
+        assert (
+            item.status == CLOSED
+            and item.acceptance == reference
+            and reference.startswith("evidence:")
+        )
 
     def test_evidence_for_an_item_that_does_not_exist_is_refused(self) -> None:
         with pytest.raises(KeyError):

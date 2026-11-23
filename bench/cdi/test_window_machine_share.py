@@ -3,7 +3,16 @@
 from __future__ import annotations
 
 import pytest
-from bench.cdi.window import ADVISORY, CONTENT_HUMAN, CONTENT_LEARNED, NONE, UPSTREAM, TimeToCatch, WindowReport, WindowUnit
+from bench.cdi.window import (
+    ADVISORY,
+    CONTENT_HUMAN,
+    CONTENT_LEARNED,
+    NONE,
+    UPSTREAM,
+    TimeToCatch,
+    WindowReport,
+    WindowUnit,
+)
 
 
 class Kit:

@@ -29,10 +29,14 @@ DISTINGUISHING = Signature.of(Kit.separable()) - PLAIN_TERMS
 
 class Helpers:
     @staticmethod
-    def row(key: str, facts, attack_class: str = "dropper", split: str = "train", tier: str = "confirmed") -> MissRow:
+    def row(
+        key: str,
+        facts,
+        attack_class: str = "dropper",
+        split: str = "train",
+        tier: str = "confirmed",
+    ) -> MissRow:
         return MissRow(key, "fam", "npm", split, tier, facts, attack_class)
-
-
 
 
 class TestEachClassRoutesAsSpecifiedOnAFixtureWindow:
@@ -48,7 +52,9 @@ class TestEachClassRoutesAsSpecifiedOnAFixtureWindow:
     def routes(self, report) -> dict[str, tuple[str, str]]:
         return {v.key: (v.klass, v.route) for v in report.verdicts}
 
-    def test_without_candidate_terms_the_four_classes_route_as_before_and_a_new_class_goes_to_a_reader_or_teacher(self) -> None:
+    def test_without_candidate_terms_the_four_classes_route_as_before_and_a_new_class_goes_to_a_reader_or_teacher(
+        self,
+    ) -> None:
         assert self.routes(self.window()) == {
             "a-gap": (READING_GAP, "reader"),
             "b-contained": (NO_SEPARATING_FACT, "teacher"),
@@ -56,7 +62,9 @@ class TestEachClassRoutesAsSpecifiedOnAFixtureWindow:
             "d-new-class": (NEW_CLASS, "reader_or_teacher"),
         }
 
-    def test_terms_that_legit_releases_hold_make_a_miss_do_not_separate_and_go_to_the_teacher(self) -> None:
+    def test_terms_that_legit_releases_hold_make_a_miss_do_not_separate_and_go_to_the_teacher(
+        self,
+    ) -> None:
         routes = self.routes(self.window(candidate_terms=PLAIN_TERMS))
         assert routes["c-separable"] == (DO_NOT_SEPARATE, "teacher")
 
@@ -70,16 +78,26 @@ class TestEachClassRoutesAsSpecifiedOnAFixtureWindow:
 
     def test_a_reading_gap_still_comes_before_a_new_class(self) -> None:
         report = Census.run(
-            "w", [Helpers.row("g", Kit.unread(), attack_class="clipboard-hijack")], Kit.legit(), train_classes=TRAIN_CLASSES
+            "w",
+            [Helpers.row("g", Kit.unread(), attack_class="clipboard-hijack")],
+            Kit.legit(),
+            train_classes=TRAIN_CLASSES,
         )
         assert report.verdicts[0].klass == READING_GAP
 
     def test_a_miss_with_no_class_named_is_never_a_new_class(self) -> None:
-        report = Census.run("w", [Helpers.row("x", Kit.separable(), attack_class="")], Kit.legit(), train_classes=TRAIN_CLASSES)
+        report = Census.run(
+            "w",
+            [Helpers.row("x", Kit.separable(), attack_class="")],
+            Kit.legit(),
+            train_classes=TRAIN_CLASSES,
+        )
         assert report.verdicts[0].klass == FACTS_EXIST
 
     def test_without_train_classes_nothing_is_a_new_class(self) -> None:
-        report = Census.run("w", [Helpers.row("x", Kit.separable(), attack_class="anything")], Kit.legit())
+        report = Census.run(
+            "w", [Helpers.row("x", Kit.separable(), attack_class="anything")], Kit.legit()
+        )
         assert report.verdicts[0].klass == FACTS_EXIST
 
     def test_a_held_miss_of_a_new_class_is_counted_in_its_class_and_goes_nowhere(self) -> None:
@@ -93,8 +111,16 @@ class TestEachClassRoutesAsSpecifiedOnAFixtureWindow:
 
     def test_the_counts_name_every_class(self) -> None:
         counts = self.window(candidate_terms=PLAIN_TERMS).counts()
-        assert (counts["reading_gap"], counts["no_separating_fact"], counts["facts_exist_but_do_not_separate"]) == (1, 1, 1)
-        assert (counts["new_class"], counts["facts_exist"], counts["fed_to_generators"]) == (1, 0, 0)
+        assert (
+            counts["reading_gap"],
+            counts["no_separating_fact"],
+            counts["facts_exist_but_do_not_separate"],
+        ) == (1, 1, 1)
+        assert (counts["new_class"], counts["facts_exist"], counts["fed_to_generators"]) == (
+            1,
+            0,
+            0,
+        )
 
 
 class TestGeneratorsGetEachTermSetsLegitRateFirst:

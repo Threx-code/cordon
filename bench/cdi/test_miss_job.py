@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-
 from bench.cdi.miss_job import MissAnalysis, NoRegressionTest, NotAReproduction
 
 

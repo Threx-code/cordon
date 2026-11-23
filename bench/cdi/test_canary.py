@@ -12,7 +12,7 @@ class Kit:
     @staticmethod
     def batch(bad: str = "blocked", good: str = "clear", extra: int = 3) -> list[dict[str, str]]:
         rows = [{"unit": f"u{i}", "outcome": "clear"} for i in range(extra)]
-        return rows + [{"unit": "canary-bad", "outcome": bad}, {"unit": "canary-good", "outcome": good}]
+        return [*rows, {"unit": "canary-bad", "outcome": bad}, {"unit": "canary-good", "outcome": good}]
 
 
 class TestADeviatingCanaryInvalidatesTheBatch:

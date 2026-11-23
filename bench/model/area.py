@@ -23,7 +23,7 @@ import json
 import os
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 
 class EntryPoint:
@@ -32,7 +32,7 @@ class EntryPoint:
 
     ENV = "CORDON_TRAIN_ENTRY"
     #: area name -> the trainer `train.py --area <name>` runs.
-    TRAINERS = {
+    TRAINERS: ClassVar[dict[str, str]] = {
         "verdict": "verdict_train.py",
         "skill-text": "train_text.py",
         "files": "train_files.py",

@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import pytest
+
 from support import ROOT as REPO
 
 sys.path.insert(0, str(REPO))
@@ -16,7 +17,6 @@ sys.path.insert(0, str(REPO))
 from bench.cdi.distill import Distiller, PackRenderer
 from bench.cdi.mutations import AdversarialGate
 from bench.model import area
-from test_distill import FactsKit
 from test_pack_probing import Evasion
 
 CDI = REPO / "bench" / "cdi"
@@ -35,8 +35,6 @@ class Helpers:
         return names
 
 
-
-
 class TestTheRulePackLaneNeverRetrains:
     def modules(self) -> list[Path]:
         # every module of the candidate loop except the model-lane ones (a model's acceptance and its drift watch read a model's
@@ -48,7 +46,9 @@ class TestTheRulePackLaneNeverRetrains:
             p.name: sorted(
                 n
                 for n in Helpers.imported(p)
-                if n.split(".")[0] in TRAINING_LIBRARIES or n.startswith("bench.model.train") or "verdict_train" in n
+                if n.split(".")[0] in TRAINING_LIBRARIES
+                or n.startswith("bench.model.train")
+                or "verdict_train" in n
             )
             for p in self.modules()
         }
@@ -60,12 +60,16 @@ class TestTheRulePackLaneNeverRetrains:
             docstrings = {
                 id(n.body[0].value)
                 for n in ast.walk(tree)
-                if isinstance(n, (ast.Module, ast.ClassDef, ast.FunctionDef)) and n.body and isinstance(n.body[0], ast.Expr)
+                if isinstance(n, (ast.Module, ast.ClassDef, ast.FunctionDef))
+                and n.body
+                and isinstance(n.body[0], ast.Expr)
             }
             strings = [
                 n.value
                 for n in ast.walk(tree)
-                if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in docstrings
+                if isinstance(n, ast.Constant)
+                and isinstance(n.value, str)
+                and id(n) not in docstrings
             ]
             assert not any("train.py" in text for text in strings), p.name
 
@@ -82,7 +86,9 @@ class TestTheRulePackLaneNeverRetrains:
 
 
 class TestTheModelLaneRunsThroughTheOneEntryPoint:
-    def test_the_fixture_area_runs_end_to_end_and_writes_the_model_its_metrics_and_the_list_hash(self, tmp_path: Path) -> None:
+    def test_the_fixture_area_runs_end_to_end_and_writes_the_model_its_metrics_and_the_list_hash(
+        self, tmp_path: Path
+    ) -> None:
         pytest.importorskip("lightgbm")
         from bench.model import train
 

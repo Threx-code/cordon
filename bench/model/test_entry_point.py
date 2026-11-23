@@ -10,9 +10,9 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
-
 from bench.model import area
 
 HERE = Path(__file__).resolve().parent
@@ -97,7 +97,7 @@ class TestEveryScriptThatFitsAModelIsRegistered:
         if Path(f"/proc/{os.getppid()}/cmdline").exists():
             assert not area.EntryPoint.granted()
         monkeypatch.delenv(area.EntryPoint.ENV)
-        with pytest.raises(SystemExit, match="train through bench/model/train.py"):
+        with pytest.raises(SystemExit, match=r"train through bench/model/train\.py"):
             area.EntryPoint.require("verdict_train.py")
 
     def test_the_environment_train_py_hands_on_carries_its_own_pid_and_replaces_any_other_grant(self, monkeypatch) -> None:
@@ -160,7 +160,7 @@ class TestTheSameListAndSeedGiveTheSameModelByteForByte:
         assert train.Training.fixture(args) == 0
         return work / "model-fixture"
 
-    IDS = [f"pkg-{i}@1.0.{i % 7}" for i in range(120)]
+    IDS: ClassVar[list[str]] = [f"pkg-{i}@1.0.{i % 7}" for i in range(120)]
 
     def test_two_runs_write_identical_model_bytes_and_the_same_list_hash(self, train, tmp_path: Path) -> None:
         a = self.run(train, tmp_path, self.IDS, 7, "a")

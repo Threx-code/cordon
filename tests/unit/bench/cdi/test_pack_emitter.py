@@ -6,6 +6,7 @@ import sys
 
 import pytest
 import yaml
+
 from support import ROOT as REPO
 
 sys.path.insert(0, str(REPO))
@@ -23,7 +24,9 @@ class Emitted:
 
     @classmethod
     def rule(cls, batch: str | None = "batch-one", rule_id: str = "LEARNED.NPM.7") -> dict:
-        return yaml.safe_load(PackRenderer.render(cls.candidate(), rule_id, batch=batch))["rules"][0]
+        return yaml.safe_load(PackRenderer.render(cls.candidate(), rule_id, batch=batch))["rules"][
+            0
+        ]
 
 
 class TestTheLearnedBlock:
@@ -32,7 +35,9 @@ class TestTheLearnedBlock:
 
     def test_families_is_the_number_the_rule_was_learned_from(self) -> None:
         block = Emitted.rule()["learned"]
-        assert block["families"] == Emitted.candidate()["train"]["families"] == 4 and isinstance(block["families"], int)
+        assert block["families"] == Emitted.candidate()["train"]["families"] == 4 and isinstance(
+            block["families"], int
+        )
 
     def test_the_rate_lies_inside_its_interval_inside_zero_and_one(self) -> None:
         block = Emitted.rule()["learned"]
@@ -64,11 +69,22 @@ class TestTheLearnedBlock:
 
 
 class TestTheIds:
-    @pytest.mark.parametrize("rule_id", ["LEARNED.NPM.1", "LEARNED.MCP.123456", "LEARNED.SKILL_X.7"])
+    @pytest.mark.parametrize(
+        "rule_id", ["LEARNED.NPM.1", "LEARNED.MCP.123456", "LEARNED.SKILL_X.7"]
+    )
     def test_an_area_and_a_number_are_accepted(self, rule_id: str) -> None:
         assert Emitted.rule(rule_id=rule_id)["id"] == rule_id
 
-    @pytest.mark.parametrize("rule_id", ["SUSPECT.NPM.1", "LEARNED.NPM", "LEARNED.npm.1", "LEARNED.NPM.INSTALL.001", "LEARNED.NPM.x"])
+    @pytest.mark.parametrize(
+        "rule_id",
+        [
+            "SUSPECT.NPM.1",
+            "LEARNED.NPM",
+            "LEARNED.npm.1",
+            "LEARNED.NPM.INSTALL.001",
+            "LEARNED.NPM.x",
+        ],
+    )
     def test_any_other_shape_is_refused(self, rule_id: str) -> None:
         with pytest.raises(ValueError, match="LEARNED"):
             PackRenderer.render(Emitted.candidate(), rule_id)

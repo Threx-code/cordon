@@ -8,7 +8,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from bench.model import area
 from bench.model.export import ExportRefused, ModelExport
 

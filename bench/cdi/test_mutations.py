@@ -6,11 +6,11 @@ import re
 
 from bench.cdi.mutations import AdversarialGate, Mutations
 
-SAMPLE = '''# send the key home
+SAMPLE = """# send the key home
 def collect():
     path = "/home/user/.ssh/id_rsa"
     return open(path).read()
-'''
+"""
 TEXTS = [SAMPLE, SAMPLE.replace("collect", "gather"), SAMPLE.replace("id_rsa", "id_ed25519")]
 
 
@@ -69,10 +69,10 @@ class TestACandidateThatLosesItsCatchIsRejected:
 
     def test_a_loss_inside_the_allowed_share_is_accepted(self) -> None:
         texts = [f"open({i})" for i in range(9)] + ["open(x) # note"]
-        verdict = AdversarialGate.check(lambda t: "# note" in t or "open(" in t and "#" not in t, texts, minimum=0.8)
+        verdict = AdversarialGate.check(lambda t: "# note" in t or ("open(" in t and "#" not in t), texts, minimum=0.8)
         assert verdict["accepted"] is True
 
     def test_nothing_is_written_to_the_texts(self) -> None:
         before = list(TEXTS)
         AdversarialGate.check(Rules.literal, TEXTS)
-        assert TEXTS == before
+        assert before == TEXTS

@@ -22,8 +22,6 @@ class Helpers:
         return all(tuple(term) in held for term in candidate["predicate"])
 
 
-
-
 class Evasion:
     @staticmethod
     def evaders(families: int, per: int, *, split: str = "train") -> list[Unit]:
@@ -83,11 +81,19 @@ class TestAnEvasionOfALearnedRuleIsCaughtByTheNextWindowsCandidate:
     def test_the_new_candidate_is_not_the_old_rule_loosened_onto_legit_releases(self) -> None:
         candidate = Distiller().distill(Evasion.next_window()).candidate
         assert candidate is not None
-        legit_fires = sum(1 for u in FactsKit.legit(2_000, seed=31) if Helpers.fires(candidate, u.facts))
+        legit_fires = sum(
+            1 for u in FactsKit.legit(2_000, seed=31) if Helpers.fires(candidate, u.facts)
+        )
         assert legit_fires == 0
 
-    def test_it_is_learned_from_several_families_so_one_probing_family_alone_teaches_nothing(self) -> None:
-        one_family = Evasion.evaders(1, 8) + FactsKit.legit(12_000, seed=21) + Evasion.evaders(1, 3, split="confirm")
+    def test_it_is_learned_from_several_families_so_one_probing_family_alone_teaches_nothing(
+        self,
+    ) -> None:
+        one_family = (
+            Evasion.evaders(1, 8)
+            + FactsKit.legit(12_000, seed=21)
+            + Evasion.evaders(1, 3, split="confirm")
+        )
         one_family += FactsKit.legit(9_000, split="confirm", seed=23)
         assert Distiller().distill(one_family).candidate is None
 
@@ -97,7 +103,9 @@ class TestAnEvasionOfALearnedRuleIsCaughtByTheNextWindowsCandidate:
         evader = Evasion.evaders(1, 1)[0].facts
         for window in (Evasion.first_window, Evasion.next_window):
             candidate = Distiller().distill(window()).candidate
-            windows_with_a_rule_that_catches_it.append(candidate is not None and Helpers.fires(candidate, evader))
+            windows_with_a_rule_that_catches_it.append(
+                candidate is not None and Helpers.fires(candidate, evader)
+            )
         assert learned is not None
         assert windows_with_a_rule_that_catches_it == [False, True]
         assert windows_with_a_rule_that_catches_it.index(True) == 1

@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 
 import pytest
+
 from support import ROOT as REPO
 
 sys.path.insert(0, str(REPO))
@@ -52,8 +53,6 @@ class Helpers:
         )
 
 
-
-
 class Fakes:
     ran: list[list[str]]
 
@@ -63,7 +62,10 @@ class Fakes:
 
     def train(self, ids: list[str]) -> dict:
         self.ran.append(ids)
-        return {"model": "model-2026-w47", "training_list_sha": area.Contract.training_list_sha(ids)}
+        return {
+            "model": "model-2026-w47",
+            "training_list_sha": area.Contract.training_list_sha(ids),
+        }
 
     @staticmethod
     def passing(model) -> dict:
@@ -78,21 +80,32 @@ class Fakes:
         return {"model": model["model"], "enforcement": "shadow"}
 
 
-
-
-
-
 class TestAScheduledRetrainLeavesAModelItsReportAndAShadowRun:
-    def test_a_passing_retrain_gives_the_model_the_report_the_shadow_run_and_a_drift_point(self) -> None:
+    def test_a_passing_retrain_gives_the_model_the_report_the_shadow_run_and_a_drift_point(
+        self,
+    ) -> None:
         fakes = Fakes()
         out = Helpers.run(fakes, Fakes.passing)
-        assert out["model"]["model"] == "model-2026-w47" and out["model"]["training_list_sha"].startswith("sha256:")
-        assert out["report"]["accepted"] is True and out["shadow"] == {"model": "model-2026-w47", "enforcement": "shadow"}
-        assert out["outcome"] == "shadow" and out["drift"][0]["area"] == "npm" and out["drift"][0]["state"] == "ok"
+        assert out["model"]["model"] == "model-2026-w47" and out["model"][
+            "training_list_sha"
+        ].startswith("sha256:")
+        assert out["report"]["accepted"] is True and out["shadow"] == {
+            "model": "model-2026-w47",
+            "enforcement": "shadow",
+        }
+        assert (
+            out["outcome"] == "shadow"
+            and out["drift"][0]["area"] == "npm"
+            and out["drift"][0]["state"] == "ok"
+        )
 
     def test_a_retrain_that_fails_the_acceptance_is_not_put_into_shadow(self) -> None:
         out = Helpers.run(Fakes(), Fakes.failing)
-        assert out["report"]["failed"] == ["lose_zero"] and out["shadow"] is None and out["outcome"] == "research"
+        assert (
+            out["report"]["failed"] == ["lose_zero"]
+            and out["shadow"] is None
+            and out["outcome"] == "research"
+        )
 
     def test_the_drift_series_gains_a_point_each_run_even_when_the_model_is_refused(self) -> None:
         series = Helpers.drift()
@@ -132,11 +145,16 @@ class TestWhenAndWhatItTrainsOn:
             {"id": "c3", "reviewers": ["r1", "r1"]},
         ]
         built = TrainingList.build(["s1", "s2"], captures)
-        assert built["ids"] == ["c1", "s1", "s2"] and (built["captures_joined"], built["captures_left_out"]) == (1, 2)
+        assert built["ids"] == ["c1", "s1", "s2"] and (
+            built["captures_joined"],
+            built["captures_left_out"],
+        ) == (1, 2)
 
     def test_a_capture_that_is_held_out_is_refused_whole(self) -> None:
         with pytest.raises(RetrainRefused, match="held out"):
-            TrainingList.build(["s1"], [{"id": "h1", "reviewers": ["r1", "r2"]}], held_out=frozenset({"h1"}))
+            TrainingList.build(
+                ["s1"], [{"id": "h1", "reviewers": ["r1", "r2"]}], held_out=frozenset({"h1"})
+            )
 
     def test_a_standing_list_holding_a_held_out_unit_is_refused(self) -> None:
         with pytest.raises(RetrainRefused, match="standing list"):

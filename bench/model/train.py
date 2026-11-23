@@ -20,8 +20,8 @@ import json
 import subprocess
 import sys
 from collections import defaultdict
-from typing import Any
 from pathlib import Path
+from typing import Any
 
 try:  # the code and fixture areas fit here; dispatching to another area's trainer needs none of these
     import joblib
