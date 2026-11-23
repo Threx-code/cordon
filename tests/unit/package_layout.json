@@ -1074,6 +1074,7 @@
   "test_pack_emitter.py": "bench/cdi",
   "test_retrain_check.py": "bench/cdi",
   "test_pretest.py": "bench/cdi",
+  "test_stages.py": "bench/cdi",
   "test_verdict_train_fold.py": "bench",
   "test_capacity.py": "bench/model",
   "test_retrain_entry.py": "bench/model",

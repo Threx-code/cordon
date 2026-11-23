@@ -23,6 +23,11 @@ class PreTest:
     LEGIT_UPPER: ClassVar[float] = 0.005
     PHRASE_WORDS: ClassVar[int] = 4
 
+    @staticmethod
+    def legit_bound(hits: int, units: int) -> float:
+        """The upper end of the 95% Wilson interval of `hits` legitimate fires in `units` units."""
+        return Gate.wilson(hits, units)[1]
+
     @classmethod
     def decide(
         cls,
