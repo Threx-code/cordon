@@ -117,6 +117,7 @@ PARENT_ONLY_SETTINGS: dict[str, str] = {
     "provenance": "where each setting came from, for `config show`",
     "cache_dir": "the parent reads and writes the cache",
     "use_cache": "the parent reads and writes the cache",
+    "facts_export": "what a scan queues about itself is the parent's, after the scan; a worker sends nothing",
     "constraints": "the organisation ceiling, already applied to the carried values",
     "org_limits": "the organisation ceiling, already applied to the carried limits",
     "untrusted_exclusions": "exclusions are applied by the parent's walk",
