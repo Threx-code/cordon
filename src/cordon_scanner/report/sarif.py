@@ -281,6 +281,9 @@ class SarifReporter(BaseReporter):
         if f.evidence.match_hash:
             entry["properties"]["matchHash"] = f.evidence.match_hash
 
+        if f.assurance:
+            entry["properties"]["assurance"] = f.assurance
+
         claim = Claims.of_finding(f)
         if claim is not None:
             # What the finding claims: malware, risky behaviour or policy (`report/claims.py`).

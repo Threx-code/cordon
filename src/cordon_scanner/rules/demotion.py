@@ -20,6 +20,13 @@ if TYPE_CHECKING:
 
 class RuleDemotion:
     @staticmethod
+    def wording(why: str) -> str:
+        """How a finding says why it is a warning: a reason in the form `held by <role> until <date>: <reason>` reads `held at warn by <role> until <date>: <reason>`; any other reads `demoted to warn: <reason>`."""
+        if why.startswith("held by "):
+            return "held at warn " + why[len("held ") :]
+        return f"demoted to warn: {why}"
+
+    @staticmethod
     def apply(pack: RulePack, reasons: Mapping[str, str]) -> RulePack:
         """`pack` with each rule named in `reasons` demoted to warn, and the reasons recorded on the pack."""
         if not reasons:
@@ -36,7 +43,7 @@ class RuleDemotion:
                 severity=Severity.LOW,
                 confidence=Confidence.LOW,
                 category=Category.POLICY,
-                message=f"[demoted to warn: {why}] {compiled.rule.message}",
+                message=f"[{RuleDemotion.wording(why)}] {compiled.rule.message}",
             )
             rules.append(replace(compiled, rule=rule))
         return replace(pack, rules=tuple(rules), demoted=(*pack.demoted, *recorded))
