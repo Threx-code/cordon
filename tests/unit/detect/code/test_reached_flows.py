@@ -168,3 +168,28 @@ class TestAMissingDocumentIsAGapNotACrash:
         assert all(k.startswith("code_package_") for k in facts)
         assert [f.rule_id for f in acc.findings] == ["OPERATIONAL.WORKER.DOCUMENT_UNAVAILABLE"]
         assert not acc.complete
+
+
+NAMED = (
+    "const note = 'zz-unique-host.example.invalid/zz-unique-path';\n"
+    "const key = process.env.ZZ_UNIQUE_SECRET_NAME;\n"
+) + SENDS
+
+
+class TestAFlowIsShapeOnly:
+    """A flow is named by its source kind, its sink kind and the kind of its destination; no string of the file (a variable name, a host, a path) is ever part of a fact."""
+
+    def test_the_flow_of_a_named_host_is_the_pair_and_the_destination_kind(self) -> None:
+        facts = Fixture.of(
+            [Fixture.unit("index.js", NAMED)], Fixture.ctx(entries=frozenset({"index.js"}))
+        )
+        assert any(key.startswith("import_flow_") and "request" in key for key in facts), sorted(
+            facts
+        )
+
+    def test_no_string_of_the_file_is_in_any_fact_key_or_the_worker_s_record(self) -> None:
+        units = [Fixture.unit("index.js", NAMED)]
+        ctx = Fixture.ctx(entries=frozenset({"index.js"}))
+        shown = repr(Fixture.of(units, ctx)) + repr(Fixture.facts(units, ctx))
+        for text in ("zz-unique", "ZZ_UNIQUE", "example.invalid"):
+            assert text.lower() not in shown.lower()
