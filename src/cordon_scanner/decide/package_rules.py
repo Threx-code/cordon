@@ -131,15 +131,10 @@ class PackageRules:
         known = PackageFacts(findings, ctx, names, reach)
         out = []
         for compiled in selected:
+            if not FactTerms.fires(compiled.match, known.has):
+                continue
             all_of = [FactTerms.of_spec(t) for t in compiled.match.all_of]
             any_of = [FactTerms.of_spec(t) for t in compiled.match.any_of]
-            unless = [FactTerms.of_spec(t) for t in compiled.match.unless]
-            if not all(known.has(t) for t in all_of):
-                continue
-            if any_of and not any(known.has(t) for t in any_of):
-                continue
-            if any(known.has(t) for t in unless):
-                continue
             satisfied = [t for t in (*all_of, *any_of) if known.has(t)]
             file_terms = [t for t in satisfied if t[0] == "file"]
             path = known.where(file_terms[0]) if file_terms else PACKAGE_SCOPE

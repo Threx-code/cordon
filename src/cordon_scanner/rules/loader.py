@@ -725,12 +725,14 @@ class RuleLoader:
             return RuleTests()
         if not isinstance(raw, dict):
             raise RulePackError(f"{where}: `tests` must be a mapping")
-        unknown = set(raw) - {"positive", "negative"}
+        unknown = set(raw) - {"positive", "negative", "facts_positive", "facts_negative"}
         if unknown:
             raise RulePackError(f"{where}: unknown tests key(s): {', '.join(sorted(unknown))}")
         return RuleTests(
             positive=RuleLoader._str_tuple(raw.get("positive")),
             negative=RuleLoader._str_tuple(raw.get("negative")),
+            facts_positive=RuleTests.facts_samples(raw.get("facts_positive"), where=where),
+            facts_negative=RuleTests.facts_samples(raw.get("facts_negative"), where=where),
         )
 
     # ---------------------------------------------------------------------------

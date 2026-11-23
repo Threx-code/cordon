@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import itertools
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any, ClassVar, Final
 
 from cordon_scanner.foundation.capabilities import Capability
@@ -62,6 +62,18 @@ _HOOK_KIND: Final = re.compile(r"[a-z][a-z0-9_\-]{0,31}")
 
 class FactTerms:
     """Terms from facts, and terms from a rule's written form."""
+
+    @staticmethod
+    def fires(match: Any, has: Callable[[Term], bool]) -> bool:
+        """Whether a package-scope composite match is satisfied where `has(term)` says which terms hold: every `all` term, one of the `any` terms when there are any, and none of the `unless` terms. The scan and the pack's own fact-vector tests both decide through this."""
+        all_of = [FactTerms.of_spec(t) for t in match.all_of]
+        any_of = [FactTerms.of_spec(t) for t in match.any_of]
+        unless = [FactTerms.of_spec(t) for t in match.unless]
+        return (
+            all(has(t) for t in all_of)
+            and (not any_of or any(has(t) for t in any_of))
+            and not any(has(t) for t in unless)
+        )
 
     PLACES: ClassVar[frozenset[str]] = frozenset(
         {
