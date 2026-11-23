@@ -196,6 +196,18 @@ class TestTheScan:
         outcome = World.run(World.build(tmp_path, calls))
         assert outcome.decision.state == "BLOCK" and "R200" in outcome.decision.reason_codes
 
+    def test_a_point_with_no_scan_source_has_missing_evidence_and_asks_nothing_to_scan(
+        self, tmp_path: Path
+    ) -> None:
+        class WithoutScan(Calls):
+            def sources(self) -> Sources:
+                return replace(super().sources(), scan=None)
+
+        calls = WithoutScan()
+        outcome = World.run(World.build(tmp_path, calls))
+        assert outcome.decision.state == "BLOCK" and "R200" in outcome.decision.reason_codes
+        assert "scan" not in calls.asked
+
     def test_an_incomplete_scan_is_an_incomplete_decision(self, tmp_path: Path) -> None:
         calls = Calls()
         calls.scan_answer = ScanEvidence(
