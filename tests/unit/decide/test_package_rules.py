@@ -9,6 +9,7 @@ import json
 import tarfile
 from dataclasses import replace
 from pathlib import Path
+from typing import Any, ClassVar
 
 import pytest
 
@@ -328,3 +329,67 @@ class TestARenderedPackCarriesN:
             and "      legit_rate: 0.002000\n" in text
             and "      families: 4\n" in text
         )
+
+
+class TestADistilledPredicateRendersToAPackThatFiresOnItsFixtureOnly:
+    """A distilled candidate, rendered as a pack, is loaded by the scanner, fires on the package shaped like the fixture and not on its control (the entry point loads the file)."""
+
+    CANDIDATE: ClassVar[dict[str, Any]] = {
+        "predicate": [["file", "unreached", "egress", "spawn"]],
+        "predicate_digest": "cd" * 32,
+        "train": {"families": 4, "legit_upper": 0.004, "legit_units": 1500, "legit_hits": 3},
+        "confirm": {"families": 3, "legit_upper": 0.005},
+    }
+
+    def rendered(self) -> str:
+        from bench.cdi.distill import PackRenderer
+
+        return PackRenderer.render(self.CANDIDATE, "LEARNED.TEST.001")
+
+    def test_it_fires_on_the_fixture(self, tmp_path) -> None:
+        result = PackageKit.scan(
+            tmp_path, index="module.exports = (a, b) => a + b;\n", rule=self.rendered()
+        )
+        assert [f.rule_id for f in result.findings if f.rule_id.startswith("LEARNED.")] == [
+            "LEARNED.TEST.001"
+        ]
+
+    def test_it_does_not_fire_on_the_control(self, tmp_path) -> None:
+        result = PackageKit.scan(
+            tmp_path,
+            index="const helper = require('./lib/helper');\nmodule.exports = helper;\n",
+            rule=self.rendered(),
+        )
+        assert not [f for f in result.findings if f.rule_id.startswith("LEARNED.")]
+
+    def test_the_finding_shows_the_measured_basis_the_pack_carried(self, tmp_path) -> None:
+        result = PackageKit.scan(
+            tmp_path, index="module.exports = (a, b) => a + b;\n", rule=self.rendered()
+        )
+        (found,) = [f for f in result.findings if f.rule_id == "LEARNED.TEST.001"]
+        assert "families=4" in found.explanation.basis and "n=1500" in found.explanation.basis
+        assert found.assurance == "suspected, machine-made"
+
+
+class TestThePreTestAndTheScannerReadTheSameFacts:
+    """The distiller's reading of a facts record and the scanner's give the same terms for every shape of a fixture list, so the pre-test's fire set is the scanner's."""
+
+    def test_the_two_readings_agree_on_every_fixture(self) -> None:
+        from bench.cdi.distill import Terms
+
+        records = [
+            ScanFacts.of(PackageKit.scan(Path(tmp), index=index)) for tmp, index in self.fixtures()
+        ]
+        assert records
+        for record in records:
+            assert Terms.of(record) == FactTerms.of_facts(record)
+
+    @staticmethod
+    def fixtures():
+        import tempfile
+
+        for index in (
+            "module.exports = (a, b) => a + b;\n",
+            "const helper = require('./lib/helper');\nmodule.exports = helper;\n",
+        ):
+            yield tempfile.mkdtemp(), index

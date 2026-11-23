@@ -14,6 +14,7 @@ Rules sit above intel, so the loading lives here and intel never imports the rul
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import replace
@@ -73,6 +74,30 @@ class PackLimits:
             if rule_id in retired:
                 return f"rule id {rule_id} is retired"
         return None
+
+    MAX_ENCODED_RUN = 64
+    """The longest run of base64 or hex characters any text of a rule may hold: more is a sample's bytes, not a detector."""
+
+    _ENCODED = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=_-")
+
+    @classmethod
+    def payload_problem(cls, pack: RulePack) -> str | None:
+        """Why a rule of the pack carries what looks like the bytes of a sample (a long run of encoded characters in any of its text: patterns, tests, messages), or `None`. A delivered pack holds predicates and fact terms, never a sample."""
+        for compiled in pack.rules:
+            if (
+                cls.longest_run(json.dumps(dict(compiled.rule.raw), default=str))
+                > cls.MAX_ENCODED_RUN
+            ):
+                return f"rule {compiled.rule.id} carries a run of more than {cls.MAX_ENCODED_RUN} encoded characters, which is a sample's bytes"
+        return None
+
+    @classmethod
+    def longest_run(cls, text: str) -> int:
+        best = run = 0
+        for char in text:
+            run = run + 1 if char in cls._ENCODED else 0
+            best = max(best, run)
+        return best
 
     @classmethod
     def file_problem(cls, path: Path) -> str | None:
@@ -199,6 +224,7 @@ class FeedPacks:
                 continue
             problem = (
                 PackLimits.pack_problem(pack)
+                or PackLimits.payload_problem(pack)
                 or PackLimits.id_problem(pack, retired)
                 or FeedFloor.pack_problem(pack)
             )
