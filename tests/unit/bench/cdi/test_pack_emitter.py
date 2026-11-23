@@ -5,7 +5,6 @@ from __future__ import annotations
 import sys
 
 import pytest
-import yaml
 
 from support import ROOT as REPO
 
@@ -13,6 +12,8 @@ sys.path.insert(0, str(REPO))
 
 from bench.cdi.distill import Distiller, PackRenderer
 from test_pack_probing import Evasion
+
+from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
 
 
 class Emitted:
@@ -24,9 +25,9 @@ class Emitted:
 
     @classmethod
     def rule(cls, batch: str | None = "batch-one", rule_id: str = "LEARNED.NPM.7") -> dict:
-        return yaml.safe_load(PackRenderer.render(cls.candidate(), rule_id, batch=batch))["rules"][
-            0
-        ]
+        return RestrictedYamlParser._load_yaml_subset(
+            PackRenderer.render(cls.candidate(), rule_id, batch=batch), source="emitted pack"
+        )["rules"][0]
 
 
 class TestTheLearnedBlock:
