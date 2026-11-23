@@ -142,4 +142,33 @@ class RetrainCheck:
             reason = f"{len(lost)} never-lose unit(s) go from blocked to allowed or are not scored by the new model"
         return FlipReport(tuple(unblocked), tuple(newly), kept, tuple(lost), reason)
 
+    @staticmethod
+    def thresholds(
+        old_scores: Mapping[str, Mapping[str, float]],
+        old_lines: Mapping[str, float],
+        new_scores: Mapping[str, Mapping[str, float]],
+        new_lines: Mapping[str, float],
+        established: Collection[str],
+    ) -> list[str]:
+        """Why the retrained model's lines are looser than the last model's, one reason for each area, or nothing.
+
+        A line is looser when it blocks more of the established legit units the two models both scored in its area: a threshold only tightens between retrains, and it is measured on established
+        legit units alone, never on a unit the loop itself added. An area the last model had a line for and the new one has none for is refused too.
+        """
+        reasons: list[str] = []
+        for area in sorted(old_lines):
+            if area not in new_lines:
+                reasons.append(f"{area}: the new model has no line for it")
+                continue
+            shared = sorted(
+                set(established) & set(old_scores.get(area, {})) & set(new_scores.get(area, {}))
+            )
+            before = sum(1 for unit in shared if old_scores[area][unit] >= old_lines[area])
+            after = sum(1 for unit in shared if new_scores[area][unit] >= new_lines[area])
+            if after > before:
+                reasons.append(
+                    f"{area}: the new line blocks {after} of {len(shared)} established legit units, the last one {before}"
+                )
+        return reasons
+
 

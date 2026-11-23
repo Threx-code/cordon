@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from bench.cdi.retrain import RetrainCheck
 
 OLD = {"m1": 0.9, "m2": 0.8, "m3": 0.7, "l1": 0.1, "l2": 0.2, "l3": 0.3}
@@ -52,3 +54,57 @@ class TestTheNeverLoseList:
     def test_the_counts_name_no_unit(self) -> None:
         report = RetrainCheck.compare(OLD, 0.5, {**OLD, "m3": 0.1}, 0.5, NEVER_LOSE)
         assert all(isinstance(v, int) for v in report.counts().values())
+
+
+class TestThresholdsOnlyTightenBetweenRetrains:
+    """A retrained model's line for an area may not block more of the established legit units than the last model's line did, counted on the units both scored; units that are not established do not count."""
+
+    ESTABLISHED: ClassVar[set[str]] = {f"e{n}" for n in range(10)}
+    OLD: ClassVar[dict[str, dict[str, float]]] = {
+        "npm": {**{f"e{n}": n / 10 for n in range(10)}, "new1": 0.99}
+    }
+
+    def test_a_line_that_blocks_the_same_or_fewer_established_units_passes(self) -> None:
+        tighter = {"npm": {**{f"e{n}": n / 10 for n in range(10)}, "new1": 0.99}}
+        assert (
+            RetrainCheck.thresholds(self.OLD, {"npm": 0.8}, tighter, {"npm": 0.9}, self.ESTABLISHED)
+            == []
+        )
+        assert (
+            RetrainCheck.thresholds(self.OLD, {"npm": 0.8}, tighter, {"npm": 0.8}, self.ESTABLISHED)
+            == []
+        )
+
+    def test_a_looser_line_is_refused_with_the_counts(self) -> None:
+        reasons = RetrainCheck.thresholds(
+            self.OLD, {"npm": 0.8}, self.OLD, {"npm": 0.5}, self.ESTABLISHED
+        )
+        assert reasons == [
+            "npm: the new line blocks 5 of 10 established legit units, the last one 2"
+        ]
+
+    def test_a_unit_that_is_not_established_is_not_counted(self) -> None:
+        looser_only_on_a_new_unit = {"npm": {**self.OLD["npm"], "new1": 0.99}}
+        reasons = RetrainCheck.thresholds(
+            self.OLD, {"npm": 0.995}, looser_only_on_a_new_unit, {"npm": 0.5}, set()
+        )
+        assert reasons == []
+
+    def test_an_area_the_new_model_has_no_line_for_is_refused(self) -> None:
+        assert RetrainCheck.thresholds(self.OLD, {"npm": 0.8}, self.OLD, {}, self.ESTABLISHED) == [
+            "npm: the new model has no line for it"
+        ]
+
+    def test_each_area_is_judged_alone(self) -> None:
+        old = {"npm": self.OLD["npm"], "pypi": {"p1": 0.9, "p2": 0.2}}
+        new = {"npm": self.OLD["npm"], "pypi": {"p1": 0.9, "p2": 0.9}}
+        reasons = RetrainCheck.thresholds(
+            old,
+            {"npm": 0.8, "pypi": 0.8},
+            new,
+            {"npm": 0.8, "pypi": 0.8},
+            {"p1", "p2", *self.ESTABLISHED},
+        )
+        assert reasons == [
+            "pypi: the new line blocks 2 of 2 established legit units, the last one 1"
+        ]
