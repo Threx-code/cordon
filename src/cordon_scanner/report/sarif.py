@@ -125,6 +125,7 @@ class SarifReporter(BaseReporter):
                 "rulepackHash": result.rulepack_hash,
                 "configHash": result.config_hash,
                 "complete": result.complete,
+                **self._rule_gaps(result),
             },
         }
 
@@ -299,6 +300,14 @@ class SarifReporter(BaseReporter):
             ]
 
         return entry
+
+    @staticmethod
+    def _rule_gaps(result: ScanResult) -> dict[str, Any]:
+        """The delivered rules the scan could not evaluate, as a count and each rule id with its reason; nothing when there were none."""
+        gaps = result.stats.rule_gaps
+        if not gaps:
+            return {}
+        return {"ruleGaps": {"count": len(gaps), "rules": dict(sorted(gaps.items()))}}
 
     @staticmethod
     def _notification(f: Finding) -> dict[str, Any]:

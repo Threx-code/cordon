@@ -431,6 +431,8 @@ class ScanStats:
     partial, refused, and its CPU milliseconds; only with `CORDON_DETECTOR_CLOCK=1`."""
     model_refusals: Mapping[str, str] | None = None
     """The delivered models the scan turned down and why (`FeedModels.refusals`); absent when none was, so a scan's output does not vary with models nobody delivered."""
+    rule_gaps: Mapping[str, str] | None = None
+    """The delivered rules the scan could not evaluate (a term written for a version the scanner does not know), by rule id and reason; absent when none was, so a scan's output does not vary without cause."""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -452,6 +454,7 @@ class ScanStats:
             ),
             **({"view_files": dict(self.view_files)} if self.view_files is not None else {}),
             **({"model_refusals": dict(self.model_refusals)} if self.model_refusals else {}),
+            **({"rule_gaps": dict(self.rule_gaps)} if self.rule_gaps else {}),
         }
 
 
