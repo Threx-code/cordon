@@ -53,3 +53,28 @@ class TestEvidence:
         row = VerdictTrainKit.row(record)
         assert VerdictTrain.evidence(row, record=True) == FeatureFold.apply(record)
         assert VerdictTrain.evidence(row) == VerdictTrain.evidence(VerdictTrainKit.row())
+
+
+class TestAnAreaWithTooLittleMalwareHasNoTreesOfItsOwn:
+    """The trainer gives an area trees of its own only when its work half holds enough malware to separate it; every other area is scored by the shared trees."""
+
+    MALWARE: ClassVar[dict[str, int]] = {"npm": 900, "skill": 40, "mcp": 12, "pypi": 300}
+
+    def test_an_area_at_the_minimum_keeps_its_own_trees(self) -> None:
+        assert VerdictTrain.own_trees(["skill", "mcp"], {"skill": 40, "mcp": 30}, 30) == [
+            "skill",
+            "mcp",
+        ]
+
+    def test_an_area_under_the_minimum_gets_none_and_the_rest_keep_theirs(self) -> None:
+        assert VerdictTrain.own_trees(["skill", "mcp", "pypi"], self.MALWARE, 30) == [
+            "skill",
+            "pypi",
+        ]
+
+    def test_an_area_with_no_malware_at_all_gets_none(self) -> None:
+        assert VerdictTrain.own_trees(["ci", "skill"], self.MALWARE, 30) == ["skill"]
+
+    def test_the_trainer_builds_its_groups_and_its_export_from_that_list_only(self) -> None:
+        text = (REPO / "bench" / "model" / "verdict_train.py").read_text(encoding="utf-8")
+        assert "for x in own_areas}" in text and "for x in a.separate" not in text

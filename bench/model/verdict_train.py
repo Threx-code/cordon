@@ -45,6 +45,7 @@ import hashlib
 import itertools
 import json
 import re
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -472,6 +473,11 @@ class VerdictTrain:
             else:
                 hi = mid - 1
         return float(grid[lo])
+
+    @staticmethod
+    def own_trees(separate: Iterable[str], malware: Mapping[str, int], minimum: int) -> list[str]:
+        """The areas asked to have trees of their own that have enough work-half malware to separate them: each other area keeps the shared trees (and, below `minimum`, is add-only)."""
+        return [area for area in separate if malware.get(area, 0) >= minimum]
 
     @staticmethod
     def export_lightgbm(clf, names: list[str]) -> dict[str, Any]:
@@ -1007,6 +1013,8 @@ class VerdictTrain:
         # area, `package` and the fallback included, so an area the scan computes but the split
         # never trained (actions as `package`) is add-only, not lifted (review 98 G7).
         lift_areas = {r["area"] for r in data} - add_only_areas
+        # An area with too little malware to separate it gets no trees of its own: it is scored by the shared trees and stays add-only.
+        own_areas = VerdictTrain.own_trees(a.separate, area_malware, a.keep_rule_min)
         print(
             f"keep-rule-min={a.keep_rule_min}: {len(rare_rules)} thin-support rules + "
             f"{len(NAME_PROVENANCE_RULES)} name/provenance rules in `keep`; "
@@ -1063,7 +1071,7 @@ class VerdictTrain:
             ) or row_gate
             r["has_code"] = any(k.startswith("r:") for k in r["f"])
 
-        groups = {x: [i for i, r in enumerate(work) if r["area"] == x] for x in a.separate}
+        groups = {x: [i for i, r in enumerate(work) if r["area"] == x] for x in own_areas}
         taken = {i for idx in groups.values() for i in idx}
         groups["*"] = [i for i in range(len(work)) if i not in taken]
         for idx in groups.values():
@@ -1187,8 +1195,8 @@ class VerdictTrain:
             print(f"exported trees against the fit (work half, {len(sample)} rows): {drift:.2e}")
             if drift >= 1e-4:
                 raise SystemExit(f"exported trees do not score what was fitted: {drift}")
-        if a.separate:
-            exported["by_area"] = {x: cls.export(fitted[x], names) for x in a.separate}
+        if own_areas:
+            exported["by_area"] = {x: cls.export(fitted[x], names) for x in own_areas}
         if a.finals:
             # HELD-OUT read -- only at the finals (see --finals). Score the holdout with the fitted
             # per-area models, then check the exported trees reproduce those scores.
