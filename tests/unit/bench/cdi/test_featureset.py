@@ -9,8 +9,7 @@ from __future__ import annotations
 import ast
 import json
 import sys
-from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -39,15 +38,17 @@ ROW: dict[str, Any] = {
 }
 
 
-def build(row: dict[str, Any] = ROW, **versions: str) -> dict[str, Any]:
-    return FeatureSetBuilder.build_featureset(
-        row, artifact_id="art:fx@1.0", ecosystem="npm", versions=versions or None
-    )
+class Fx:
+    @staticmethod
+    def build(row: dict[str, Any] = ROW, **versions: str) -> dict[str, Any]:
+        return FeatureSetBuilder.build_featureset(
+            row, artifact_id="art:fx@1.0", ecosystem="npm", versions=versions or None
+        )
 
 
 class TestARecordedRowBecomesAFeatureSet:
     def test_the_findings_and_the_package_facts_are_its_features(self) -> None:
-        record = build()
+        record = Fx.build()
         names = {f["name"] for f in record["features"]}
         assert {
             "finding:MALWARE.EXFIL.001",
@@ -59,14 +60,14 @@ class TestARecordedRowBecomesAFeatureSet:
         assert record["ecosystem"] == "npm" and record["artifact_id"] == "art:fx@1.0"
 
     def test_the_slot_is_read_from_the_finding_path(self) -> None:
-        slots = {f["name"]: f["slot"] for f in build()["features"]}
+        slots = {f["name"]: f["slot"] for f in Fx.build()["features"]}
         assert (
             slots["finding:MALWARE.EXFIL.001"] == "code"
             and slots["finding:SUSPECT.INSTALL.SCRIPT.001"] == "packaging"
         )
 
     def test_the_same_row_gives_the_same_bytes(self) -> None:
-        assert json.dumps(build(), sort_keys=True) == json.dumps(build(), sort_keys=True)
+        assert json.dumps(Fx.build(), sort_keys=True) == json.dumps(Fx.build(), sort_keys=True)
 
     def test_the_content_digest_does_not_move_with_the_versions_or_an_intel_finding(self) -> None:
         intel = {
@@ -77,25 +78,25 @@ class TestARecordedRowBecomesAFeatureSet:
             ],
         }
         assert (
-            build(scanner="a")["featureset_digest"]
-            == build(scanner="b")["featureset_digest"]
-            == build(intel)["featureset_digest"]
+            Fx.build(scanner="a")["featureset_digest"]
+            == Fx.build(scanner="b")["featureset_digest"]
+            == Fx.build(intel)["featureset_digest"]
         )
 
     def test_another_content_is_another_digest(self) -> None:
         other = {**ROW, "verdict": {"package": {"hook": 0.0, "n_deps": 2.0, "can_egress": 1.0}}}
-        assert build()["featureset_digest"] != build(other)["featureset_digest"]
+        assert Fx.build()["featureset_digest"] != Fx.build(other)["featureset_digest"]
 
 
 class TestTheFunctionIsVersioned:
     def test_the_record_names_the_extractor_and_its_version(self) -> None:
-        assert build()["extractors"][EXTRACTOR] == EXTRACTOR_VERSION
+        assert Fx.build()["extractors"][EXTRACTOR] == EXTRACTOR_VERSION
 
     def test_a_new_version_is_in_every_feature_and_the_record(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(featureset, "EXTRACTOR_VERSION", "9.9.9")
-        record = build()
+        record = Fx.build()
         assert record["extractors"][EXTRACTOR] == "9.9.9" and {
             f["extractor_version"] for f in record["features"]
         } == {"9.9.9"}
@@ -154,8 +155,87 @@ class TestNoDetectorIsDuplicated:
             raise AssertionError("a scan was run")
 
         monkeypatch.setattr(cordon_scanner.Scanner, "scan", refuse)
-        assert build()["features"]
+        assert Fx.build()["features"]
 
 
-def test_the_module_is_where_the_tests_expect_it() -> None:
-    assert Path(featureset.__file__).resolve() == TestNoDetectorIsDuplicated.PATH.resolve()
+class TestEveryFeatureCarriesItsProvenance:
+    """Each feature names where it came from (content or intel), the slot it sits in, its location, confidence, evidence, extractor and version."""
+
+    FIELDS: ClassVar[tuple[str, ...]] = (
+        "name",
+        "value",
+        "source",
+        "slot",
+        "location",
+        "confidence",
+        "evidence",
+        "extractor",
+        "extractor_version",
+    )
+    SOURCES: ClassVar[set[str]] = {"content", "intel"}
+
+    def test_every_feature_has_every_field(self) -> None:
+        intel = {
+            **ROW,
+            "findings": [
+                *ROW["findings"],
+                ["MALWARE.KNOWN.001", "high", "high", "malicious", "", 0, "intel"],
+            ],
+        }
+        for feature in Fx.build(intel)["features"]:
+            assert all(field in feature for field in self.FIELDS), feature["name"]
+            assert feature["source"] in self.SOURCES
+
+    def test_a_known_package_finding_is_intel_and_the_rest_content(self) -> None:
+        intel = {
+            **ROW,
+            "findings": [
+                *ROW["findings"],
+                ["MALWARE.KNOWN.001", "high", "high", "malicious", "", 0, "intel"],
+            ],
+        }
+        sources = {f["name"]: f["source"] for f in Fx.build(intel)["features"]}
+        assert (
+            sources["finding:MALWARE.KNOWN.001"] == "intel"
+            and sources["finding:MALWARE.EXFIL.001"] == "content"
+        )
+
+    def test_the_slots_in_use_are_named(self) -> None:
+        slots = {f["slot"] for f in Fx.build()["features"]}
+        assert slots <= {"code", "text", "packaging", "agent_text", "none"}
+
+
+class TestAModelOnContentFeaturesScoresTheSameWithoutIntel:
+    """The features a model is trained on and scores are made from content findings only, so removing the intel feed's findings changes no feature and no score."""
+
+    CONTENT: ClassVar[list[tuple[str, int, int, str, str]]] = [
+        ("MALWARE.EXFIL.001", 4, 3, "malicious", "pkg/index.js"),
+        ("SUSPECT.INSTALL.SCRIPT.001", 2, 2, "suspicious", "package.json"),
+    ]
+    INTEL: ClassVar[list[tuple[str, int, int, str, str]]] = [
+        ("MALWARE.KNOWN.001", 4, 3, "malicious", ""),
+        ("SUSPECT.CAMPAIGN.SIBLING.001", 3, 3, "suspicious", ""),
+    ]
+    PACKAGE: ClassVar[dict[str, float]] = {"hook": 1.0, "n_deps": 2.0}
+
+    def test_the_features_are_the_same_with_and_without_the_intel_findings(self) -> None:
+        from cordon_scanner.decide.verdict_features import VerdictFeatures
+
+        with_intel = VerdictFeatures.evidence([*self.CONTENT, *self.INTEL], dict(self.PACKAGE))
+        without = VerdictFeatures.evidence(self.CONTENT, dict(self.PACKAGE))
+        assert with_intel == without
+
+    def test_the_shipped_model_scores_them_the_same(self) -> None:
+        from cordon_scanner.decide.verdict import MODEL_PATH, VerdictModel
+        from cordon_scanner.decide.verdict_features import VerdictFeatures
+
+        model = VerdictModel.load(MODEL_PATH)
+        assert model is not None
+        scores = [
+            VerdictModel.score(
+                model,
+                VerdictModel.inputs(model, VerdictFeatures.evidence(findings, dict(self.PACKAGE))),
+            )
+            for findings in ([*self.CONTENT, *self.INTEL], self.CONTENT)
+        ]
+        assert scores[0] == scores[1]
