@@ -61,6 +61,8 @@ class Unit:
     missed: bool = True
     label_tier: str = "confirmed"
     """The label's tier (`Schemas`: confirmed, corroborated, silver ...); only a malicious unit is gated on it (`bench/cdi/leakage.py`)."""
+    scored: bool = True
+    """False for a unit the reader or the scan could not score: it stays in the legit denominator, with facts that hold nothing it could fire on, and is counted as unscored."""
 
 
 @dataclass
@@ -127,6 +129,8 @@ class Distiller:
         terms_of: Callable[[dict[str, Any]], set[tuple[str, ...]]] | None = None,
         generator: str = "G2",
         metadata_kinds: frozenset[str] = METADATA_KINDS,
+        max_unscored_share: float = 0.02,
+        min_legit_for_bar: int = 740,
         lofo: bool = True,
     ) -> None:
         self.min_families = min_families
@@ -143,6 +147,8 @@ class Distiller:
         self.metadata_kinds = metadata_kinds
         # LL-51: leave each family out and see whether a predicate chosen without it still covers it. Off inside its own re-runs.
         self.lofo = lofo
+        self.max_unscored_share = max_unscored_share
+        self.min_legit_for_bar = min_legit_for_bar
 
     def distill(self, units: list[Unit]) -> Distillation:
         refused: dict[str, int] = {}
@@ -163,6 +169,12 @@ class Distiller:
                 f"facts of {len(versions)} versions in one distillation; rebuild the store at one head"
             )
         train = [u for u in kept_units if u.split == "train"]
+        legit = [u for u in train if u.label == "legit"]
+        unscored = sum(1 for u in legit if not u.scored)
+        share = unscored / len(legit) if legit else 0.0
+        clean = len(legit) - unscored
+        # Too few clean legit units to show a bound this tight: a candidate is kept, held at shadow with the reason, and its measured bound is recorded.
+        small = clean < self.min_legit_for_bar
         confirm = [u for u in kept_units if u.split == "confirm"]
         space = _Space(train, self.terms_of)
         terms = self._kept_terms(space, refused)
@@ -170,12 +182,15 @@ class Distiller:
         z = NormalDist().inv_cdf(1 - self.alpha / max(1, searched))
         passing = []
         for predicate, mask in candidates:
+            if share > self.max_unscored_share:
+                refused["over_unscored_bound"] = refused.get("over_unscored_bound", 0) + 1
+                continue
             families = space.families(mask)
             if families < self.min_families:
                 refused["under_min_families"] = refused.get("under_min_families", 0) + 1
                 continue
             upper, worst = space.legit_upper(predicate, z)
-            if upper > self.budget:
+            if upper > self.budget and not small:
                 refused["over_legit_budget"] = refused.get("over_legit_budget", 0) + 1
                 continue
             passing.append(
@@ -192,6 +207,12 @@ class Distiller:
             "confirm_units": len(confirm),
             "facts_version": next(iter(versions), ""),
             "params": self.params(),
+            "unscored": {
+                "units": unscored,
+                "legit_units": len(legit),
+                "share": round(share, 6),
+                "bound": self.max_unscored_share,
+            },
         }
         confirm_space = _Space(confirm, self.terms_of)
         z_confirm = NormalDist().inv_cdf(1 - self.alpha)
@@ -199,7 +220,9 @@ class Distiller:
             mask = confirm_space.mask_of(predicate)
             confirm_families = confirm_space.families(mask)
             confirm_upper, _w = confirm_space.legit_upper(predicate, z_confirm)
-            if confirm_families < self.confirm_min_families or confirm_upper > self.budget:
+            if confirm_families < self.confirm_min_families or (
+                confirm_upper > self.budget and not small
+            ):
                 refused["failed_confirm"] = refused.get("failed_confirm", 0) + 1
                 continue
             candidate = {
@@ -219,6 +242,13 @@ class Distiller:
                     "legit_n": confirm_space.legit_mask.bit_count(),
                 },
             }
+            if small:
+                candidate["enforcement"] = "shadow"
+                candidate["held"] = (
+                    f"{clean} clean legit units, fewer than the {self.min_legit_for_bar} a {self.budget:.1%} bound needs"
+                )
+            else:
+                candidate["enforcement"] = "block"
             if self.lofo:
                 candidate["out_of_family"] = self._out_of_family(kept_units, space)
             return Distillation(candidate=candidate, refused=refused, search=search)
@@ -245,6 +275,8 @@ class Distiller:
             generator=self.generator,
             metadata_kinds=self.metadata_kinds,
             lofo=False,
+            max_unscored_share=self.max_unscored_share,
+            min_legit_for_bar=self.min_legit_for_bar,
         )
         covered = 0
         for family in families:
@@ -276,6 +308,8 @@ class Distiller:
             "max_terms": self.max_terms,
             "max_candidates": self.max_candidates,
             "lofo": self.lofo,
+            "max_unscored_share": self.max_unscored_share,
+            "min_legit_for_bar": self.min_legit_for_bar,
             "refused_families": len(self.refused_families),
             "refused_families_digest": hashlib.sha256(names).hexdigest(),
         }

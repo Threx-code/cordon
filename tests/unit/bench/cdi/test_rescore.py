@@ -162,6 +162,8 @@ class TestTheRunCanBeReplayed:
             "max_terms": 40,
             "max_candidates": 20_000,
             "lofo": True,
+            "max_unscored_share": 0.02,
+            "min_legit_for_bar": 740,
             "refused_families": 0,
             "refused_families_digest": run.search["params"]["refused_families_digest"],
         }

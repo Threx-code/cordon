@@ -115,6 +115,8 @@ class Rescore:
             terms_of=terms_of,
             generator=params["generator"],
             lofo=params["lofo"],
+            max_unscored_share=params.get("max_unscored_share", 0.02),
+            min_legit_for_bar=params.get("min_legit_for_bar", 740),
         ).distill(list(units))
 
     @staticmethod
