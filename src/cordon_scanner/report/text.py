@@ -301,6 +301,9 @@ class TextReporter(BaseReporter):
             rest = headline[len(path) :].lstrip(": ")
             headline = (rest[:1].upper() + rest[1:]) if rest else headline
 
+        if f.assurance:
+            headline = f"[{f.assurance}] {headline}"
+
         head = f" {DIM}{where:<{position}}{RESET} {self._badge(f.severity)}"
 
         if room >= MIN_MESSAGE_ROOM:
