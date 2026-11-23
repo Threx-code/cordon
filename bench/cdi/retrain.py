@@ -15,7 +15,8 @@ thing. It keeps counts, hashes and names of artefacts, never a unit."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Collection, Iterable, Mapping
+from dataclasses import dataclass, field
 from typing import Any, Final
 
 from bench.cdi.drift import DriftSeries
@@ -94,3 +95,51 @@ class Retrain:
             "outcome": "shadow" if shadow_run else "research",
             "drift": points,
         }
+
+
+@dataclass(frozen=True)
+class FlipReport:
+    unblocked: tuple[str, ...]
+    """Blocked by the last model, allowed by the new one."""
+    newly_blocked: tuple[str, ...]
+    """Allowed by the last model, blocked by the new one."""
+    kept_blocked: int
+    lost: tuple[str, ...] = field(default=())
+    """The never-lose units among `unblocked`, and any never-lose unit the new scores lack."""
+    refused: str | None = None
+
+    def counts(self) -> dict[str, int]:
+        return {
+            "unblocked": len(self.unblocked),
+            "newly_blocked": len(self.newly_blocked),
+            "kept_blocked": self.kept_blocked,
+            "lost": len(self.lost),
+        }
+
+
+class RetrainCheck:
+    @staticmethod
+    def compare(
+        old_scores: Mapping[str, float],
+        old_line: float,
+        new_scores: Mapping[str, float],
+        new_line: float,
+        never_lose: Collection[str],
+    ) -> FlipReport:
+        unblocked, newly, kept = [], [], 0
+        for unit in sorted(set(old_scores) | set(new_scores)):
+            was = unit in old_scores and old_scores[unit] >= old_line
+            now = unit in new_scores and new_scores[unit] >= new_line
+            if was and now:
+                kept += 1
+            elif was:
+                unblocked.append(unit)
+            elif now:
+                newly.append(unit)
+        lost = sorted({unit for unit in never_lose if unit in unblocked or unit not in new_scores})
+        reason = None
+        if lost:
+            reason = f"{len(lost)} never-lose unit(s) go from blocked to allowed or are not scored by the new model"
+        return FlipReport(tuple(unblocked), tuple(newly), kept, tuple(lost), reason)
+
+

@@ -1076,6 +1076,8 @@
   "test_retrain.py": "bench/cdi",
   "test_start_path.py": "bench/cdi",
   "test_pack_emitter.py": "bench/cdi",
+  "test_factstore.py": "bench/cdi",
+  "test_retrain_check.py": "bench/cdi",
   "test_verdict_train_fold.py": "bench",
   "test_mcp_recalibrate.py": "bench",
   "test_mcp_channel_model.py": "bench",
