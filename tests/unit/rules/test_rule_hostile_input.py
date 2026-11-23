@@ -362,10 +362,22 @@ class TestTheLinearityCheckConfirmsBeforeItFails:
     def test_a_real_quadratic_pattern_is_still_found(self, monkeypatch) -> None:
         # `a[a-z]*b` is quadratic on a run of `a` (it passes the static validator): measured for real, at
         # a size whose time the clock can read, with no noise floor.
+        # It grows 16x to 18x for 4x the input on a quiet machine. A shared runner has read single readings
+        # of 6.5x and 8.5x (its clock speeds up while the measure runs, and other jobs take the core), and
+        # a linear pattern never reads 9x. So the core is warmed first and the best of five readings is the
+        # pattern's growth.
         regex = re.compile(rb"a[a-z]*b")
-        small = self.readable(monkeypatch, regex, b"a")
-        _large, ratio, piece = HostileKit.worst(regex, small=small, large=4 * small, floor=0.0)
-        assert ratio > HostileKit.RATIO, (ratio, piece, small)
+        readings = []
+        for _ in range(5):
+            warm = time.thread_time() + 0.05
+            while time.thread_time() < warm:
+                pass
+            small = self.readable(monkeypatch, regex, b"a")
+            _large, ratio, piece = HostileKit.worst(regex, small=small, large=4 * small, floor=0.0)
+            readings.append((round(ratio, 2), piece, small))
+            if ratio > HostileKit.RATIO:
+                break
+        assert max(r[0] for r in readings) > HostileKit.RATIO, readings
 
     def test_a_real_linear_pattern_is_not_flagged(self, monkeypatch) -> None:
         regex = re.compile(rb"name\d{1,3}x")

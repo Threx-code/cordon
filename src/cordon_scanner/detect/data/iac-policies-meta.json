@@ -1,12 +1,12 @@
 {
-  "built_at": "2026-09-23T08:38:39Z",
+  "built_at": "2026-11-23T10:09:24Z",
   "by_family": {
     "AUTOMOUNT_TOKEN": 18,
     "BACKUP": 11,
     "BOOT_INTEGRITY": 17,
-    "CMEK": 319,
-    "DELETION_PROTECTION": 56,
-    "ENCRYPT_AT_REST": 58,
+    "CMEK": 330,
+    "DELETION_PROTECTION": 61,
+    "ENCRYPT_AT_REST": 60,
     "ENCRYPT_IN_TRANSIT": 19,
     "FORCE_DESTROY": 31,
     "GOVERNANCE": 9,
@@ -21,7 +21,7 @@
     "PRIVILEGED": 19,
     "PRIVILEGE_ESCALATION": 16,
     "PUBLIC_ACCESS": 79,
-    "PUBLIC_IP": 12,
+    "PUBLIC_IP": 13,
     "RESILIENCE": 9,
     "RETENTION": 17,
     "RUN_AS_ROOT": 15,
@@ -31,9 +31,9 @@
   },
   "cloudformation": {
     "by_family": {
-      "CMEK": 152,
-      "DELETION_PROTECTION": 17,
-      "ENCRYPT_AT_REST": 12,
+      "CMEK": 163,
+      "DELETION_PROTECTION": 22,
+      "ENCRYPT_AT_REST": 14,
       "GOVERNANCE": 4,
       "IMDSV1": 5,
       "KEY_ROTATION": 1,
@@ -41,22 +41,22 @@
       "PATCHING": 9,
       "PRIVILEGED": 1,
       "PUBLIC_ACCESS": 12,
-      "PUBLIC_IP": 2,
+      "PUBLIC_IP": 3,
       "RESILIENCE": 4,
       "SHARED_KEY_AUTH": 2,
       "WEAK_TLS": 1,
       "WRITABLE_ROOT": 1
     },
-    "policy_count": 225,
-    "specification_version": "265.0.0"
+    "policy_count": 244,
+    "specification_version": "273.0.0"
   },
   "controls": 62,
-  "policy_count": 862,
+  "policy_count": 881,
   "providers": {
     "registry.terraform.io/hashicorp/aws": "5.100.0",
     "registry.terraform.io/hashicorp/azurerm": "4.81.0",
     "registry.terraform.io/hashicorp/google": "6.50.0",
     "registry.terraform.io/hashicorp/kubernetes": "2.38.0"
   },
-  "terraform_version": "1.16.3"
+  "terraform_version": "1.17.2"
 }
