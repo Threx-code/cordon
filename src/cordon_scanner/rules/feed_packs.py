@@ -19,7 +19,7 @@ import re
 from dataclasses import replace
 from typing import TYPE_CHECKING, Protocol
 
-from cordon_scanner.foundation.errors import RulePackError
+from cordon_scanner.foundation.errors import ConfigError, RulePackError
 from cordon_scanner.intel.malware.feed_rules import PACK_FILE, FeedRules
 
 if TYPE_CHECKING:
@@ -152,7 +152,7 @@ class FeedPacks:
                     logger.warning("feed rule pack %s not loaded: %s", name, problem)
                     continue
                 pack = loader.load_file(path)
-            except (RulePackError, OSError, ValueError) as exc:
+            except (RulePackError, ConfigError, OSError, ValueError) as exc:
                 # A bad delivered pack never breaks the scan: it runs on what is bundled.
                 logger.warning("feed rule pack %s not loaded: %s", name, exc)
                 continue

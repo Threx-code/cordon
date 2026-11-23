@@ -171,3 +171,24 @@ class TestTheCounts:
             ("Read", SUBJECT): 1,
             ("Bash", other): 1,
         }
+
+
+class TestTheLengthOfAValue:
+    """A value is a short string: up to 164 characters (a 100-character name or a 64-character digest), never more."""
+
+    @pytest.mark.parametrize("key", ["tool", "subject_digest", "decision_id", "observed_at"])
+    def test_a_value_of_exactly_the_longest_length_has_no_problem(self, key: str) -> None:
+        record = Call.record()
+        record[key] = "a" * 164 if key != "tool" else "a" * 100
+        assert HookObservation.problems(record) == []
+
+    @pytest.mark.parametrize("key", ["subject_digest", "decision_id", "observed_at"])
+    def test_a_value_one_longer_has_one(self, key: str) -> None:
+        record = Call.record()
+        record[key] = "a" * 165
+        assert HookObservation.problems(record) == [f"{key!r} is not a short string"]
+
+    def test_a_value_that_is_not_a_string_has_one(self) -> None:
+        record: dict[str, object] = dict(Call.record())
+        record["decision_id"] = 7
+        assert HookObservation.problems(record) == ["'decision_id' is not a short string"]
