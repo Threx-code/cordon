@@ -125,6 +125,19 @@ _REQUEST_MODULES: Final = frozenset(
 _CONNECTION_MODULES: Final = frozenset({"http", "https", "http2", "net", "tls", "dgram"})
 _DNS_MODULES: Final = frozenset({"dns", "dns/promises"})
 _PROCESS_MODULES: Final = frozenset({"child_process"})
+_FS_MODULES: Final = frozenset({"fs", "fs/promises"})
+_FILE_WRITE: Final = frozenset(
+    {
+        "open",
+        "openSync",
+        "writeFile",
+        "writeFileSync",
+        "appendFile",
+        "appendFileSync",
+        "createWriteStream",
+    }
+)
+"""The calls that open a file or write to one: with `JsFlow.file_flows`, a value reaching their path or their content is a `file` flow."""
 _REQUEST_METHODS: Final = frozenset(
     {"get", "post", "put", "patch", "delete", "request", "head", "fetch", "send", "options"}
 )

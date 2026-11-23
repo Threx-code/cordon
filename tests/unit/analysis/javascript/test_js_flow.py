@@ -972,6 +972,9 @@ class Pairs:
         "open": 'require("child_process").exec("xdg-open https://h.invalid/?q=" + v);\n',
         "execute": "new Function(v)();\n",
     }
+    FILE: ClassVar[str] = (
+        'require("fs").writeFileSync(require("path").join(require("os").tmpdir(), "x.bin"), v);\n'
+    )
 
     @classmethod
     def program(cls, source: str, sink: str) -> str:
@@ -986,3 +989,38 @@ class TestEverySourceReachesEverySink:
     def test_the_pair_is_reported(self, source: str, sink: str) -> None:
         found = {(s, f[1]) for f in FlowKit.flows(Pairs.program(source, sink)) for s in f[0]}
         assert (source, sink) in found, sorted(found)
+
+
+class FileForms:
+    """The calls that put a value in a file's path or content."""
+
+    FORMS: ClassVar[dict[str, str]] = {
+        "open a path": 'require("fs").openSync(v, "r");\n',
+        "write the content": 'require("fs").writeFileSync("/tmp/x.bin", v);\n',
+        "write to the path": 'require("fs").writeFile(v, "data", () => {});\n',
+        "append the content": 'require("fs").appendFileSync("/tmp/x.bin", v);\n',
+        "a write stream on the path": 'require("fs").createWriteStream(v);\n',
+        "the promise form": 'require("fs/promises").writeFile("/tmp/x.bin", v);\n',
+    }
+
+    @staticmethod
+    def program(source: str, form: str) -> str:
+        return f"async function go(privateKey) {{\n{Pairs.SOURCES[source]}{FileForms.FORMS[form]}}}\ngo(process.argv[2]);\n"
+
+
+class TestEverySourceReachesAFile:
+    """The file sink: a source's value reaching the path or the content of a file open or write (a response written down and run, decoded text staged, a secret copied out). A measurement-only read: `flows` never carries it."""
+
+    @pytest.mark.parametrize("form", list(FileForms.FORMS))
+    @pytest.mark.parametrize("source", list(Pairs.SOURCES))
+    def test_the_pair_is_reported_as_a_file_flow(self, source: str, form: str) -> None:
+        found = {s for f in JsFlow.file_flows(FileForms.program(source, form)) for s in f.sources}
+        assert source in found, sorted(found)
+
+    @pytest.mark.parametrize("source", list(Pairs.SOURCES))
+    def test_the_rules_flows_never_carry_a_file_sink(self, source: str) -> None:
+        text = FileForms.program(source, "write the content")
+        assert all(sink != "file" for _, sink, _ in FlowKit.flows(text))
+
+    def test_a_write_of_a_constant_is_no_flow(self) -> None:
+        assert JsFlow.file_flows('require("fs").writeFileSync("/tmp/x.txt", "hello");\n') == []

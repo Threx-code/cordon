@@ -47,6 +47,7 @@
   "analysis/python/py_decoded": "analysis/python/py_decoded",
   "analysis/python/py_flow": "analysis/python/py_flow",
   "analysis/python/py_flow_facts": "analysis/python/py_flow_facts",
+  "analysis/python/measure/flows": "analysis/python/measure/flows",
   "analysis/python/py_identity": "analysis/python/py_identity",
   "analysis/python/py_persist": "analysis/python/py_persist",
     "cloud/bundle_chain": "cloud/bundle_chain",
