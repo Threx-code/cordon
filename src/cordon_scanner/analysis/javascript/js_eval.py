@@ -91,6 +91,13 @@ class JsEval:
 
     @staticmethod
     def _scan(text: str, templates: bool = False, depth: int = 0) -> list[Tok]:
+        """`_run` over the whole text."""
+        return JsEval._run(text, 0, len(text), templates, depth, {})
+
+    @staticmethod
+    def _run(
+        text: str, pos: int, n: int, templates: bool, depth: int, memo: dict[tuple[int, int], int]
+    ) -> list[Tok]:
         """Tokens by a linear scan: no pattern runs over a string's body, so no input can make the
         tokenizer backtrack.
 
@@ -100,28 +107,27 @@ class JsEval:
         evaluator's view). Templates nested deeper than `MAX_TEMPLATE_DEPTH` are read that way
         too, so no nesting can exhaust the stack."""
         out: list[Tok] = []
-        pos, n = 0, len(text)
         while pos < n:
             c = text[pos]
             if c.isspace():
                 pos += 1
                 continue
-            if c == "/" and text.startswith("//", pos):
-                nl = text.find("\n", pos)
+            if c == "/" and text.startswith("//", pos, n):
+                nl = text.find("\n", pos, n)
                 pos = n if nl < 0 else nl
                 continue
-            if c == "/" and text.startswith("/*", pos):
-                close = text.find("*/", pos + 2)
+            if c == "/" and text.startswith("/*", pos, n):
+                close = text.find("*/", pos + 2, n)
                 pos = n if close < 0 else close + 2
                 continue
             if c == "/" and JsEval._regex_allowed(out):
-                end = JsEval._regex_end(text, pos)
+                end = JsEval._regex_end(text, pos, n)
                 if end > 0:
                     out.append(Tok("regex", text[pos:end], pos, end))
                     pos = end
                     continue
             if c in "\"'`":
-                pos = JsEval._string(text, pos, out, templates, depth)
+                pos = JsEval._string(text, pos, out, templates, depth, n, memo)
                 continue
             if c in _NAME_START:
                 j = pos + 1
@@ -131,7 +137,7 @@ class JsEval:
                 pos = j
                 continue
             if c.isdigit():
-                m = _NUMBER.match(text, pos)
+                m = _NUMBER.match(text, pos, n)
                 if m:
                     raw = m.group(0)
                     value: Any = (
@@ -145,7 +151,7 @@ class JsEval:
                     pos = m.end()
                     continue
             for p in _PUNCT_BY_FIRST.get(c, ()):
-                if text.startswith(p, pos):
+                if text.startswith(p, pos, n):
                     out.append(Tok("punct", p, pos, pos + len(p)))
                     pos += len(p)
                     break
@@ -156,9 +162,17 @@ class JsEval:
         return out
 
     @staticmethod
-    def _string(text: str, pos: int, out: list[Tok], templates: bool, depth: int) -> int:
+    def _string(
+        text: str,
+        pos: int,
+        out: list[Tok],
+        templates: bool,
+        depth: int,
+        n: int,
+        memo: dict[tuple[int, int], int],
+    ) -> int:
         """Read the string or template literal opening at `pos` into `out`; the position after it."""
-        c, n = text[pos], len(text)
+        c = text[pos]
         # To the literal's real end however long it is: giving up at a length and resuming
         # one character later re-read the same string from every quote inside it, which on
         # a long escaped JSON string was quadratic (review 98).
@@ -180,7 +194,7 @@ class JsEval:
             return j + 1
         if c == "`":
             end = (
-                JsEval._template(text, pos, out, depth)
+                JsEval._template(text, pos, out, depth, n, memo)
                 if templates and depth < MAX_TEMPLATE_DEPTH
                 else -1
             )
@@ -217,11 +231,11 @@ class JsEval:
         return prev.kind == "name" and prev.value in JsEval._REGEX_AFTER_NAME
 
     @staticmethod
-    def _regex_end(text: str, pos: int) -> int:
+    def _regex_end(text: str, pos: int, n: int) -> int:
         """One past a regular expression literal starting at `pos` (flags included), or -1. A
         linear scan: escapes and character classes, never a newline, and short -- a real pattern is,
         and a `/` that only looks like one's start costs a bounded look on a minified line."""
-        j, n, in_class = pos + 1, len(text), False
+        j, in_class = pos + 1, False
         while j < n and j - pos <= MAX_REGEX:
             c = text[j]
             if c == "\\":
@@ -242,10 +256,12 @@ class JsEval:
         return -1
 
     @staticmethod
-    def _template(text: str, pos: int, out: list[Tok], depth: int) -> int:
+    def _template(
+        text: str, pos: int, out: list[Tok], depth: int, n: int, memo: dict[tuple[int, int], int]
+    ) -> int:
         """Tokens of the interpolated template opening at `pos` (see `tokens`), appended to `out`;
         one past its closing backtick, or -1 (nothing appended) if it does not close."""
-        n, j, start = len(text), pos + 1, pos + 1
+        j, start = pos + 1, pos + 1
         got: list[Tok] = [Tok("punct", "(", pos, pos + 1)]
         while j < n:
             c = text[j]
@@ -261,16 +277,13 @@ class JsEval:
                     got.append(Tok("punct", ")", j, j + 1))
                     out.extend(got)
                     return j + 1
-                close = JsEval._interpolation_end(text, j + 2, depth)
+                close = JsEval._interpolation_end(text, j + 2, depth, n, memo)
                 if close < 0:
                     return -1
                 if len(got) > 1:
                     got.append(Tok("punct", "+", j, j))
                 got.append(Tok("punct", "(", j, j + 2))
-                got.extend(
-                    Tok(t.kind, t.value, t.start + j + 2, t.end + j + 2)
-                    for t in JsEval.tokens(text[j + 2 : close], True, depth + 1)
-                )
+                got.extend(JsEval._run(text, j + 2, close, True, depth + 1, memo))
                 got.append(Tok("punct", ")", close, close + 1))
                 j = start = close + 1
                 continue
@@ -278,10 +291,24 @@ class JsEval:
         return -1
 
     @staticmethod
-    def _interpolation_end(text: str, pos: int, depth: int) -> int:
+    def _interpolation_end(
+        text: str, pos: int, depth: int, n: int, memo: dict[tuple[int, int], int]
+    ) -> int:
         """The `}` closing the `${` whose body starts at `pos`, past strings and nested templates
         inside it; -1 if there is none."""
-        braces, j, n = 0, pos, len(text)
+        held = memo.get((pos, depth))
+        if held is not None:
+            return held
+        found = JsEval._interpolation_scan(text, pos, depth, n, memo)
+        memo[(pos, depth)] = found
+        return found
+
+    @staticmethod
+    def _interpolation_scan(
+        text: str, pos: int, depth: int, n: int, memo: dict[tuple[int, int], int]
+    ) -> int:
+        """`_interpolation_end` without the memo."""
+        braces, j = 0, pos
         while j < n:
             c = text[j]
             if c in "\"'`":
@@ -292,7 +319,7 @@ class JsEval:
                     elif c == "`" and text.startswith("${", k):
                         if depth >= MAX_TEMPLATE_DEPTH:
                             return -1
-                        inner = JsEval._interpolation_end(text, k + 2, depth + 1)
+                        inner = JsEval._interpolation_end(text, k + 2, depth + 1, n, memo)
                         if inner < 0:
                             return -1
                         k = inner + 1
