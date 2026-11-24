@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
+from typing import Any
 
 from bench.cdi.gate import Gate
+
+from cordon_scanner.intel.provenance._ed25519_signer import Ed25519Signer
 
 MAL = [["MALWARE.DROPPER.001", "critical", "high", "malicious"]]
 SECRET = [["SECRET.AWS.ACCESS_KEY.001", "high", "high", "suspicious"]]
@@ -159,3 +163,51 @@ class TestReach:
         _, decision = Gate.evaluate(GateKit.spec(tmp_path, GAIN, BEN_CLEAN, reach=reach))
         assert decision["gates"]["reach"]["result"] == "pass"
         assert decision["outcome"] == "shadow"
+
+
+class TestOnlyTheGateKeyPublishes:
+    """Role matrix: the generation role cannot publish a gate decision, because only the separate gate key is trusted."""
+
+    GATE = "11" * 32
+    GENERATION = "22" * 32
+
+    def signed(self, tmp_path: Path, seed: str) -> dict[str, Any]:
+        """The decision signed the way `Gate.sign` does, with the scanner's own Ed25519 so the test needs no other library."""
+        _, decision = Gate.evaluate(GateKit.spec(tmp_path, {"m1": (1, MAL, 1.0)}, BEN_CLEAN))
+        signer = Ed25519Signer(bytes.fromhex(seed))
+        return {
+            **decision,
+            "signature": {
+                "keyid": hashlib.sha256(signer.public).hexdigest()[:16],
+                "public": signer.public.hex(),
+                "sig": signer.sign(Gate.canonical(decision)).hex(),
+            },
+        }
+
+    def test_a_decision_signed_by_the_gate_key_is_trusted(self, tmp_path: Path) -> None:
+        gate = self.signed(tmp_path, self.GATE)
+        assert Gate.trusted_decision(gate, {gate["signature"]["public"]})
+
+    def test_a_decision_signed_by_the_generation_key_is_not(self, tmp_path: Path) -> None:
+        gate = self.signed(tmp_path, self.GATE)
+        generation = self.signed(tmp_path, self.GENERATION)
+        assert not Gate.trusted_decision(generation, {gate["signature"]["public"]})
+
+    def test_an_unsigned_or_edited_decision_is_not(self, tmp_path: Path) -> None:
+        gate = self.signed(tmp_path, self.GATE)
+        trusted = {gate["signature"]["public"]}
+        assert not Gate.trusted_decision(
+            {k: v for k, v in gate.items() if k != "signature"}, trusted
+        )
+        assert not Gate.trusted_decision({**gate, "outcome": "block"}, trusted)
+
+    def test_a_signature_naming_the_gate_key_but_made_by_another_is_not(
+        self, tmp_path: Path
+    ) -> None:
+        gate = self.signed(tmp_path, self.GATE)
+        generation = self.signed(tmp_path, self.GENERATION)
+        forged = {
+            **generation,
+            "signature": {**generation["signature"], "public": gate["signature"]["public"]},
+        }
+        assert not Gate.trusted_decision(forged, {gate["signature"]["public"]})
