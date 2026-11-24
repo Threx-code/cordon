@@ -64,6 +64,7 @@
   "cloud/agent/hook_install": "cloud/agent/hook_install",
   "cloud/agent/collection_status": "cloud/agent/collection_status",
   "cloud/agent/decision_envelope": "cloud/agent/decision_envelope",
+  "cloud/agent/device_runtime": "cloud/agent/device_runtime",
   "cloud/agent/rule_breaker": "cloud/agent/rule_breaker",
   "cloud/runtime": "cloud/runtime",
   "decide/decision/reason_map": "decide/decision/reason_map",

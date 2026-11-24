@@ -17,6 +17,7 @@ from cordon_scanner.foundation.errors import ExitCode
 
 if TYPE_CHECKING:
     import argparse
+    from pathlib import Path
     from typing import TextIO
 
     from cordon_scanner.cloud.local_store import LocalStore
@@ -39,10 +40,12 @@ class AgentHookCommand:
         stderr: TextIO | None = None,
         runtime: tuple[CordonRuntime, LocalStore] | None = None,
         clock: datetime | None = None,
+        store_dir: Path | None = None,
     ) -> int:
         from cordon_scanner.cloud.agent.agent_hook import AgentCalls, AgentHook
 
         out, err = stdout or sys.stdout, stderr or sys.stderr
+        clock = clock or datetime.now(UTC)
         try:
             hook_input: Any = json.loads((stdin or sys.stdin).read())
             if not isinstance(hook_input, dict):
@@ -58,15 +61,22 @@ class AgentHookCommand:
             return 2
         if AgentCalls.of(hook_input) is None:
             answer = AgentHook.answer("allow")
-        elif runtime is None:
-            answer = AgentHook.answer("deny", cls.NO_RUNTIME)
         else:
-            answer = AgentHook.respond(
-                runtime[0],
-                runtime[1],
-                hook_input,
-                clock or datetime.now(UTC),
-                environment=cls.ENVIRONMENT,
-            )
+            runtime = runtime or cls._device(store_dir, clock)
+            if runtime is None:
+                answer = AgentHook.answer("deny", cls.NO_RUNTIME)
+            else:
+                answer = AgentHook.respond(
+                    runtime[0], runtime[1], hook_input, clock, environment=cls.ENVIRONMENT
+                )
         out.write(json.dumps(answer, sort_keys=True) + "\n")
         return int(ExitCode.CLEAN)
+
+    @staticmethod
+    def _device(store_dir: Path | None, clock: datetime) -> tuple[CordonRuntime, LocalStore] | None:
+        """The runtime the device store was pulled for, or None when it never was."""
+        from cordon_scanner.cloud.agent.collection_status import STORE_FOLDER
+        from cordon_scanner.cloud.agent.device_runtime import DeviceRuntime
+        from cordon_scanner.cloud.auth import CloudAuth
+
+        return DeviceRuntime.open(store_dir or CloudAuth.config_dir() / STORE_FOLDER, clock)
