@@ -149,6 +149,12 @@ class VendoredCopies:
         return frozenset(root for key in keys for root in cls._directories(key) if root in roots)
 
     @classmethod
+    def tree_digest(cls, files: Mapping[str, bytes]) -> str:
+        """The digest of a package's own files, keyed by their path from the package root: equal to `digest` of a copy of the same
+        files at any depth, so a vendored copy of a release is told identical to the release."""
+        return cls.digest({f"root/{path}": data for path, data in files.items()}, "root")
+
+    @classmethod
     def digest(cls, files: Mapping[str, bytes], root: str) -> str:
         """The digest of the files under `root`, as `of` computes it."""
         shas = {path: hashlib.sha256(data).hexdigest() for path, data in files.items()}

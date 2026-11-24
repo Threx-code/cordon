@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -120,3 +121,27 @@ class TestTheDigestAndThePackageUrl:
         whole = VendoredCopies.of(files)[0].to_dict()
         cut = VendoredCopies.of(files, partial=frozenset({"v"}))[0].to_dict()
         assert "state" not in whole and "partial" not in whole and cut["partial"] is True
+
+
+class TestTheTreeDigestOfARelease:
+    FILES: ClassVar[dict[str, bytes]] = {
+        "package.json": b'{"name":"left-pad","version":"1.3.0"}',
+        "index.js": b"module.exports = pad;\n",
+        "lib/util.js": b"exports.x = 1;\n",
+    }
+
+    def test_it_equals_the_digest_of_a_copy_at_any_depth(self) -> None:
+        copy = {f"vendor/deep/left-pad/{path}": data for path, data in self.FILES.items()}
+        assert VendoredCopies.tree_digest(self.FILES) == VendoredCopies.digest(
+            copy, "vendor/deep/left-pad"
+        )
+        (found,) = VendoredCopies.of(
+            copy, {"pkg:npm/left-pad@1.3.0": VendoredCopies.tree_digest(self.FILES)}
+        )
+        assert found.state == "identical"
+
+    def test_the_vector_for_the_backend(self) -> None:
+        """Invented files and their digest: the analyser's implementation must give exactly this."""
+        assert VendoredCopies.tree_digest(self.FILES) == self.EXPECTED
+
+    EXPECTED = "sha256:8f7fa5c4fa3e7faeec6870f658ef015fb56550f895d27a8ce9b0ebd26878c0a2"
