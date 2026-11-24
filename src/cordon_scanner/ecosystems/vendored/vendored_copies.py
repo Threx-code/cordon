@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar
 
+from cordon_scanner.contracts.digests import ArtifactDigests
+
 
 @dataclass(frozen=True, slots=True)
 class VendoredCopy:
@@ -52,6 +54,7 @@ class VendoredCopies:
         files: Mapping[str, bytes],
         known: Mapping[str, str] | None = None,
         partial: frozenset[str] = frozenset(),
+        modes: Mapping[str, str] | None = None,
     ) -> tuple[VendoredCopy, ...]:
         """The copies of the tree `files` (path to bytes), nearest the root first, each compared with `known` (purl to digest)."""
         shas = {path: hashlib.sha256(data).hexdigest() for path, data in files.items()}
@@ -60,7 +63,7 @@ class VendoredCopies:
             for path, data in files.items()
             if path.rpartition("/")[2] == "package.json"
         }
-        return cls._copies(shas, manifests, known or {}, partial)
+        return cls._copies(shas, modes or {}, manifests, known or {}, partial)
 
     @classmethod
     def of_directory(
@@ -73,6 +76,7 @@ class VendoredCopies:
             if "package.json" in names and Path(here) != root:
                 candidates.append(Path(here).relative_to(root).as_posix())
         shas: dict[str, str] = {}
+        modes: dict[str, str] = {}
         manifests: dict[str, bytes] = {}
         unread: set[str] = set()
         for base in candidates:
@@ -81,6 +85,7 @@ class VendoredCopies:
                 data = manifest.read_bytes()
                 manifests[base] = data
                 shas[f"{base}/package.json"] = hashlib.sha256(data).hexdigest()
+                modes[f"{base}/package.json"] = cls._mode(manifest)
         for base in candidates:
             for here, dirs, names in os.walk(root / base):
                 dirs[:] = sorted(d for d in dirs if d != "node_modules")
@@ -97,13 +102,15 @@ class VendoredCopies:
                         unread.add(key)
                         continue
                     shas[key] = hashlib.sha256(path.read_bytes()).hexdigest()
+                    modes[key] = cls._mode(path)
         partial = cls._owners(unread, set(manifests))
-        return cls._copies(shas, manifests, known or {}, partial)
+        return cls._copies(shas, modes or {}, manifests, known or {}, partial)
 
     @classmethod
     def _copies(
         cls,
         shas: Mapping[str, str],
+        modes: Mapping[str, str],
         manifests: Mapping[str, bytes],
         known: Mapping[str, str],
         partial: frozenset[str],
@@ -114,21 +121,20 @@ class VendoredCopies:
             for root, data in manifests.items()
             if cls._vendored(root) and (purl := cls._purl(data)) is not None
         }
-        entries: dict[str, list[bytes]] = {root: [] for root in named}
+        entries: dict[str, list[tuple[str, str, str]]] = {root: [] for root in named}
         for path in sorted(shas):
             for root in cls._directories(path):
                 if root in entries:
-                    relative = path[len(root) + 1 :].encode()
                     entries[root].append(
-                        f"{len(relative)}:".encode() + relative + b":" + shas[path].encode()
+                        (path[len(root) + 1 :], modes.get(path, "644"), shas[path])
                     )
         found = []
         for root, purl in named.items():
-            digest = "sha256:" + hashlib.sha256(b"\n".join(entries[root])).hexdigest()
+            digest = cls._listing(entries[root])
             original = known.get(purl)
             state = (
                 "partial"
-                if root in partial
+                if root in partial or not all(cls._path_ok(p) for p, _, _ in entries[root])
                 else "unknown"
                 if original is None
                 else "identical"
@@ -149,22 +155,55 @@ class VendoredCopies:
         return frozenset(root for key in keys for root in cls._directories(key) if root in roots)
 
     @classmethod
-    def tree_digest(cls, files: Mapping[str, bytes]) -> str:
+    def tree_digest(cls, files: Mapping[str, bytes], modes: Mapping[str, str] | None = None) -> str:
         """The digest of a package's own files, keyed by their path from the package root: equal to `digest` of a copy of the same
-        files at any depth, so a vendored copy of a release is told identical to the release."""
-        return cls.digest({f"root/{path}": data for path, data in files.items()}, "root")
+        files at any depth, and to `ArtifactDigests.of_tree` (the reference every registry release carries), so a vendored copy of a
+        release is told identical to the release. `modes` gives `755` for a file with the owner execute bit, else `644`."""
+        return cls._listing(
+            [
+                (path, (modes or {}).get(path, "644"), hashlib.sha256(data).hexdigest())
+                for path, data in files.items()
+            ]
+        )
 
     @classmethod
-    def digest(cls, files: Mapping[str, bytes], root: str) -> str:
+    def digest(
+        cls, files: Mapping[str, bytes], root: str, modes: Mapping[str, str] | None = None
+    ) -> str:
         """The digest of the files under `root`, as `of` computes it."""
-        shas = {path: hashlib.sha256(data).hexdigest() for path, data in files.items()}
-        relative = [
-            (path[len(root) + 1 :].encode(), sha)
-            for path, sha in sorted(shas.items())
-            if path.startswith(root + "/")
-        ]
-        lines = [f"{len(name)}:".encode() + name + b":" + sha.encode() for name, sha in relative]
-        return "sha256:" + hashlib.sha256(b"\n".join(lines)).hexdigest()
+        return cls._listing(
+            [
+                (
+                    path[len(root) + 1 :],
+                    (modes or {}).get(path, "644"),
+                    hashlib.sha256(data).hexdigest(),
+                )
+                for path, data in files.items()
+                if path.startswith(root + "/")
+            ]
+        )
+
+    @staticmethod
+    def _mode(path: Path) -> str:
+        """`755` for a file with the owner execute bit, else `644`: the two modes the reference digest knows."""
+        return "755" if path.stat().st_mode & 0o100 else "644"
+
+    @staticmethod
+    def _listing(entries: list[tuple[str, str, str]]) -> str:
+        """`ArtifactDigests.of_tree`'s listing from files already hashed: `<path> NUL <mode> NUL <sha256 hex> LF`, by the UTF-8 bytes of the path."""
+        ordered = sorted(entries, key=lambda entry: entry[0].encode("utf-8"))
+        listing = "".join(f"{path}\0{mode}\0{sha}\n" for path, mode, sha in ordered)
+        return ArtifactDigests.of_bytes(listing.encode("utf-8"))
+
+    @staticmethod
+    def _path_ok(path: str) -> bool:
+        """The path rule of the reference: not empty, not absolute, no backslash, no empty, `.` or `..` piece."""
+        return (
+            bool(path)
+            and not path.startswith("/")
+            and "\\" not in path
+            and all(piece not in ("", ".", "..") for piece in path.split("/"))
+        )
 
     @staticmethod
     def _vendored(root: str) -> bool:

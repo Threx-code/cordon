@@ -144,4 +144,27 @@ class TestTheTreeDigestOfARelease:
         """Invented files and their digest: the analyser's implementation must give exactly this."""
         assert VendoredCopies.tree_digest(self.FILES) == self.EXPECTED
 
-    EXPECTED = "sha256:8f7fa5c4fa3e7faeec6870f658ef015fb56550f895d27a8ce9b0ebd26878c0a2"
+    EXPECTED = "sha256:bd9f78f159c401070d661556e649a8fae099c7c89132d25cd1b71a4dfbbd115a"
+
+    def test_it_is_the_reference_digest_every_registry_release_carries(self) -> None:
+        from cordon_scanner.contracts.digests import ArtifactDigests
+
+        modes = {"index.js": "755"}
+        entries = [(p, modes.get(p, "644"), d) for p, d in self.FILES.items()]
+        assert VendoredCopies.tree_digest(self.FILES, modes) == ArtifactDigests.of_tree(entries)
+        assert VendoredCopies.tree_digest(self.FILES, modes) != VendoredCopies.tree_digest(
+            self.FILES
+        )
+
+    def test_an_executable_file_on_disk_is_recorded_with_the_execute_mode(
+        self, tmp_path: Path
+    ) -> None:
+        base = tmp_path / "vendor" / "left-pad"
+        base.mkdir(parents=True)
+        (base / "package.json").write_text(self.FILES["package.json"].decode(), encoding="utf-8")
+        run = base / "run.sh"
+        run.write_text("#!/bin/sh\n", encoding="utf-8")
+        run.chmod(0o755)
+        (found,) = VendoredCopies.of_directory(tmp_path)
+        files = {"package.json": self.FILES["package.json"], "run.sh": b"#!/bin/sh\n"}
+        assert found.digest == VendoredCopies.tree_digest(files, {"run.sh": "755"})
