@@ -31,6 +31,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar, Final, NamedTuple
 
+from cordon_scanner.cloud.agent.decision_envelope import DecisionEnvelope
 from cordon_scanner.cloud.agent.feed_serials import KIND as FEED_KIND
 from cordon_scanner.cloud.agent.feed_serials import FeedSerials
 from cordon_scanner.cloud.bundle_chain import BundleChain, BundleError, BundleRefused
@@ -49,6 +50,7 @@ if TYPE_CHECKING:
     from cordon_scanner.cloud.local_store import Drained, LocalStore, Pending
     from cordon_scanner.contracts.private_names import TenantKeys
     from cordon_scanner.decide.decision.evidence import ArtifactRef, EvidenceSet
+    from cordon_scanner.intel.provenance._ed25519_signer import Ed25519Signer
 
 REQUIRED_BUNDLE: Final = "policy_bundle"
 """What `decide()` is told is missing while no bundle is held."""
@@ -89,9 +91,11 @@ class LocalRuntime:
         baseline: CompiledPolicy,
         store: LocalStore | None = None,
         names: NamePolicy | None = None,
+        signer: Ed25519Signer | None = None,
     ) -> None:
         baseline.verify()
         self._store = store
+        self._signer = signer
         self._names = names
         self._root, self._delegation, self._tenant = root_public, delegation, tenant
         self._baseline = baseline
@@ -450,6 +454,8 @@ class LocalRuntime:
             "decision": decision.to_json(),
             "feed": FeedGaps.feed(),
         }
+        if self._signer is not None:
+            document["signed"] = DecisionEnvelope.sign(decision, self._signer)
         return ArtifactDigests.canonical_json(document)
 
     def _intel_age(self, clock: datetime) -> int | None:

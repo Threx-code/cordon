@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import base64
 import copy
+import json
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 from cordon_scanner.cloud.agent.decision_envelope import DecisionEnvelope
 from cordon_scanner.cloud.bundle_chain import BundleError, Dsse
+from cordon_scanner.cloud.local_runtime import LocalRuntime
+from cordon_scanner.cloud.local_store import LocalStore
 from cordon_scanner.contracts.digests import ArtifactDigests
 from cordon_scanner.decide.decision.compiler import PolicyCompiler
 from cordon_scanner.decide.decision.evidence import ArtifactRef, EvidenceSet
@@ -119,3 +123,32 @@ class TestADecisionSignedByTheDecider:
         envelope = DecisionEnvelope.sign(Fixture.decision(), platform.policy_key)
         with pytest.raises(BundleError):
             Fixture.verify(envelope, platform, platform.delegation())
+
+
+class TestTheRuntimeSignsWhatItQueues:
+    def runtime(
+        self, tmp_path: Path, signer: Ed25519Signer | None
+    ) -> tuple[LocalRuntime, LocalStore, Platform]:
+        platform = Platform()
+        store = LocalStore(tmp_path)
+        runtime = LocalRuntime(
+            root_public=platform.root.public,
+            delegation=Fixture.delegation(platform),
+            tenant=TENANT,
+            baseline=Kit.compiled(1, T0 + timedelta(days=3650), default="allow"),
+            store=store,
+            signer=signer,
+        )
+        return runtime, store, platform
+
+    def test_a_decision_made_is_queued_with_its_signed_envelope(self, tmp_path: Path) -> None:
+        runtime, store, platform = self.runtime(tmp_path, DECIDER)
+        answer = Kit.ask(runtime, NOW)
+        queued = json.loads(store.pending()[0].body)
+        found = Fixture.verify(queued["signed"], platform, Fixture.delegation(platform))
+        assert found == answer.to_json() and queued["decision"] == found
+
+    def test_with_no_signer_the_upload_carries_no_envelope(self, tmp_path: Path) -> None:
+        runtime, store, _ = self.runtime(tmp_path, None)
+        Kit.ask(runtime, NOW)
+        assert "signed" not in json.loads(store.pending()[0].body)
