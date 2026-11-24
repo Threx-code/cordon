@@ -1469,6 +1469,7 @@
   "test_registry_image.py": "intel/registries",
   "test_registry_record.py": "intel/registries",
   "test_release_artefacts.py": "repository/release",
+  "test_release_records.py": "repository/release",
   "test_verify_artifacts.py": "repository/release",
   "test_release_diff.py": "detect/supply",
   "test_release_history.py": "intel/registries",
