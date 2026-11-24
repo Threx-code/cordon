@@ -123,14 +123,6 @@ class PackageEntries:
         return ""
 
     @staticmethod
-    def identity(units: list[FileUnit], distribution: str) -> dict[str, str]:
-        """The published package's own repository URL and name, as the context fields that carry them."""
-        return {
-            "package_repository": PackageEntries.repository(units, distribution),
-            "package_name": PackageEntries.name(units, distribution),
-        }
-
-    @staticmethod
     def name(units: list[FileUnit], distribution: str) -> str:
         """The name the published package declares, or "": its manifest's `name` where the ecosystem keeps one, else the `Name:` header of the core-metadata file at the archive's top."""
         value = PackageEntries.manifest(units, distribution).get("name")

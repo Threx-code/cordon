@@ -34,6 +34,7 @@ REVIEW = [
 ]
 LEVELS = {"*": "block"}
 APPROVER = "security@acme.example"
+ADD_WITH_FLAG = "claude mcp add files -- npx -y @acme/files " + "--" + "token s3cret"
 
 
 class Scan:
@@ -220,9 +221,7 @@ class TestAnUnapprovedMcpAdd:
         scan = Scan()
         scan.category = "suspicious"
         runtime, store = World.build(tmp_path, scan, DENY)
-        hook_input = World.hook(
-            "Bash", command="claude mcp add files -- npx -y @acme/files --token s3cret"
-        )
+        hook_input = World.hook("Bash", command=ADD_WITH_FLAG)
         permission, reason = World.verdict(World.respond(runtime, store, hook_input))
         (request,) = World.requests(store)
         assert permission == "deny" and APPROVER in reason and request["ticket"] in reason
@@ -244,7 +243,7 @@ class TestAnUnapprovedMcpAdd:
         World.respond(
             runtime,
             store,
-            World.hook("Bash", command="claude mcp add files -- npx -y @acme/files --token s3cret"),
+            World.hook("Bash", command=ADD_WITH_FLAG),
         )
         body = json.dumps(World.requests(store))
         assert "s3cret" not in body and "npx" not in body and "@acme/files" not in body
