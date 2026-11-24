@@ -155,7 +155,11 @@ class AgentHook:
     ) -> dict[str, Any]:
         """The agent's answer. With `retry_online`, a denial is asked once more of the platform (the runtime's cloud source), so
         an approval given since is seen: the retry of an approved call decides ALLOW (R901)."""
+        from cordon_scanner.cloud.agent.rug_pull import RugPull
+
         call = AgentCalls.of(hook_input)
+        if call is None and (held := RugPull.held_key(store, hook_input)) is not None:
+            call = AgentCall("use_mcp_tool", "mcp_tool", held)
         if call is None:
             return cls.answer("allow")
         outcome = cls._ask(runtime, call, clock, environment, scope_path, online=False)
@@ -166,6 +170,13 @@ class AgentHook:
             return cls.answer("allow")
         codes = ", ".join(decision.reason_codes)
         message = f"Cordon denied this {call.what.replace('_', ' ')}: {decision.explanation.summary} ({codes})."
+        if call.what == "use_mcp_tool":
+            changed = RugPull.record(store, call.reference)
+            message += (
+                f" Its tools changed since they were approved ({RugPull.describe(changed)})."
+                if changed
+                else ""
+            )
         if call.what == "add_mcp" or decision.state == "REVIEW":
             request = ApprovalRequests.create(store, outcome, call, clock, approver)
             message += (

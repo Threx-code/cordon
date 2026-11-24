@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 from cordon_scanner.cloud.agent.cloud_decisions import CloudAsk, CloudDecisions
+from cordon_scanner.cloud.agent.rug_pull import RugPull
 from cordon_scanner.cloud.local_runtime import LocalRuntime
 from cordon_scanner.cloud.local_store import LocalStore
 from cordon_scanner.cloud.runtime import CordonRuntime, Sources
@@ -88,8 +89,8 @@ class DeviceRuntime:
         asked = CloudDecisions.source(pinned, now, cloud) if cloud is not None else None
         return CordonRuntime(
             local,
-            resolvers=cls.resolvers(archive),
-            sources=Sources(cloud=asked, rules_version=RULES_VERSION),
+            resolvers={**cls.resolvers(archive), "mcp_tool": RugPull.resolver(store)},
+            sources=Sources(scan=RugPull.scan(store), cloud=asked, rules_version=RULES_VERSION),
         ), store
 
     @staticmethod
