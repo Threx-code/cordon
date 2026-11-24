@@ -955,6 +955,7 @@ Run mix, scanning every package before anything is installed.
 - `intel`: the signed threat-intel feed
 - `bundle`: offline bundle, air-gapped use
 - `policy`: the signed policy bundle
+- `decide`: ask for a decision (JSON)
 
 ## advisories
 
@@ -1089,6 +1090,20 @@ The tenant's signed policy bundle.
 │                           store)                                           │
 │ --replace-root            trust this root key in place of the one the      │
 │                           store first accepted                             │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## decide
+
+Ask the decision function: JSON in, a decision out.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ --point {cli,ide,agent_hook,firewall,ci_gate,deploy_admission,inventory_sweep} │
+│                           where the question comes from                    │
+│ --lock                    decide every artifact of a lock at the build     │
+│                           gate                                             │
+│ --release                 decide a release on its provenance               │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
