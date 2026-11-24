@@ -898,6 +898,14 @@ class DestinationMemo(Protocol):
     def take(self, path: str) -> tuple[frozenset[str], frozenset[str]]: ...
 
 
+class ExecutableRecording(Protocol):
+    """What the engine uses of the class `ExecutableRecord`: the record of one native executable for the facts export."""
+
+    def of(
+        self, data: bytes, whole: bool = True, reason: str | None = None
+    ) -> dict[str, Any] | None: ...
+
+
 class SubmoduleDependencies(Protocol):
     """What the engine uses of the class `Submodules`."""
 

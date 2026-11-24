@@ -20,6 +20,7 @@ ROLES: dict[str, tuple[str, str]] = {
     ),
     "ComposerPluginHooks": ("cordon_scanner.detect.supply.composer_plugins", "ComposerPluginHooks"),
     "DeclaredSource": ("cordon_scanner.detect.supply.manifests.sources", "DeclaredSource"),
+    "ExecutableRecord": ("cordon_scanner.detect.binary.executable_record", "ExecutableRecord"),
     "CrossFileJoin": ("cordon_scanner.detect.code.reached_flows", "CrossFileJoin"),
     "DownloadFlow": ("cordon_scanner.detect.code.download_flow", "DownloadFlow"),
     "ImportReachability": ("cordon_scanner.detect.supply.reachability", "ImportReachability"),
@@ -52,6 +53,7 @@ if TYPE_CHECKING:
         DeclaredSourceKinds,
         DestinationMemo,
         DownloadRunning,
+        ExecutableRecording,
         ImportReachabilityNotes,
         JudgeScheduling,
         PackageInstallFacts,
@@ -63,6 +65,7 @@ if TYPE_CHECKING:
         SubmoduleDependencies,
     )
     from cordon_scanner.detect.binary import detector as _detect_binary_detector
+    from cordon_scanner.detect.binary import executable_record as _detect_binary_executable_record
     from cordon_scanner.detect.binary import rule_files as _detect_binary_rule_files
     from cordon_scanner.detect.code import download_flow as _detect_code_download_flow
     from cordon_scanner.detect.code import reached_flows as _detect_code_reached_flows
@@ -83,6 +86,7 @@ if TYPE_CHECKING:
     CampaignSiblings: CampaignSiblingFacts = _detect_supply_campaign_sibling.CampaignSiblingDetector
     ComposerPluginHooks: ComposerPluginPaths = _detect_supply_composer_plugins.ComposerPluginHooks
     DeclaredSource: DeclaredSourceKinds = _detect_supply_manifests_sources.DeclaredSource
+    ExecutableRecord: ExecutableRecording = _detect_binary_executable_record.ExecutableRecord
     CrossFileJoin: CrossFileJoining = _detect_code_reached_flows.CrossFileJoin
     DownloadFlow: DownloadRunning = _detect_code_download_flow.DownloadFlow
     ImportReachability: ImportReachabilityNotes = _detect_supply_reachability.ImportReachability
@@ -124,6 +128,7 @@ __all__ = [
     "CrossFileJoin",
     "DeclaredSource",
     "DownloadFlow",
+    "ExecutableRecord",
     "ImportReachability",
     "InstallFacts",
     "JudgeGate",

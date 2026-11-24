@@ -1,0 +1,20 @@
+{
+  "file": [
+    "CopyFileA", "CopyFileW", "CreateFileA", "CreateFileW", "DeleteFileA", "DeleteFileW", "FindFirstFileA",
+    "FindFirstFileW", "FindNextFileA", "FindNextFileW", "MoveFileA", "MoveFileExA", "MoveFileExW", "MoveFileW",
+    "ReadFile", "SetFileAttributesA", "SetFileAttributesW", "WriteFile", "chmod", "fopen", "fread", "fwrite",
+    "open", "openat", "opendir", "read", "readdir", "rename", "unlink", "unlinkat", "write"
+  ],
+  "crypto": [
+    "AES_encrypt", "AES_set_encrypt_key", "BCryptDecrypt", "BCryptEncrypt", "BCryptGenerateSymmetricKey",
+    "BCryptOpenAlgorithmProvider", "CCCrypt", "CryptAcquireContextA", "CryptAcquireContextW", "CryptCreateHash",
+    "CryptDecrypt", "CryptDeriveKey", "CryptEncrypt", "CryptGenKey", "CryptHashData", "CryptProtectData",
+    "CryptUnprotectData", "EVP_CipherInit_ex", "EVP_DecryptInit_ex", "EVP_EncryptInit_ex", "RSA_public_encrypt",
+    "SecKeyCreateEncryptedData"
+  ],
+  "registry": [
+    "RegCloseKey", "RegCreateKeyExA", "RegCreateKeyExW", "RegDeleteKeyA", "RegDeleteKeyW", "RegDeleteValueA",
+    "RegDeleteValueW", "RegEnumKeyExA", "RegEnumKeyExW", "RegGetValueA", "RegGetValueW", "RegOpenKeyExA",
+    "RegOpenKeyExW", "RegQueryValueExA", "RegQueryValueExW", "RegSetValueExA", "RegSetValueExW"
+  ]
+}

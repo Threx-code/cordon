@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import struct
 from pathlib import Path
 
 from cordon_scanner import Scanner
@@ -497,6 +498,19 @@ class TestFactsVersionFiveBinariesAndToolList:
         package = self.scan(tmp_path)
         assert package["binaries"] == sorted(hashlib.sha256(b).hexdigest() for b in (elf, macho))
         assert package["binaries_truncated"] is False
+
+    def test_a_real_scan_records_each_executable_by_what_it_is_never_by_text(
+        self, tmp_path: Path
+    ) -> None:
+        elf = b"\x7fELF" + bytes([2, 1, 1]) + bytes(9) + struct.pack("<HHI", 3, 62, 1) + bytes(40)
+        self.package(tmp_path, prebuilt__node=elf + b" https://c2.example.net/x")
+        (record,) = self.scan(tmp_path)["executables"]
+        assert (record["format"], record["architecture"]) == ("elf", "x86_64")
+        assert record["strings"]["url_hosts"] == 1 and "example" not in json.dumps(record)
+        assert record["signature"]["valid"] is None and record["read_whole"] is True
+
+    def test_no_native_file_means_no_executable_record(self, tmp_path: Path) -> None:
+        assert self.scan(self.package(tmp_path))["executables"] == []
 
     def test_a_windows_executable_is_native_only_when_its_name_says_so(
         self, tmp_path: Path

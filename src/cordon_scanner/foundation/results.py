@@ -556,6 +556,8 @@ class ScanResult:
     """The SHA-256 of every native executable or library scanned, sorted (`NativeFile`). `binaries_complete` is False when
     it is a part: a file that could not be hashed whole, or more than the bound. Read by the facts export; not in `to_dict`."""
     binaries_complete: bool = True
+    executables: tuple[dict[str, Any], ...] | None = None
+    """The record of each native executable scanned (`ExecutableRecord`), sorted by digest. Read by the facts export; not in `to_dict`."""
     tool_list: tuple[dict[str, Any], ...] | None = None
     """The MCP tools one JSON file declares whole (`DeclaredTools`), when exactly one file does; None when none does or when
     more than one does (which of them the server serves is not known). Read by the facts export; not in `to_dict`."""
