@@ -71,7 +71,6 @@ class TestTheUploadCarriesVendoredCopies:
                 "path": "vendor/left-pad",
                 "purl": "pkg:npm/left-pad@1.3.0",
                 "digest": copies[0]["digest"],
-                "state": "unknown",
             }
         ]
         assert "vendored" not in json.loads(SignedResults.results_bytes(result))
