@@ -913,7 +913,6 @@
   "test_collection_status.py": "cloud/agent",
   "test_decision_envelope.py": "cloud/agent",
   "test_agent_collection.py": "cli",
-  "test_advisories_sync_exit.py": "cli",
   "test_rule_breaker.py": "contracts",
   "test_agent_hook_overhead.py": "contracts",
   "test_cordon_runtime.py": "cloud",
