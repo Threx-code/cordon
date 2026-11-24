@@ -517,7 +517,8 @@ class PypiLockfiles:
             for name, meta in sorted((data.get(section) or {}).items()):
                 if not isinstance(meta, dict):
                     continue
-                hashes = PypiLockfiles._well_formed(meta.get("hashes"))
+                listed = meta.get("hashes")
+                hashes = PypiLockfiles._well_formed(listed)
                 resolved = None
                 if isinstance(meta.get("git"), str):
                     resolved = f"git+{meta['git']}" + (
@@ -532,7 +533,8 @@ class PypiLockfiles:
                     LockEntry(
                         name=str(name),
                         version=str(meta.get("version", "")).lstrip("="),
-                        integrity=str(hashes[0]) if hashes else None,
+                        # What the file wrote first, well formed or not: the integrity check reads it.
+                        integrity=str(listed[0]) if isinstance(listed, list) and listed else None,
                         hashes=hashes,
                         resolved_from=resolved,
                         scope=scope,
@@ -570,7 +572,8 @@ class PypiLockfiles:
         for line in lines:
             if line.startswith("-"):
                 continue
-            hashes = PypiLockfiles._well_formed(re.findall(r"--hash[=\s]\s*(\S+)", line))
+            written = re.findall(r"--hash[=\s]\s*(\S+)", line)
+            hashes = PypiLockfiles._well_formed(written)
             requirement = re.split(r"\s--hash", line, maxsplit=1)[0]
             parsed = PypiRequirement.parse(requirement)
             if parsed is None:
@@ -582,7 +585,7 @@ class PypiLockfiles:
                 LockEntry(
                     name=name,
                     version=PypiManifest._version_of(spec[2:].lstrip("=")),
-                    integrity=hashes[0] if hashes else None,
+                    integrity=written[0] if written else None,
                     hashes=hashes,
                     resolved_from=index,
                     direct=True,
