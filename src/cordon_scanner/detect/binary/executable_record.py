@@ -86,7 +86,10 @@ class ExecutableRecord:
     def vocabulary() -> dict[str, frozenset[str]]:
         """The imported function names of each record group, from package data."""
         shared = ImportCapabilities.groups()
-        out = {name: shared.get(source, frozenset()) for name, source in ExecutableRecord.SHARED.items()}
+        out = {
+            name: shared.get(source, frozenset())
+            for name, source in ExecutableRecord.SHARED.items()
+        }
         names = ScannedJson.loads(
             (PackagePaths.data("detect") / "executable-groups.json").read_text(encoding="utf-8")
         )
@@ -192,8 +195,10 @@ class ExecutableRecord:
     @classmethod
     def _fat(cls, data: bytes) -> list[tuple[int, int, int]]:
         """The (cputype, offset, size) of each slice of a universal binary; empty when it is not one (a Java class)."""
+        if len(data) < 8:
+            return []
         count = struct.unpack_from(">I", data, 4)[0]
-        if not 1 <= count <= 8:
+        if not 1 <= count <= 8 or len(data) < 8 + count * 20:
             return []
         slices = []
         for i in range(count):

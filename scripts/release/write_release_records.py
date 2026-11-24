@@ -23,7 +23,7 @@ class ReleaseRecords:
     SUMS = "SHA256SUMS"
     STATEMENT = ".intoto.json"
     TYPE = "https://in-toto.io/Statement/v1"
-    PREDICATE = "https://cordon.dev/release-artefact/v1"
+    PREDICATE = "https://cordonscan.com/release-artefact/v1"
 
     @classmethod
     def statement(cls, name: str, digest: str, source: dict[str, str]) -> dict[str, object]:

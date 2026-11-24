@@ -111,6 +111,10 @@ class TestWhatTheFileIs:
             b"MZ" + b"\x00" * 100,
             b"\x7fELF",
             b"\xca\xfe\xba\xbe" + b"\x00\x00\x00\x34" + b"\x00" * 40,
+            b"\xca\xfe\xba\xbe",
+            b"\xca\xfe\xba\xbe\x00\x00\x00\x01",
+            b"\x7fELF\x02\x01",
+            b"\xcf\xfa\xed\xfe",
             b"plain text",
         ],
     )
