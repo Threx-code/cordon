@@ -37,6 +37,7 @@
   "analysis/javascript/js_persist": "analysis/javascript/js_persist",
   "analysis/javascript/js_string_code": "analysis/javascript/js_string_code",
   "analysis/javascript/js_values": "analysis/javascript/js_values",
+  "analysis/gates/env_gates": "analysis/gates/env_gates",
   "analysis/jvm/jvm_class": "analysis/jvm/jvm_class",
   "analysis/nix/nix_code": "analysis/nix/nix_code",
   "analysis/python/analyzer_core": "analysis/python/analyzer_core",
@@ -888,6 +889,7 @@
  },
  "tests": {
   "test_abuse_tooling.py": "analysis/python/flows",
+  "test_advisories_sync_exit.py": "cli",
   "test_accept_no_feed.py": "foundation/config",
   "test_action_resolver.py": "decide/resolve",
   "test_adversarial_package.py": "cloud",
@@ -1012,6 +1014,7 @@
   "test_swept_hosting.py": "analysis/python/implants",
   "test_sourced_flows.py": "analysis/python",
   "test_environment_keyed.py": "analysis/python",
+  "test_env_gates.py": "analysis/gates",
   "test_install_native.py": "sources/install",
   "test_install_composer.py": "sources/install",
   "test_install_fetched.py": "sources/install",
