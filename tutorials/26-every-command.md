@@ -958,6 +958,7 @@ Run mix, scanning every package before anything is installed.
 - `bundle`: offline bundle, air-gapped use
 - `policy`: the signed policy bundle
 - `decide`: ask for a decision (JSON)
+- `pr-comment`: the PR comment for decisions
 
 ## advisories
 
@@ -1108,6 +1109,21 @@ Ask the decision function: JSON in, a decision out.
 │ --release                 decide a release on its provenance               │
 │ --admission               answer a Kubernetes AdmissionReview: every image │
 │                           of the workload is decided                       │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## pr-comment
+
+The pull-request comment for `decide --lock` output (stdin), with its REVIEW notification.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ --base BASE               the platform's https base URL the three links    │
+│                           use                                              │
+│ --owner OWNER             who a REVIEW result is for: a user or `org/team` │
+│ --pr PR                   the pull request, e.g. owner/repo#12             │
+│ --notification-out NOTIFICATION_OUT                                        │
+│                           write the REVIEW notification record here        │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 

@@ -35,6 +35,7 @@ from cordon_scanner.cli.commands.baseline import BaselineCommand
 from cordon_scanner.cli.commands.bundle import BundleCommand
 from cordon_scanner.cli.commands.config import ConfigCommand
 from cordon_scanner.cli.commands.decision.decide import DecideCommand
+from cordon_scanner.cli.commands.decision.pr_comment import PrCommentCommand
 from cordon_scanner.cli.commands.guard import GuardCommand
 from cordon_scanner.cli.commands.intel import IntelCommand
 from cordon_scanner.cli.commands.inventory import InventoryCommand
@@ -111,7 +112,6 @@ class CommandLine:
         handed = cls._front_end(arguments)
         if handed is not None:
             return handed
-
         parser = CommandParser.build()
         args = parser.parse_args(argv)
 
@@ -134,6 +134,7 @@ class CommandLine:
             "bundle": BundleCommand.run,
             "policy": PolicyCommand.run,
             "decide": DecideCommand.run,
+            "pr-comment": PrCommentCommand.run,
             "report": ReportCommand.run,
             "advisories": AdvisoriesCommand.run,
             "intel": IntelCommand.run,

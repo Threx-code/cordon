@@ -16,6 +16,7 @@ from cordon_scanner.cli.commands.baseline import BaselineCommand
 from cordon_scanner.cli.commands.bundle import BundleCommand
 from cordon_scanner.cli.commands.config import ConfigCommand
 from cordon_scanner.cli.commands.decision.decide import DecideCommand
+from cordon_scanner.cli.commands.decision.pr_comment import PrCommentCommand
 from cordon_scanner.cli.commands.guard import GuardCommand
 from cordon_scanner.cli.commands.intel import IntelCommand
 from cordon_scanner.cli.commands.inventory import InventoryCommand
@@ -115,6 +116,8 @@ tutorials for this version ({__version__}):
         PolicyCommand.add_parser(sub)
 
         DecideCommand.add_parser(sub)
+
+        PrCommentCommand.add_parser(sub)
 
         AdvisoriesCommand.add_parser(sub)
 

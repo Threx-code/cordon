@@ -40,6 +40,9 @@ class PrComment:
     _BASE: ClassVar[re.Pattern[str]] = re.compile(
         r"https://[A-Za-z0-9.-]+(?::\d{1,5})?(?:/[A-Za-z0-9._~/-]*)?"
     )
+    _OWNER: ClassVar[re.Pattern[str]] = re.compile(
+        r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:/[A-Za-z0-9_.-]{1,100})?"
+    )
     _MARKUP: ClassVar[re.Pattern[str]] = re.compile(r"[\\`*_<>\[\]()|#!&~]")
 
     @classmethod
@@ -72,7 +75,9 @@ class PrComment:
         )
 
     @classmethod
-    def render(cls, results: list[tuple[str, Decision]], base: str) -> str:
+    def render(
+        cls, results: list[tuple[str, Decision]], base: str, owner: str | None = None
+    ) -> str:
         overall = cls.verdict(results)
         lines = [f"## Cordon: {overall}", ""]
         for name, decision in results[: cls.MAX_ROWS]:
@@ -92,6 +97,10 @@ class PrComment:
                 f"- [{label}]({cls.link(base, path, name, decision)}): {why}"
                 for label, path, why in cls.ACTIONS
             ]
+        if owner is not None and overall == States.REVIEW:
+            if not cls._OWNER.fullmatch(owner):
+                raise ValueError("the owner is a GitHub user or `org/team` name")
+            lines += ["", f"Needs review from @{owner}."]
         return "\n".join(lines) + "\n"
 
     @classmethod
