@@ -408,10 +408,16 @@ class TestTheCheck:
         files = [InstallKit.file(name, data) for name, data in payloads.items()]
         threads: set[int] = set()
         lock = threading.Lock()
+        two_at_once = threading.Event()
 
         def fetch(url: str, ecosystem: str) -> bytes:
             with lock:
                 threads.add(threading.get_ident())
+                if len(threads) > 1:
+                    two_at_once.set()
+            # Held until a second worker has started, so the parallelism is shown by the code and not by how fast a
+            # loaded machine happens to run a fetch (an unparallel fetch would wait out the bound and fail below).
+            two_at_once.wait(timeout=10)
             name = url.rsplit("/", 1)[-1].split("-1.0.0")[0]
             return payloads[name]
 
