@@ -239,7 +239,7 @@ class TestTheSupervisor:
     def test_a_worker_that_never_starts_says_where_it_hung(self, monkeypatch) -> None:
         """A run where no worker could start once ended in "exit -9" and nothing else; the error
         carries the stuck worker's threads."""
-        monkeypatch.setattr(Worker, "START_BACKSTOP", 4.0)
+        monkeypatch.setattr(Worker, "START_BACKSTOP", 8.0)
         with pytest.raises(IsolationUnavailable) as raised:
             Harness.supervisor(Bounds(), workers=1, setup="setup_that_hangs").run(
                 [Unit(0, ("echo", 1), 1)]
@@ -395,3 +395,39 @@ class TestAWindowsDeathPastItsBudgetIsTheCpuLimit:
         from cordon_scanner.engine.isolation.platform_limits import JobLimits
 
         assert JobLimits.user_time_of(os.getpid()) is None
+
+
+class TestStartStacks:
+    """The stack file a worker arms before it is ready: its own, gone once it is ready or read, and naming no path
+    outside the installation."""
+
+    def test_disarming_removes_the_file(self, tmp_path) -> None:
+        from cordon_scanner.engine.isolation.supervisor import StartStacks
+
+        armed = StartStacks.arm((str(tmp_path), time.time() + 60))
+        assert armed is not None and armed[1].exists()
+        StartStacks.disarm(armed)
+        assert not armed[1].exists()
+
+    def test_a_dead_workers_file_under_a_reused_pid_is_replaced(self, tmp_path) -> None:
+        from cordon_scanner.engine.isolation.supervisor import StartStacks
+
+        stale = tmp_path / f"{os.getpid()}.stack"
+        stale.write_text("an earlier worker's threads", encoding="utf-8")
+        armed = StartStacks.arm((str(tmp_path), time.time() + 60))
+        assert armed is not None
+        assert "earlier worker" not in armed[1].read_text(encoding="utf-8")
+        StartStacks.disarm(armed)
+
+    def test_paths_are_cut_to_the_installation(self) -> None:
+        from cordon_scanner.engine.isolation.supervisor import StartStacks
+
+        text = (
+            'File "/Users/someone/work/src/cordon_scanner/engine/x.py", line 3\n'
+            'File "/home/u/.venv/lib/python3.13/site-packages/foo/bar.py", line 9\n'
+            "opened /home/u/private/notes.txt\n"
+        )
+        out = StartStacks.redacted(text)
+        assert 'File "cordon_scanner/engine/x.py"' in out
+        assert 'File "foo/bar.py"' in out
+        assert "someone" not in out and "/home/u" not in out and "notes.txt" in out

@@ -192,13 +192,19 @@ class Worker:
         return directory, time.time() + backstop - min(Worker.STACKS_BEFORE, backstop / 4)
 
     def stacks(self, directory: str | None) -> str:
-        """The threads' stacks this worker wrote while not ready, or ""."""
+        """The threads' stacks this worker wrote while not ready, or "": read once and removed, so a later worker that
+        is given the same pid never reads them as its own. Paths are cut to what follows `site-packages/` or the
+        package's own folder, so no home directory or user name reaches an error, a log or a report."""
         if directory is None:
             return ""
         path = Path(directory) / f"{self.process.pid}.stack"
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return ""
         with contextlib.suppress(OSError):
-            return path.read_text(encoding="utf-8", errors="replace")[-4000:].strip()
-        return ""
+            path.unlink()
+        return StartStacks.redacted(text)[-4000:].strip()
 
     def give(self, unit: Unit, bounds: Bounds) -> None:
         self.unit, self.given_at = unit, time.monotonic()
@@ -352,13 +358,47 @@ class StartStacks:
     worker's own, created exclusively in the supervisor's private directory; disarmed and removed
     once the worker is ready."""
 
+    #: The folders after which a traceback path is kept: what an installation holds, never where it is installed.
+    KEEP_AFTER = ("/site-packages/", "/dist-packages/", "/cordon_scanner/")
+
+    @classmethod
+    def redacted(cls, text: str) -> str:
+        """`text` with every absolute path cut: a traceback path to what follows the installation folder, any other
+        to its last part. Plain string work, no pattern, so a long dump costs one pass."""
+        return "\n".join(
+            " ".join(cls._cut(word) for word in line.split(" ")) for line in text.split("\n")
+        )
+
+    @classmethod
+    def _cut(cls, word: str) -> str:
+        quote = word[:1] if word[:1] in "\"'" else ""
+        body = word[len(quote) :]
+        if not body.startswith("/"):
+            return word
+        for marker in cls.KEEP_AFTER:
+            at = body.rfind(marker)
+            if at >= 0:
+                kept = body[at + len(marker) :]
+                return quote + (f"cordon_scanner/{kept}" if marker == "/cordon_scanner/" else kept)
+        return quote + body.rsplit("/", 1)[-1]
+
     @staticmethod
     def arm(stacks: tuple[str, float] | None) -> tuple[Any, Path] | None:
         if stacks is None:
             return None
         directory, deadline = stacks
         path = Path(directory) / f"{os.getpid()}.stack"
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        # A file of this name is a dead worker's whose pid this one was given (a live one holds its pid): it is not
+        # this worker's, so it goes before this worker writes its own.
+        with contextlib.suppress(FileNotFoundError):
+            path.unlink()
+        flags = (
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_BINARY", 0)
+        )
         try:
             handle = os.fdopen(os.open(path, flags, 0o600), "w", encoding="utf-8")
         except OSError:
@@ -542,7 +582,6 @@ class Supervisor:
         """Every unit of `queue` run on `pool`, a dead worker replaced while units remain."""
         started_any = False
         unready_ends = 0
-        stacks_seen = ""
         try:
             while pool and (queue or any(w.unit is not None for w in pool)):
                 if self.deadline is not None and self.clock() >= self.deadline:
@@ -580,8 +619,7 @@ class Supervisor:
                         # It ended before it was ready: tried once more in a fresh worker; when no
                         # worker has started at all and that one ends too, nothing can run here.
                         unready_ends += 1
-                        stacks = worker.stacks(self._stacks) or stacks_seen
-                        stacks_seen = stacks
+                        stacks = worker.stacks(self._stacks)
                         if not started_any and unready_ends >= 2:
                             where = (
                                 f"; its threads before the backstop:\n{stacks}" if stacks else ""

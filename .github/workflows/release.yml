@@ -547,33 +547,18 @@ jobs:
       - name: Sign the image (keyless)
         run: cosign sign --yes "ghcr.io/${{ steps.repo.outputs.lower }}-bitbucket-pipe@${{ steps.push.outputs.digest }}"
 
-  github-release:
-    name: create the GitHub release
-    needs: [build, publish, confirm]
-    # Only for a real tag push. A `workflow_dispatch` verification run must not
-    # create a release object for a version that already exists.
-    # Also on the second run a tag push makes once PyPI has the version (publish skipped, confirm
-    # passed): a release page this job failed to create the first time is created then, and an
-    # existing one only has its notes refreshed.
-    if: >-
-      !cancelled() && startsWith(github.ref, 'refs/tags/v')
-      && needs.build.result == 'success'
-      && (needs.publish.result == 'success'
-          || (needs.publish.result == 'skipped' && needs.confirm.result == 'success'))
+  vscode-build:
+    name: build the VS Code extension
+    # No write permission and no stored credential: `npm ci`, the tests and vsce run third-party code, so the job
+    # that runs them can only produce the file; attesting and publishing it happen in jobs that run none of it.
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      # The .vsix is attested here, where it is built, so the file on the release page is attested
-      # whether or not the Marketplace job is ever approved.
-      id-token: write
-      attestations: write
+      contents: read
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
-          name: dist
-          path: artefacts
+          persist-credentials: false
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -588,14 +573,58 @@ jobs:
         # stopped the 0.7.0 release here after PyPI had published (6 Nov).
         run: |
           set -euo pipefail
+          mkdir -p ../../vsix
           sudo apt-get update -qq
           sudo apt-get install -qq -y --no-install-recommends librsvg2-bin
           rsvg-convert -w 256 -h 256 images/icon.svg -o images/icon.png
           npm ci --no-audit --no-fund
           npm test
-          npx --yes @vscode/vsce@3.6.0 package --no-dependencies -o "../../artefacts/cordon-${GITHUB_REF_NAME#v}.vsix"
+          npx --yes @vscode/vsce@3.6.0 package --no-dependencies -o "../../vsix/cordon-${GITHUB_REF_NAME#v}.vsix"
 
-      # The very file packaged above, before it is uploaded: its provenance names this workflow and
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: vsix
+          path: vsix/*.vsix
+          if-no-files-found: error
+
+  github-release:
+    name: create the GitHub release
+    needs: [build, publish, confirm, vscode-build]
+    # Only for a real tag push. A `workflow_dispatch` verification run must not
+    # create a release object for a version that already exists.
+    # Also on the second run a tag push makes once PyPI has the version (publish skipped, confirm
+    # passed): a release page this job failed to create the first time is created then, and an
+    # existing one only has its notes refreshed.
+    if: >-
+      !cancelled() && startsWith(github.ref, 'refs/tags/v')
+      && needs.build.result == 'success' && needs.vscode-build.result == 'success'
+      && (needs.publish.result == 'success'
+          || (needs.publish.result == 'skipped' && needs.confirm.result == 'success'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      # The .vsix is attested here, where it is built, so the file on the release page is attested
+      # whether or not the Marketplace job is ever approved.
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: dist
+          path: artefacts
+
+      # Built in its own job, which holds no write permission and no credential: the package tooling there runs
+      # third-party code, and here it only hands over the file.
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: vsix
+          path: artefacts
+
+      # The very file the build job packaged, before it is uploaded: its provenance names this workflow, this tag and
       # this commit as what built it.
       - uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018 # v1.4.4
         with:
@@ -638,7 +667,12 @@ jobs:
             --notes-file notes.md \
             --verify-tag \
             artefacts/dist/* artefacts/*.vsix \
-            || gh release edit "$GITHUB_REF_NAME" --notes-file notes.md
+            || {
+              # A re-run: the page exists. The .vsix this run built and attested replaces the earlier one, so the file on
+              # the page is always the one whose provenance names this run.
+              gh release upload "$GITHUB_REF_NAME" artefacts/*.vsix --clobber
+              gh release edit "$GITHUB_REF_NAME" --notes-file notes.md
+            }
 
   vscode-marketplace:
     name: publish the VS Code extension to the Marketplace and Open VSX
@@ -663,17 +697,28 @@ jobs:
           gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern '*.vsix' --dir vsix
           ls -l vsix
 
-      - name: Publish only a .vsix this workflow attested
-        # Attested where it was built (github-release). A file replaced on the release page after that
-        # carries no attestation from this workflow, so it fails here and is never published.
+      - name: Publish only the one .vsix this workflow attested for this tag
+        # Attested where it was built (github-release). Checked against this repository, this workflow, this tag and
+        # this commit, signed through GitHub's OIDC issuer on a GitHub-hosted runner: an older .vsix this workflow
+        # attested for another tag, or a file replaced on the page, fails here and is never published.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          for package in vsix/*.vsix; do
-            gh attestation verify "$package" --repo "$GITHUB_REPOSITORY" \
-              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release.yml"
-          done
+          shopt -s nullglob
+          files=(vsix/*.vsix)
+          if [ "${#files[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one .vsix on the release page, found ${#files[@]}"
+            exit 1
+          fi
+          gh attestation verify "${files[0]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release.yml" \
+            --source-ref "refs/tags/${GITHUB_REF_NAME}" \
+            --source-digest "${GITHUB_SHA}" \
+            --cert-oidc-issuer "https://token.actions.githubusercontent.com" \
+            --deny-self-hosted-runners
+          echo "VSIX=${files[0]}" >> "$GITHUB_ENV"
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -687,7 +732,7 @@ jobs:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: |
           set -euo pipefail
-          package="$(ls vsix/*.vsix)"
+          package="${VSIX}"
           if [ -n "${VSCE_PAT}" ]; then
             npx --yes @vscode/vsce@3.6.0 publish --packagePath "$package"
           else
