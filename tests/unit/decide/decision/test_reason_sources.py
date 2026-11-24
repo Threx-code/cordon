@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -355,3 +356,32 @@ class TestWorkflowAndAllowCodes:
             lists={"allowed": ["pkg:npm/someone-else"]},
         )
         assert Make.ask(policy, EvidenceSet()).reason_codes == ("R903",)
+
+
+class TestAnUnapprovedModelOrProvider:
+    """BP-5-20: R603 is the code of a rule that requires a model or a provider to be on the approved list."""
+
+    @staticmethod
+    def policy():
+        return Make.policy(
+            [
+                {
+                    "id": "models",
+                    "tier": "require",
+                    "then": "review",
+                    "reason": "R603",
+                    "require": {"subject.id": {"in": "approved"}},
+                }
+            ],
+            lists={"approved": ["model:acme/small"]},
+        )
+
+    def test_a_model_off_the_list_is_review_with_r603(self) -> None:
+        stranger = replace(Make.artifact(), kind="ai_model", subject_id="model:other/large")
+        found = Make.ask(self.policy(), EvidenceSet(), stranger)
+        assert found.state == "REVIEW" and found.reason_codes == ("R603",)
+
+    def test_a_model_on_the_list_is_not(self) -> None:
+        listed = replace(Make.artifact(), kind="ai_model", subject_id="model:acme/small")
+        found = Make.ask(self.policy(), EvidenceSet(), listed)
+        assert "R603" not in found.reason_codes

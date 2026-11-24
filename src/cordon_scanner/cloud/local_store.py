@@ -112,7 +112,14 @@ class StoreFiles:
 
 
 class LocalStore:
-    BLOB_KINDS: ClassVar[tuple[str, ...]] = ("rulepack", "intel", "etag", "breaker", "feed-serial")
+    BLOB_KINDS: ClassVar[tuple[str, ...]] = (
+        "rulepack",
+        "intel",
+        "etag",
+        "breaker",
+        "feed-serial",
+        "pin",
+    )
 
     def __init__(self, root: Path, *, max_cache: int = 4096, max_pending: int = 10_000) -> None:
         if max_cache < 1 or max_pending < 1:

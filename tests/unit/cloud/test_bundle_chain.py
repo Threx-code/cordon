@@ -17,6 +17,8 @@ from typing import Any
 import pytest
 
 from cordon_scanner.cloud.bundle_chain import BundleChain, BundleError, BundleRefused, Dsse
+from cordon_scanner.intel.provenance._ed25519_signer import Ed25519Signer
+from kits import bundle_kit
 from support import ROOT as REPO
 
 FIXTURES = json.loads(
@@ -222,3 +224,56 @@ class TestWhatTheEnvelopeCarries:
     def test_a_key_id_is_the_sha256_of_the_raw_key(self) -> None:
         assert len(Dsse.keyid(ROOT_KEY)) == 64
         assert Dsse.keyid(ROOT_KEY) == hashlib.sha256(ROOT_KEY).hexdigest()
+
+
+class Tenant:
+    """A tenant that brings its own root key."""
+
+    @staticmethod
+    def platform(label: str) -> bundle_kit.Platform:
+        return bundle_kit.Platform(
+            root=Ed25519Signer(bundle_kit.Kit.seed(label)),
+            policy_key=Ed25519Signer(bundle_kit.Kit.seed(label + "-policy")),
+        )
+
+    @staticmethod
+    def bundle(
+        platform: bundle_kit.Platform, expires: timedelta = timedelta(days=30)
+    ) -> dict[str, Any]:
+        policy = bundle_kit.Kit.compiled(1, bundle_kit.T0 + expires)
+        return platform.publish(policy, issued=bundle_kit.T0, expires=bundle_kit.T0 + expires)
+
+    @staticmethod
+    def offer(
+        platform: bundle_kit.Platform, pinned: Ed25519Signer, envelope: dict[str, Any]
+    ) -> tuple[str, dict[str, Any]]:
+        return BundleChain.accept_bundle(
+            root_public=pinned.public,
+            delegation=platform.delegation(),
+            envelope=envelope,
+            tenant=bundle_kit.TENANT,
+            now=bundle_kit.T0 + timedelta(hours=1),
+        )
+
+
+class TestABringYourOwnRoot:
+    def test_a_bundle_under_the_tenants_own_root_verifies_offline(self) -> None:
+        platform = Tenant.platform("byok-root")
+        taken, bundle = Tenant.offer(platform, platform.root, Tenant.bundle(platform))
+        assert taken == "new" and bundle["scope"] == bundle_kit.SCOPE
+
+    def test_a_bundle_is_not_trusted_under_a_root_the_tenant_does_not_pin(self) -> None:
+        old, new = Tenant.platform("byok-old"), Tenant.platform("byok-new")
+        with pytest.raises(BundleError) as refused:
+            Tenant.offer(old, new.root, Tenant.bundle(old))
+        assert not isinstance(refused.value, BundleRefused)
+
+    def test_a_bundle_past_its_expiry_is_refused_even_under_the_right_root(self) -> None:
+        platform = Tenant.platform("byok-root")
+        policy = bundle_kit.Kit.compiled(1, bundle_kit.T0 + timedelta(hours=1))
+        envelope = platform.publish(
+            policy, issued=bundle_kit.T0, expires=bundle_kit.T0 + timedelta(minutes=30)
+        )
+        with pytest.raises(BundleRefused) as refused:
+            Tenant.offer(platform, platform.root, envelope)
+        assert refused.value.name == BundleRefused.EXPIRED

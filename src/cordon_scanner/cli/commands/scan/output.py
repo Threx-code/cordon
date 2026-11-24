@@ -41,6 +41,7 @@ class ScanOutput:
                 reason=str(verdict.reason),
                 signer=signer,
                 ai_document=results.SignedResults.ai_inventory(target, result),
+                vendored=results.SignedResults.vendored(target),
             )
         except CloudError as exc:
             print(f"{PROGRAM}: upload failed: {exc}", file=sys.stderr)

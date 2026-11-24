@@ -82,9 +82,9 @@ class SignedResults:
     """Scan results as a signed statement, and their upload."""
 
     @staticmethod
-    def results_bytes(result: ScanResult) -> bytes:
+    def results_bytes(result: ScanResult, vendored: list[dict[str, str]] | None = None) -> bytes:
         """The results as `--format json` writes them, suppressed findings included -- with every
-        code excerpt removed.
+        code excerpt removed, and the vendored copies of packages found in the tree when there are any.
 
         Cordon does not receive customer code, and a masked snippet is still a line of it: the
         default evidence mode kept up to two hundred characters of the matched source line, and
@@ -92,6 +92,8 @@ class SignedResults:
         location and its hash; the excerpt stays in the local report.
         """
         document = result.to_dict()
+        if vendored:
+            document["vendored"] = vendored
         for finding in document.get("findings", []):
             evidence = finding.get("evidence") if isinstance(finding, dict) else None
             if isinstance(evidence, dict) and evidence.get("snippet") is not None:
@@ -121,6 +123,15 @@ class SignedResults:
             )
         except Exception:  # noqa: BLE001
             return None
+
+    @staticmethod
+    def vendored(root: Path, known: dict[str, str] | None = None) -> list[dict[str, str]]:
+        """The vendored copies of packages in the scanned directory, as the upload carries them; none for a target that is not a directory."""
+        from cordon_scanner.ecosystems.vendored.vendored_copies import VendoredCopies
+
+        if not root.is_dir():
+            return []
+        return [copy.to_dict() for copy in VendoredCopies.of_directory(root, known)]
 
     @staticmethod
     def ai_inventory_bytes(document: dict[str, Any]) -> bytes:
@@ -228,8 +239,9 @@ class SignedResults:
         signer: Signer | None = None,
         transport: Transport | None = None,
         ai_document: dict[str, Any] | None = None,
+        vendored: list[dict[str, str]] | None = None,
     ) -> Receipt:
-        results = SignedResults.results_bytes(result)
+        results = SignedResults.results_bytes(result, vendored)
         inventory = (
             SignedResults.ai_inventory_bytes(ai_document) if ai_document is not None else None
         )

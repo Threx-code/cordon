@@ -19,6 +19,7 @@ from cordon_scanner.cli.commands.guard import GuardCommand
 from cordon_scanner.cli.commands.intel import IntelCommand
 from cordon_scanner.cli.commands.inventory import InventoryCommand
 from cordon_scanner.cli.commands.notify import NotifyCommand
+from cordon_scanner.cli.commands.policy import PolicyCommand
 from cordon_scanner.cli.commands.report import ReportCommand
 from cordon_scanner.cli.commands.rules import RulesCommand
 from cordon_scanner.cli.commands.runner import RunnerCommand
@@ -109,6 +110,8 @@ tutorials for this version ({__version__}):
         BaselineCommand.add_parser(sub)
 
         BundleCommand.add_parser(sub)
+
+        PolicyCommand.add_parser(sub)
 
         AdvisoriesCommand.add_parser(sub)
 

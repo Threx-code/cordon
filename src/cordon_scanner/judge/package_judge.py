@@ -22,6 +22,7 @@ anything a provider does not.
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 import tarfile
@@ -31,6 +32,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar, Final
 
+from cordon_scanner.analysis.python.pyfacts import PythonFacts
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.detect.agents.language_model.review import JudgeError
 from cordon_scanner.judge.providers import BaseProvider
 
@@ -48,8 +51,20 @@ class ScanHint:
     line: int | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class Neighbour:
+    """A labelled release near the one judged: its label (`malicious` or `benign`) and a one-line summary."""
+
+    label: str
+    summary: str
+
+
 class ReleaseBundle:
     """One release as text for the judge, read in memory and bounded."""
+
+    RESOLVED_MIN: ClassVar[int] = 8
+    RESOLVED_SHOWN: ClassVar[int] = 200
+    RESOLVED_LIMIT: ClassVar[int] = 30
 
     #: A long single- or double-quoted run of base64, hex or escape characters. Two
     #: alternatives instead of a backreference to the opening quote (the pattern validator
@@ -127,7 +142,11 @@ class ReleaseBundle:
 
     @classmethod
     def build(
-        cls, archive: Path, hints: Iterable[ScanHint] = (), budget: int = BUDGET_CHARS
+        cls,
+        archive: Path,
+        hints: Iterable[ScanHint] = (),
+        budget: int = BUDGET_CHARS,
+        neighbours: Iterable[Neighbour] = (),
     ) -> str:
         members = cls.members(archive)
         flagged: dict[str, list[ScanHint]] = {}
@@ -176,7 +195,45 @@ class ReleaseBundle:
                     else f"<binary {len(data)} B>"
                 )
                 parts.append(f"## OTHER {cls.short(name)}\n{cls.shrink(shown)}")
+        parts += cls._resolved(members)
+        parts += cls._neighbours(neighbours)
         return "\n".join(parts)[: budget + 6000]
+
+    @classmethod
+    def _resolved(cls, members: Sequence[tuple[str, bytes]]) -> list[str]:
+        """The strings the Python sources build from parts (joined literals, f-strings of constants), folded from the syntax tree and never run."""
+        found: dict[str, None] = {}
+        for name, data in members:
+            if not name.endswith(".py") or cls.SKIP.search(name):
+                continue
+            try:
+                tree = PythonSyntax.parse(data.decode("utf-8", "replace"))
+            except (SyntaxError, ValueError):
+                continue  # S2: a source that does not parse has no strings to fold
+            for node in ast.walk(tree):
+                if isinstance(node, ast.BinOp | ast.JoinedStr):
+                    value = PythonFacts.constant(node)
+                    if value and len(value) >= cls.RESOLVED_MIN:
+                        found.setdefault(value[: cls.RESOLVED_SHOWN], None)
+        if not found:
+            return []
+        return ["## RESOLVED STRINGS (built from parts)", *list(found)[: cls.RESOLVED_LIMIT], ""]
+
+    @classmethod
+    def _neighbours(cls, neighbours: Iterable[Neighbour]) -> list[str]:
+        """Up to five labelled malicious and five labelled benign releases nearest this one, as the caller found them."""
+        chosen = [
+            n
+            for label in ("malicious", "benign")
+            for n in [x for x in neighbours if x.label == label][:5]
+        ]
+        if not chosen:
+            return []
+        return [
+            "## NEAREST LABELLED NEIGHBOURS",
+            *[f"{n.label}: {n.summary}"[:300] for n in chosen],
+            "",
+        ]
 
     @classmethod
     def _surface(cls, members: Sequence[tuple[str, bytes]]) -> list[str]:

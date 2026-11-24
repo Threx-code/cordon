@@ -38,6 +38,7 @@ from cordon_scanner.cli.commands.guard import GuardCommand
 from cordon_scanner.cli.commands.intel import IntelCommand
 from cordon_scanner.cli.commands.inventory import InventoryCommand
 from cordon_scanner.cli.commands.notify import NotifyCommand
+from cordon_scanner.cli.commands.policy import PolicyCommand
 from cordon_scanner.cli.commands.report import ReportCommand
 from cordon_scanner.cli.commands.rules import RulesCommand
 from cordon_scanner.cli.commands.runner import RunnerCommand
@@ -131,6 +132,7 @@ class CommandLine:
             "guard": GuardCommand.run,
             "baseline": BaselineCommand.run,
             "bundle": BundleCommand.run,
+            "policy": PolicyCommand.run,
             "report": ReportCommand.run,
             "advisories": AdvisoriesCommand.run,
             "intel": IntelCommand.run,

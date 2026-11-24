@@ -242,13 +242,21 @@ class BundleChain:
         cls, root_public: bytes, delegation: object, tenant: str, now: datetime
     ) -> dict[str, bytes]:
         """The policy role keys the pinned root delegated that are valid at `now`, by key id: what a bundle or a loosening may be signed with."""
+        return cls.role_keys(root_public, delegation, tenant, now, POLICY_ROLES)
+
+    @classmethod
+    def role_keys(
+        cls,
+        root_public: bytes,
+        delegation: object,
+        tenant: str,
+        now: datetime,
+        roles: tuple[str, ...],
+    ) -> dict[str, bytes]:
+        """The keys of the given roles the pinned root delegated that are valid at `now`, by key id."""
         usable: dict[str, bytes] = {}
         for key in cls.delegation(root_public, delegation, tenant=tenant)["keys"]:
-            if (
-                isinstance(key, dict)
-                and key.get("role") in POLICY_ROLES
-                and cls._valid_at(key, now)
-            ):
+            if isinstance(key, dict) and key.get("role") in roles and cls._valid_at(key, now):
                 try:
                     usable[str(key["keyid"])] = bytes.fromhex(str(key["public"]))
                 except (KeyError, ValueError):

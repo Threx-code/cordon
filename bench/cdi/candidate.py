@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from cordon_scanner.analysis.gates.env_gates import EnvGate
+
 from . import schemas
 from .manifests import ManifestConflict, Manifests
 
@@ -42,6 +44,16 @@ FILE_EXFIL_RULE_PACK: dict[str, Any] = {
     "signal": "agent.intent.file-exfil",
     "emits": {"rule": "SUSPECT.AGENT.INTENT.001", "severity": "HIGH"},
     "scope": {"surface": "skill", "origin": "third_party", "slot": "agent_text"},
+}
+
+
+ENV_GATE_RULE_PACK: dict[str, Any] = {
+    "rule_schema_version": "1.0.0",
+    "id": "cdi.code.env_gate",
+    "enforcement": "shadow",
+    "signal": "code.env-gate.sensitive",
+    "emits": {"rule": "SUSPECT.CODE.ENVGATE.001", "severity": "MEDIUM"},
+    "scope": {"surface": "package", "origin": "third_party", "slot": "code"},
 }
 
 
@@ -146,6 +158,41 @@ class CandidateFactory:
             "incident",
             compatibility={"min_scanner_version": "0.7.0", "rule_schema_version": "1.0.0"},
             rule_pack=FILE_EXFIL_RULE_PACK,
+        )
+
+    @staticmethod
+    def env_gate_candidate(
+        source_misses: list[dict[str, Any]],
+        gates: tuple[EnvGate, ...],
+        train_dataset_digest: str,
+        manifests: Manifests,
+    ) -> dict[str, Any]:
+        """A shadow rule for the gate shape the misses share; refused when no source carries a gate."""
+        if not gates:
+            raise FactoryRejection("no environment gate was read from the source misses")
+        shapes = sorted({f"{g.variable}->{g.capability}" for g in gates})
+        return CandidateFactory.make_candidate(
+            candidate_id="cdi.code.env_gate",
+            version="1.0.0",
+            kind="rule",
+            lane="rule_pack",
+            source_misses=source_misses,
+            manifests=manifests,
+            mechanism_addressed="sensitive code reached only where a CI variable is set or unset",
+            evidence="gate shapes read from the misses: " + ", ".join(shapes),
+            provenance="dev misses, gate read statically (train/dev split)",
+            expected_gain="to be measured by the pre-test on cached facts",
+            benign_lookalikes=[
+                "a build script that installs only on CI",
+                "a test helper skipped on CI",
+            ],
+            scope="package code, install and import paths",
+            cost="one parse per source file; the gate is read from the syntax tree",
+            train_dataset_digest=train_dataset_digest,
+            limits="a gate built from an indirect read of the variable is not seen",
+            rollback_conditions="dev-benign FP > 0.5% on any eval benign set, or a confirmed FP incident",
+            compatibility={"min_scanner_version": "0.8.0", "rule_schema_version": "1.0.0"},
+            rule_pack=ENV_GATE_RULE_PACK,
         )
 
     @staticmethod
