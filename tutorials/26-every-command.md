@@ -954,6 +954,7 @@ Run mix, scanning every package before anything is installed.
 - `advisories`: the advisory database
 - `intel`: the signed threat-intel feed
 - `bundle`: offline bundle, air-gapped use
+- `policy`: the signed policy bundle
 
 ## advisories
 
@@ -1062,6 +1063,30 @@ Build and verify an offline bundle for an air-gapped install.
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ BUNDLE                                                                     │
 │ --into DIR                                                                 │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## policy
+
+The tenant's signed policy bundle.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ policy pull                   fetch the policy bundle and keep it if it    │
+│                               verifies offline                             │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+### policy pull
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ --url URL                 the bundle store's https address                 │
+│ --root HEX                the tenant's root public key, 64 hex characters  │
+│ --delegation FILE         the delegation the root signed (JSON)            │
+│ --tenant TENANT           the tenant the bundle is for                     │
+│ --store DIR               where the bundle is kept (default: the device    │
+│                           store)                                           │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
