@@ -52,6 +52,11 @@ class PolicyCommand:
         pull.add_argument(
             "--store", metavar="DIR", help="where the bundle is kept (default: the device store)"
         )
+        pull.add_argument(
+            "--replace-root",
+            action="store_true",
+            help="trust this root key in place of the one the store first accepted",
+        )
 
     @staticmethod
     def fetch(url: str, headers: dict[str, str]) -> tuple[int, Mapping[str, str], bytes]:
@@ -96,6 +101,13 @@ class PolicyCommand:
         store = LocalStore(
             Path(args.store) if args.store else CloudAuth.config_dir() / STORE_FOLDER
         )
+        pinned = store.blob("pin", "root")
+        if pinned is not None and pinned.data != root and not args.replace_root:
+            print(
+                f"{PROGRAM}: this store trusts another root key; pass --replace-root to change it",
+                file=sys.stderr,
+            )
+            return int(ExitCode.CONFIG_ERROR)
         strict = PolicyCompiler.compile(
             PolicySource.from_json(
                 {
@@ -125,5 +137,7 @@ class PolicyCommand:
         except BundleError as exc:
             print(f"{PROGRAM}: bundle not taken: {exc}; the bundle held is kept")
             return int(ExitCode.CONFIG_ERROR)
+        if state in ("new", "unchanged") and (pinned is None or pinned.data != root):
+            store.put_blob("pin", "root", root, (now or datetime.now(UTC)).isoformat())
         print(f"policy bundle: {state}")
         return int(ExitCode.CLEAN) if state != "unreachable" else int(ExitCode.SCANNER_ERROR)

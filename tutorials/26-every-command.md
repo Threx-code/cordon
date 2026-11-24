@@ -1087,6 +1087,8 @@ The tenant's signed policy bundle.
 │ --tenant TENANT           the tenant the bundle is for                     │
 │ --store DIR               where the bundle is kept (default: the device    │
 │                           store)                                           │
+│ --replace-root            trust this root key in place of the one the      │
+│                           store first accepted                             │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 

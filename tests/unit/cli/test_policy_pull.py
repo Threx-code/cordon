@@ -27,7 +27,9 @@ class Site:
 
 class Pull:
     @staticmethod
-    def run(tmp_path: Path, platform: Platform, site: Site, minutes: int = 60) -> int:
+    def run(
+        tmp_path: Path, platform: Platform, site: Site, minutes: int = 60, replace: bool = False
+    ) -> int:
         delegation = tmp_path / "delegation.json"
         delegation.write_text(json.dumps(platform.delegation()), encoding="utf-8")
         args = argparse.Namespace(
@@ -37,6 +39,7 @@ class Pull:
             delegation=str(delegation),
             tenant=TENANT,
             store=str(tmp_path / "store"),
+            replace_root=replace,
         )
         return PolicyCommand.run(args, fetch=site, now=T0 + timedelta(minutes=minutes))
 
@@ -86,3 +89,16 @@ class TestThePullCommand:
 
         assert Pull.run(tmp_path, platform, down) != 0  # type: ignore[arg-type]
         assert Pull.kept(tmp_path) == held
+
+
+class TestTheFirstRootIsKept:
+    def test_a_different_root_is_refused_unless_it_is_replaced_on_purpose(
+        self, tmp_path: Path, capsys
+    ) -> None:
+        first = Platform()
+        assert Pull.run(tmp_path, first, Site([Pull.bundle(first, timedelta(days=1))])) == 0
+        other = Platform(root=Platform().policy_key)
+        site = Site([Pull.bundle(other, timedelta(days=1))])
+        assert Pull.run(tmp_path, other, site) != 0
+        assert "another root key" in capsys.readouterr().err
+        assert Pull.run(tmp_path, other, site, replace=True) == 0
