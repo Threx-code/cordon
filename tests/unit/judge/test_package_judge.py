@@ -4,6 +4,7 @@ scripted: nothing is dialled."""
 
 from __future__ import annotations
 
+import ast
 import base64
 import gzip
 import io
@@ -14,7 +15,9 @@ from typing import ClassVar
 import pytest
 
 from cordon_scanner.detect.agents.language_model.review import JudgeError
+from cordon_scanner.judge import package_judge
 from cordon_scanner.judge.package_judge import (
+    Neighbour,
     PackageJudge,
     PackagePrompts,
     ReleaseBundle,
@@ -249,3 +252,68 @@ class TestThePlainHttpAllowList:
                 post(url, {}, {}, timeout=2)
         with pytest.raises(ProviderUnavailable, match="over https"):
             HttpTransport.post("http://judge.invalid/v1", {}, {}, timeout=2)
+
+
+class TestTheBundleHasEveryPart:
+    """A fixture release gives metadata, the file list, Python in priority order, the strings it builds, the scan's findings and the neighbours, and the builder runs none of it."""
+
+    URL = "https://example.invalid/" + "payload.sh"
+
+    def bundle(self, tmp_path: Path) -> str:
+        files = dict(JudgeKit.FILES)
+        files["setup.py"] = (
+            "from setuptools import setup\n"
+            "U = 'https://example.' + 'invalid/' + 'payload.sh'\nsetup(name='demo')\n"
+        )
+        neighbours = [Neighbour("malicious", f"m{i}") for i in range(7)] + [
+            Neighbour("benign", f"b{i}") for i in range(7)
+        ]
+        return ReleaseBundle.build(
+            JudgeKit.sdist(tmp_path, files),
+            [ScanHint("SUSPECT.PACKAGE.X.001", "setup.py", 2)],
+            neighbours=neighbours,
+        )
+
+    def test_each_part_is_present(self, tmp_path: Path) -> None:
+        text = self.bundle(tmp_path)
+        for part in (
+            "## METADATA",
+            "## FILES",
+            "## FILE setup.py",
+            "## RESOLVED STRINGS",
+            "SUSPECT.PACKAGE.X.001",
+        ):
+            assert part in text, part
+        assert self.URL in text.split("## RESOLVED STRINGS", 1)[1]
+
+    def test_setup_comes_first_among_the_python_files(self, tmp_path: Path) -> None:
+        text = self.bundle(tmp_path)
+        assert text.index("## FILE setup.py") < text.index("## FILE demo/util.py")
+
+    def test_five_malicious_and_five_benign_neighbours_are_shown(self, tmp_path: Path) -> None:
+        shown = self.bundle(tmp_path).split("## NEAREST LABELLED NEIGHBOURS", 1)[1]
+        assert shown.count("malicious: ") == 5 and shown.count("benign: ") == 5
+
+    def test_the_builder_imports_and_runs_nothing(self) -> None:
+        source = Path(package_judge.__file__).read_text(encoding="utf-8")
+        calls = [n.func for n in ast.walk(ast.parse(source)) if isinstance(n, ast.Call)]
+        called = {f.id for f in calls if isinstance(f, ast.Name)} | {
+            f.attr for f in calls if isinstance(f, ast.Attribute) and f.attr != "compile"
+        }
+        imported = {
+            a.name.split(".")[0]
+            for n in ast.walk(ast.parse(source))
+            if isinstance(n, ast.Import)
+            for a in n.names
+        }
+        assert not called & {
+            "exec",
+            "eval",
+            "compile",
+            "__import__",
+            "import_module",
+            "run",
+            "Popen",
+            "system",
+        }
+        assert not imported & {"subprocess", "importlib", "runpy", "socket"}
