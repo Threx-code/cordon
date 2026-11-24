@@ -376,6 +376,8 @@ Inspect and validate rule packs.
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ rules list                    list every loaded rule                       │
 │ rules test                    run every rule's declared samples            │
+│ rules learned                 the learned detectors of the installed       │
+│                               bundle, read offline                         │
 │ rules diff                    compare rule packs and report removal or     │
 │                               weakening                                    │
 │ rules show                    show one rule in full                        │
