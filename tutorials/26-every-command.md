@@ -1230,6 +1230,8 @@ This machine's AI agents and MCP servers, for an organisation's MDM (read-only, 
 │ agent mcp-approve             record the tools each remote MCP server in   │
 │                               the repository serves now (.cordon/mcp-      │
 │                               tools.json)                                  │
+│ agent hook                    an agent's pre-tool hook: PreToolUse JSON    │
+│                               in, allow or deny out                        │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 

@@ -2,7 +2,7 @@
 
 An agent keeps its hooks in its settings as `{"hooks": {event: [{"matcher": ..., "hooks": [{"type": "command",
 "command": ...}]}]}}`. Cordon's hook is installed for that agent only when one of those commands runs the Cordon scanner
-with its `hook` argument: a command that merely mentions Cordon, or another tool's hook, does not count.
+as `agent hook`: a command that merely mentions Cordon, or another tool's hook, does not count.
 """
 
 from __future__ import annotations
@@ -25,11 +25,12 @@ class HookInstall:
     """Reads agent settings for Cordon's hook."""
 
     PROGRAMS: ClassVar[frozenset[str]] = frozenset({"cordon-scanner", "cordon"})
-    ARGUMENT: ClassVar[str] = "hook"
+    COMMAND: ClassVar[tuple[str, str]] = ("agent", "hook")
+    """The scanner's own hook command: `cordon-scanner agent hook`."""
 
     @classmethod
     def runs_cordon(cls, command: object) -> bool:
-        """Whether one hook command runs the Cordon scanner's hook: the program is Cordon's and `hook` is one of its arguments."""
+        """Whether one hook command runs `cordon-scanner agent hook`: the program is Cordon's and its first two arguments are `agent hook`."""
         if not isinstance(command, str):
             return False
         try:
@@ -39,7 +40,7 @@ class HookInstall:
         if not words:
             return False
         program = re.split(r"[\\/]", words[0])[-1].removesuffix(".exe")
-        return program in cls.PROGRAMS and cls.ARGUMENT in words[1:]
+        return program in cls.PROGRAMS and tuple(words[1:3]) == cls.COMMAND
 
     @classmethod
     def installed(cls, settings: object) -> bool:

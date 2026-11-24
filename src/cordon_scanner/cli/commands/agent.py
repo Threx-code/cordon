@@ -44,6 +44,9 @@ class AgentCommand:
         approve.add_argument(
             "target", nargs="?", default=".", help="repository directory (default: .)"
         )
+        agent.add_parser(
+            "hook", help="an agent's pre-tool hook: PreToolUse JSON in, allow or deny out"
+        )
 
     @classmethod
     def run(cls, args: argparse.Namespace) -> int:
@@ -52,6 +55,10 @@ class AgentCommand:
         from cordon_scanner.cloud import CloudError, device
 
         action = getattr(args, "agent_command", None)
+        if action == "hook":
+            from cordon_scanner.cli.commands.decision.agent_hook import AgentHookCommand
+
+            return AgentHookCommand.run(args)
         if action == "mcp-approve":
             return cls._approve_mcp_tools(Path(args.target))
         if action not in ("inventory", "report"):

@@ -52,20 +52,22 @@ class TestTheHookIsInstalledOnlyWhenTheAgentRunsIt:
         assert Home.hooks(tmp_path) == {"claude-code": False}
 
     def test_a_command_that_only_mentions_cordon_does_not_count(self, tmp_path: Path) -> None:
-        Home.write(tmp_path, ".claude/settings.json", Home.settings("echo cordon-scanner hook"))
+        Home.write(
+            tmp_path, ".claude/settings.json", Home.settings("echo cordon-scanner agent hook")
+        )
         assert Home.hooks(tmp_path) == {"claude-code": False}
 
     def test_the_hook_of_another_agent_is_told_apart(self, tmp_path: Path) -> None:
         Home.write(
             tmp_path,
             ".gemini/settings.json",
-            Home.settings("/opt/bin/cordon-scanner hook", "BeforeTool"),
+            Home.settings("/opt/bin/cordon-scanner agent hook", "BeforeTool"),
         )
         Home.write(tmp_path, ".claude/settings.json", {})
         assert Home.hooks(tmp_path) == {"claude-code": False, "gemini-cli": True}
 
     def test_products_that_are_not_agents_have_no_entry(self, tmp_path: Path) -> None:
-        Home.write(tmp_path, ".claude/settings.json", Home.settings("cordon hook"))
+        Home.write(tmp_path, ".claude/settings.json", Home.settings("cordon agent hook"))
         (tmp_path / ".npmrc").write_text("registry=https://registry.npmjs.org/\n", encoding="utf-8")
         assert set(Home.hooks(tmp_path)) == {"claude-code"}
 
@@ -77,3 +79,8 @@ class TestTheCommandReader:
         assert not HookInstall.runs_cordon("")
         assert not HookInstall.runs_cordon(None)
         assert not HookInstall.runs_cordon("cordon-scanner 'unterminated")
+
+    def test_only_the_scanners_own_hook_command_counts(self) -> None:
+        assert not HookInstall.runs_cordon("cordon-scanner hook")
+        assert not HookInstall.runs_cordon("cordon-scanner scan agent hook")
+        assert HookInstall.runs_cordon("/usr/bin/cordon-scanner agent hook --verbose")
