@@ -12,6 +12,8 @@ import re
 from dataclasses import dataclass
 from typing import ClassVar
 
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
 
 @dataclass(frozen=True)
 class EnvGate:
@@ -56,7 +58,7 @@ class EnvGates:
     def of_python(text: str) -> tuple[EnvGate, ...]:
         """Every `if` of the text that tests a runner variable and calls something sensitive in its body."""
         try:
-            tree = ast.parse(text)
+            tree = PythonSyntax.parse(text)
         except (SyntaxError, ValueError):
             return ()  # S2: text that does not parse has no syntax to read a gate from
         found: list[EnvGate] = []

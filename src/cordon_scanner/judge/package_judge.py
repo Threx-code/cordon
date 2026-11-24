@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import ClassVar, Final
 
 from cordon_scanner.analysis.python.pyfacts import PythonFacts
+from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.detect.agents.language_model.review import JudgeError
 from cordon_scanner.judge.providers import BaseProvider
 
@@ -206,7 +207,7 @@ class ReleaseBundle:
             if not name.endswith(".py") or cls.SKIP.search(name):
                 continue
             try:
-                tree = ast.parse(data.decode("utf-8", "replace"))
+                tree = PythonSyntax.parse(data.decode("utf-8", "replace"))
             except (SyntaxError, ValueError):
                 continue  # S2: a source that does not parse has no strings to fold
             for node in ast.walk(tree):
