@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import subprocess
+from pathlib import Path
 from typing import Any
 
 from cordon_scanner.cli.commands.decision.decide import DecideCommand
@@ -214,3 +216,122 @@ class TestTheFourGatesAreInTheRepository:
         DecideCommand.add_parser(parser.add_subparsers())
         sub = parser._subparsers._group_actions[0].choices["decide"]  # type: ignore[union-attr,attr-defined]
         return list(sub._actions)
+
+
+class Wrapper:
+    """Runs the shell a wrapper hands the scanner in decide mode, with a stand-in scanner that records what it was given."""
+
+    @staticmethod
+    def block(path: str, marker: str, start: str) -> str:
+        """The lines of a YAML block scalar that begin after `marker` and the line `start`, dedented."""
+        lines = (ROOT / path).read_text(encoding="utf-8").splitlines()
+        at = next(i for i, line in enumerate(lines) if marker in line)
+        begin = next(i for i in range(at, len(lines)) if lines[i].strip() == start) + 1
+        body: list[str] = []
+        indent = len(lines[begin]) - len(lines[begin].lstrip())
+        for line in lines[begin:]:
+            if line.strip() and len(line) - len(line.lstrip()) < indent:
+                break
+            body.append(line[indent:] if line.strip() else "")
+        return "\n".join(body)
+
+    @staticmethod
+    def run(
+        tmp_path: Path, script: str, env: dict[str, str], exit_code: int = 0
+    ) -> tuple[int, str, str]:
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        stand_in = bin_dir / "cordon-scanner"
+        stand_in.write_text(
+            f'#!/bin/sh\necho "$@" > "{tmp_path}/args"\ncat > "{tmp_path}/stdin"\necho \'{{"state":"ALLOW"}}\'\nexit {exit_code}\n',
+            encoding="utf-8",
+        )
+        stand_in.chmod(0o755)
+        (tmp_path / "question.json").write_text('{"q": 1}', encoding="utf-8")
+        done = subprocess.run(
+            ["sh", "-c", script],
+            cwd=tmp_path,
+            env={"PATH": f"{bin_dir}:/usr/bin:/bin", **env},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        args = (
+            (tmp_path / "args").read_text(encoding="utf-8").strip()
+            if (tmp_path / "args").exists()
+            else ""
+        )
+        return (
+            done.returncode,
+            args,
+            (tmp_path / "stdin").read_text(encoding="utf-8")
+            if (tmp_path / "stdin").exists()
+            else "",
+        )
+
+
+class TestEachWrapperHasADecideMode:
+    DECIDE = "decide --lock --point ci_gate"
+
+    def test_scan_stays_the_default_everywhere(self) -> None:
+        action = (ROOT / "action/action.yml").read_text(encoding="utf-8")
+        assert "mode:\n    description: >" in action and 'default: "scan"' in action
+        assert 'CORDON_MODE: "scan"' in (ROOT / "ci/gitlab/cordon.gitlab-ci.yml").read_text(
+            encoding="utf-8"
+        )
+        assert "env.CORDON_MODE ?: 'scan'" in (ROOT / "ci/jenkins/Jenkinsfile.snippet").read_text(
+            encoding="utf-8"
+        )
+
+    def test_the_github_action_in_decide_mode_hands_the_question_to_the_scanner(
+        self, tmp_path: Path
+    ) -> None:
+        script = Wrapper.block("action/action.yml", "- name: Decide", "run: |")
+        code, args, stdin = Wrapper.run(
+            tmp_path, script, {"CORDON_DECIDE_QUESTION": "question.json"}
+        )
+        assert (code, args, stdin) == (0, self.DECIDE, '{"q": 1}')
+
+    def test_the_github_action_fails_the_job_when_the_gate_does_not_pass(
+        self, tmp_path: Path
+    ) -> None:
+        script = Wrapper.block("action/action.yml", "- name: Decide", "run: |")
+        assert (
+            Wrapper.run(tmp_path, script, {"CORDON_DECIDE_QUESTION": "question.json"}, exit_code=1)[
+                0
+            ]
+            == 1
+        )
+
+    def test_the_github_action_without_a_question_is_a_configuration_error(
+        self, tmp_path: Path
+    ) -> None:
+        script = Wrapper.block("action/action.yml", "- name: Decide", "run: |")
+        assert Wrapper.run(tmp_path, script, {"CORDON_DECIDE_QUESTION": ""})[0] == 3
+
+    def test_the_gitlab_component_in_decide_mode_does_the_same(self, tmp_path: Path) -> None:
+        script = Wrapper.block("ci/gitlab/cordon.gitlab-ci.yml", "cordon:scan:", "- |")
+        env = {"CORDON_MODE": "decide", "CORDON_DECIDE_QUESTION": "question.json"}
+        code, args, stdin = Wrapper.run(tmp_path, script, env)
+        assert (code, args, stdin) == (0, self.DECIDE, '{"q": 1}')
+
+    def test_the_gitlab_component_in_scan_mode_runs_the_scan_as_before(
+        self, tmp_path: Path
+    ) -> None:
+        script = Wrapper.block("ci/gitlab/cordon.gitlab-ci.yml", "cordon:scan:", "- |")
+        env = {
+            "CORDON_MODE": "scan",
+            "CORDON_SEVERITY": "low",
+            "CORDON_FAIL_ON": "high",
+            "CORDON_UPLOAD": "false",
+        }
+        _, args, _ = Wrapper.run(tmp_path, script, env)
+        assert args.startswith("scan . --severity low --fail-on high")
+
+    def test_the_jenkins_step_in_decide_mode_runs_the_same_command(self, tmp_path: Path) -> None:
+        text = (ROOT / "ci/jenkins/Jenkinsfile.snippet").read_text(encoding="utf-8")
+        script = text.split("script: decide ? '''", 1)[1].split("'''", 1)[0].replace("\\\n", " ")
+        code, args, stdin = Wrapper.run(
+            tmp_path, script, {"CORDON_DECIDE_QUESTION": "question.json"}
+        )
+        assert (code, args, stdin) == (0, self.DECIDE, '{"q": 1}')

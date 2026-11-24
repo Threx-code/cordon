@@ -69,6 +69,16 @@ inputs:
       hash-only regardless of this setting.
     required: false
     default: "masked"
+  mode:
+    description: >
+      scan (the default) or decide. In decide mode no scan runs: the question file is handed to
+      `cordon-scanner decide --lock --point ci_gate` and the job fails when the build gate does not pass.
+    required: false
+    default: "scan"
+  decide-question:
+    description: "Decide mode: the JSON question (compiled policy, locked artifacts, their evidence, the time)."
+    required: false
+    default: ""
   working-directory:
     description: "Directory to run in."
     required: false
@@ -209,8 +219,19 @@ runs:
         # not one to trust with the verdict.
         cordon-scanner verify --online
 
+    - name: Decide
+      if: inputs.mode == 'decide'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        CORDON_DECIDE_QUESTION: ${{ inputs.decide-question }}
+      run: |
+        [ -n "$CORDON_DECIDE_QUESTION" ] || { echo "decide mode needs decide-question"; exit 3; }
+        cordon-scanner decide --lock --point ci_gate < "$CORDON_DECIDE_QUESTION" > cordon-decision.json
+
     - name: Scan
       id: scan
+      if: inputs.mode != 'decide'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
