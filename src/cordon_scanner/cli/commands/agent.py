@@ -74,11 +74,23 @@ class AgentCommand:
         if action == "inventory":
             print(json.dumps(payload, indent=2, sort_keys=True))
             return int(ExitCode.CLEAN)
+        from cordon_scanner.cloud.agent.collection_status import STORE_FOLDER
+        from cordon_scanner.cloud.agent.report_queue import ReportQueue
+        from cordon_scanner.cloud.auth import CloudAuth
+        from cordon_scanner.cloud.local_store import LocalStore
+
         try:
-            receipt = device.DeviceInventory.report(payload, url=args.url)
+            receipt = device.DeviceInventory.report(
+                payload, url=args.url, store=LocalStore(CloudAuth.config_dir() / STORE_FOLDER)
+            )
         except CloudError as exc:
             print(f"{PROGRAM}: {exc}", file=sys.stderr)
             return int(ExitCode.CONFIG_ERROR)
+        if receipt == ReportQueue.QUEUED:
+            print(
+                f"{PROGRAM}: the cloud could not be reached; the report is queued and goes first next run"
+            )
+            return int(ExitCode.CLEAN)
         inventory = payload["inventory"]
         print(
             f"sent: {len(inventory['tools'])} tool(s), {len(inventory['mcp_servers'])} MCP server(s), "
