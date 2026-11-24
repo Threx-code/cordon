@@ -1087,6 +1087,7 @@
   "test_quoted_python_calls.py": "analysis/python",
   "test_bench_as_published.py": "bench",
   "test_bench_budgets.py": "bench",
+  "test_training_lane_pins.py": "bench",
   "test_area_fit.py": "bench",
   "test_distill.py": "bench/cdi",
   "test_census.py": "bench/cdi",

@@ -227,3 +227,53 @@ class TestTheTargetKindIsATerm:
         package = FactTerms.of_facts(ScanFacts.of(self.scanned(tmp_path / "pkg", as_package=True)))
         assert ("target", "source") in source and ("target", "package") in package
         assert ("target", "package") not in source and ("target", "source") not in package
+
+
+class TestATermOfANewerVersionIsRefused:
+    """LL-145b: a term written for a version this scanner does not read is never evaluated with another meaning."""
+
+    PACK = """
+pack:
+  id: edge.future
+  version: 1.0.0
+  license: Apache-2.0
+
+rules:
+  - id: LEARNED.FUTURE.001
+    category: suspicious
+    severity: high
+    confidence: medium
+    title: A rule written for a newer term
+    message: A file reaches a thing.
+    remediation: Remove it.
+    match:
+      kind: composite
+      scope: package
+      all:
+        - file@9: {where: unreached, capabilities: [spawn]}
+"""
+
+    def test_a_term_of_a_newer_version_than_the_scanner_reads_is_refused(self) -> None:
+        from cordon_scanner.rules.fact_terms import UnknownTermVersion
+
+        spec = {"file@9": {"where": "unreached", "capabilities": ["spawn"]}}
+        with pytest.raises(UnknownTermVersion):
+            FactTerms.of_spec(spec)
+
+    def test_a_term_of_a_version_the_scanner_reads_is_taken(self) -> None:
+        spec = {"file@1": {"where": "unreached", "capabilities": ["spawn"]}}
+        assert FactTerms.of_spec(spec)[0] == "file"
+
+    def test_a_pack_with_such_a_term_skips_the_rule_and_counts_it(self) -> None:
+        from cordon_scanner.rules.loader import RuleLoader
+
+        pack = RuleLoader(require_tests=False).load_text(self.PACK, source="future")
+        assert [rule.rule.id for rule in pack.rules] == []
+        assert [rule_id for rule_id, _ in pack.skipped] == ["LEARNED.FUTURE.001"]
+
+    def test_the_parser_reads_a_versioned_key_only_with_digits_after_the_at_sign(self) -> None:
+        from cordon_scanner.foundation.formats.restricted_yaml import RestrictedYamlParser
+
+        assert RestrictedYamlParser._opens_inline_mapping("file@2: {where: any}")
+        assert not RestrictedYamlParser._opens_inline_mapping("user@host: a note")
+        assert not RestrictedYamlParser._opens_inline_mapping("file@: {where: any}")

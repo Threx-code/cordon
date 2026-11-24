@@ -6,7 +6,7 @@
     "prompt injection": ["tests/unit/judge/test_package_judge.py", "test_both_prompts_treat_the_release_as_untrusted"],
     "unsafe-rule steering": ["tests/unit/rules/test_fact_terms.py", "test_a_learned_rule_id_is_refused_as_a_term_and_never_read_as_one"],
     "drift": ["bench/cdi/test_drift.py", "test_each_window_gives_one_point_for_each_area"],
-    "training dependency compromise": {"open": "the training image is built from pinned requirements (tests/unit/repository/release/test_pin_bump.py) but no drill compromises one"},
+    "training dependency compromise": ["tests/unit/bench/test_training_lane_pins.py", "test_every_pip_install_of_the_dockerfile_is_hash_locked_or_a_local_path_without_dependencies"],
     "stage privilege separation": ["bench/cdi/test_gate.py", "test_a_decision_signed_by_the_generation_key_is_not"],
     "signing-key compromise": ["tests/unit/rules/test_pack_signatures.py", "test_a_signature_by_a_key_that_is_not_pinned_is_refused"],
     "resource exhaustion": ["tests/unit/rules/test_rule_hostile_input.py", "test_the_suite_reaches_the_bundled_rules"]
@@ -16,7 +16,7 @@
     "parser failure": ["tests/integration/test_hostile.py", "test_unsafe_names_are_refused"],
     "signature": ["tests/unit/rules/test_pack_signatures.py", "test_a_signature_by_a_key_that_is_not_pinned_is_refused"],
     "permission": ["bench/cdi/test_gate.py", "test_a_decision_signed_by_the_generation_key_is_not"],
-    "compatibility": {"open": "a pack term version the scanner does not know is skipped loudly (LL-145b): no recorded test yet"},
+    "compatibility": ["tests/unit/rules/test_fact_terms.py", "test_a_pack_with_such_a_term_skips_the_rule_and_counts_it"],
     "rollback": ["tests/unit/intel/malware/test_feed.py", "test_an_older_serial_is_a_rollback"],
     "reproducibility": ["tests/unit/decide/decision/test_points_matrix.py", "test_asked_at_its_own_point_every_case_gives_the_recorded_decision"],
     "performance": ["tests/unit/bench/test_bench_budgets.py", "test_a_noisier_rule_fails"],
