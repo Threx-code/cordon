@@ -74,6 +74,7 @@ from cordon_scanner.foundation.results import (
 )
 from cordon_scanner.foundation.scoring import RiskScorer
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
+from cordon_scanner.rules.pack_signatures import PackSignatures
 from cordon_scanner.sources.base import FileSource, WorkingTreeSource
 from cordon_scanner.sources.registry import ArchiveReader
 from cordon_scanner.version import SCHEMA_VERSION, __version__
@@ -278,7 +279,7 @@ class Engine:
                 duration_ms=int((time.monotonic() - started) * 1000),
                 detector_cpu_ms=DetectorClock.milliseconds(),
                 view_files=DetectorClock.counts(),
-                model_refusals=Ceilings.model_refusals(),
+                **Ceilings.delivered_gaps(),
             ),
             **acc.coverage(),
             schema_version=SCHEMA_VERSION,
@@ -367,7 +368,7 @@ class Engine:
                 duration_ms=int((time.monotonic() - started) * 1000),
                 detector_cpu_ms=DetectorClock.milliseconds(),
                 view_files=DetectorClock.counts(),
-                model_refusals=Ceilings.model_refusals(),
+                **Ceilings.delivered_gaps(),
             ),
             **acc.coverage(),
             schema_version=SCHEMA_VERSION,
@@ -440,7 +441,7 @@ class Engine:
                 )
             )
         self._reuse_status(acc)
-        return status.to_dict()
+        return {**status.to_dict(), "delivered_packs": PackSignatures.delivered_status()}
 
     def _reuse_status(self, acc: Accumulator) -> None:
         """The code-reuse index (item 54), when this build ships one: an index that is malformed,
@@ -568,7 +569,7 @@ class Engine:
             **acc.collected(),
             # What installing it installs, then what only files outside that set record.
             dependencies=(*dependencies, *acc.not_installed),
-            repository=Repository(root=str(path), file_count=acc.files_scanned),
+            repository=ArchiveStages.repository(path, acc, ctx),
             target_kind=target_kind,
             image=image.identity.to_dict() if image is not None else None,
             stats=ArchiveStages.stats(acc, started, len(self.rules), len(dependencies)),

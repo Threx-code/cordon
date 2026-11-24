@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from cordon_scanner.engine.pipeline.constants import INCOMPLETE_WHEN_REPORTED
 from cordon_scanner.foundation.files.declared_tools import DeclaredTools
 from cordon_scanner.foundation.files.extension import FileExtension
+from cordon_scanner.foundation.files.file_facts import FileFacts
 from cordon_scanner.foundation.files.native import NativeFile
 from cordon_scanner.foundation.models import Finding, Severity
 from cordon_scanner.foundation.results import NOT_CONTENT_GAPS, Dependency, OperationalFinding
@@ -51,6 +52,12 @@ class Accumulator:
     extensions: dict[str, int] = field(default_factory=dict)
     """Every scanned file counted under its extension (`FileExtension.of`: empty for none, `other` for an odd one). Read by the facts
     export (`package.extensions`), which classes it against its closed list; the keys are bounded by `MAX_EXTENSIONS`."""
+    size_classes: dict[str, int] = field(default_factory=dict)
+    """Every scanned file counted under its size class (`FileFacts.size_class`). Read by the facts export (`package.size_classes`)."""
+    encoded_literals: dict[str, int] = field(default_factory=dict)
+    """The encoded literals the scanned text files hold, counted by kind (`FileFacts.encoded_literals`): counts, never the literals. Read by the facts export."""
+    instruction_files: int = 0
+    """How many scanned files are an agent's instruction files (`FileFacts.is_instruction`). Read by the facts export."""
     binaries: set[str] = field(default_factory=set)
     """The SHA-256 of every native executable or library scanned (`NativeFile`), by the whole file's digest. Read by
     the facts export (`package.binaries`); bounded by `MAX_BINARIES`."""
@@ -230,6 +237,13 @@ class Accumulator:
         self.extensions[ext] = self.extensions.get(ext, 0) + 1
         if content is None:
             return
+        size = FileFacts.size_class(content.size)
+        self.size_classes[size] = self.size_classes.get(size, 0) + 1
+        if FileFacts.is_instruction(path):
+            self.instruction_files += 1
+        if not content.is_binary:
+            for kind, count in FileFacts.encoded_literals(content.raw).items():
+                self.encoded_literals[kind] = self.encoded_literals.get(kind, 0) + count
         if NativeFile.is_native(path, content.raw[:8]):
             if content.truncated and content.whole_sha256 is None and content.streamed is None:
                 self.binaries_complete = False
@@ -250,6 +264,9 @@ class Accumulator:
         that list is whole, and the one declared tool list."""
         return {
             "extensions": dict(self.extensions),
+            "size_classes": dict(self.size_classes),
+            "encoded_literals": dict(self.encoded_literals),
+            "instruction_files": self.instruction_files,
             "binaries": tuple(sorted(self.binaries)),
             "binaries_complete": self.binaries_complete,
             "tool_list": self.tool_list(),

@@ -108,6 +108,28 @@ jobs:
           path: .pytest_cache
           key: pytest-${{ runner.os }}-${{ matrix.python }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
 
+  golden-arm64:
+    # The decision function is the one thing every enforcement point shares, and its output must be
+    # the same bytes on every machine. The suite runs on x86_64 above; this runs the decision and
+    # contract goldens on GitHub's Linux arm64 runner, on the oldest and the newest Python.
+    name: golden decisions (linux arm64, python ${{ matrix.python }})
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.15"]
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install --upgrade pip
+      - run: pip install --require-hashes -r ci/dev-requirements.txt && pip install --no-deps -e .
+      - name: Golden decisions and contract ids
+        run: pytest -q tests/unit/decide/decision/test_golden_decisions.py tests/unit/contracts/test_golden_ids.py
+
   coverage:
     # The parts' coverage joined, and the gate (`fail_under` in pyproject.toml) applied to the whole
     # suite's: a part alone covers a fraction of the code.

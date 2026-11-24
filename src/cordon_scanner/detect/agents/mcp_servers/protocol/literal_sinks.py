@@ -84,8 +84,11 @@ class McpLiteralSinks:
             return "webhook"
         if not literal.lower().startswith(("https://", "http://")):
             return None
-        parts = urlsplit(literal)
-        host = (parts.hostname or "").lower()
+        try:
+            parts = urlsplit(literal)
+            host = (parts.hostname or "").lower()
+        except ValueError:
+            return None  # an address that does not parse (`https://[your-host]/x`) is no sink
         path = parts.path.strip("/")
         if not host:
             return None

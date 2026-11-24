@@ -48,7 +48,7 @@ from cordon_scanner.foundation.paths import PackagePaths
 from cordon_scanner.intel.malware.feed_models import FeedModels
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterable, Sequence
 
 MODEL_PATH: Final = PackagePaths.data("detect") / "verdict.json.gz"
 #: A model of the PyPI package area's own, fitted on the package-wide code features (0.8.0): a
@@ -122,6 +122,8 @@ class VerdictModel:
                 model: Any = json.load(handle)
         except (OSError, ValueError, EOFError):
             return "unreadable"
+        if isinstance(model, dict) and "rules" in model and VerdictModel.undeclared(model):
+            return "undeclared"
         return "other_schema" if isinstance(model, dict) else "unreadable"
 
     @staticmethod
@@ -134,6 +136,8 @@ class VerdictModel:
             return None
         if not isinstance(model, dict):
             return None
+        if "rules" in model and VerdictModel.undeclared(model):
+            return None  # a schema that declares its rule ids and reads another is not read
         if model.get("format") == VerdictModel.UNFOLDED:
             return model
         if (
@@ -142,6 +146,33 @@ class VerdictModel:
         ):
             return model
         return None
+
+    @staticmethod
+    def reads(model: dict[str, Any]) -> list[str]:
+        """The rule ids the model reads: every `r:<rule>` feature of its own trees and of its sections (`by_area`, `registry`)."""
+        sections = [
+            model,
+            *(model.get("by_area") or {}).values(),
+            *([model["registry"]] if isinstance(model.get("registry"), dict) else []),
+        ]
+        names = {
+            n
+            for s in sections
+            if isinstance(s, dict)
+            for n in (s.get("features") or ())
+            if isinstance(n, str)
+        }
+        return sorted({n[2:] for n in names if n.startswith("r:") and not n.endswith("#n")})
+
+    @staticmethod
+    def undeclared(model: dict[str, Any]) -> list[str]:
+        """The rule ids the model reads and its schema does not declare (`rules`): every one of them when it declares none."""
+        declared = model.get("rules")
+        return [
+            r
+            for r in VerdictModel.reads(model)
+            if not isinstance(declared, list) or r not in declared
+        ]
 
     @staticmethod
     def _complete(model: dict[str, Any]) -> bool:
@@ -168,7 +199,8 @@ class VerdictModel:
         )
 
     @staticmethod
-    def score(model: dict[str, Any], features: dict[str, float]) -> float:
+    def raw(model: dict[str, Any], features: dict[str, float]) -> float:
+        """The trees' sum before the logistic: the log-odds, where one feature's part stays visible after the score has saturated."""
         # In single precision, as the trees were fitted: a value near a split would otherwise fall
         # on the other side of it.
         vector = array.array("f", [features.get(name, 0.0) for name in model["features"]])
@@ -186,7 +218,27 @@ class VerdictModel:
                     if (x <= n["threshold"] if not math.isnan(x) else n["missing_left"])
                     else n["right"]
                 )
+        return raw
+
+    @staticmethod
+    def score(model: dict[str, Any], features: dict[str, float]) -> float:
+        raw = VerdictModel.raw(model, features)
         return 1.0 / (1.0 + math.exp(-max(-60.0, min(60.0, raw))))
+
+    @staticmethod
+    def drivers(
+        model: dict[str, Any], features: dict[str, float], names: Iterable[str], top: int = 5
+    ) -> list[tuple[str, float]]:
+        """The features among `names` that pushed the score up, strongest first: for each, how much the log-odds fall when it alone is taken away. Ties by name, so the order is the same on every run."""
+        base = VerdictModel.raw(model, features)
+        found = [
+            (name, base - VerdictModel.raw(model, {**features, name: 0.0}))
+            for name in names
+            if features.get(name, 0.0) != 0.0
+        ]
+        return sorted(
+            (item for item in found if item[1] > 0), key=lambda item: (-item[1], item[0])
+        )[:top]
 
 
 # A models update installed by the feed is read at the next load, not at the next start.
@@ -411,6 +463,10 @@ class Verdict:
         areas = model["areas"]
         block = Verdict.line(areas, area)
         summary.update(score=round(score, 4), block=block, model=model.get("version", ""))
+        if score >= block:
+            summary["drivers"] = Verdict.explain(
+                model.get("by_area", {}).get(area, model), scored, findings
+            )
         # The model lowers a block only in an area it was trained to separate (`lift_areas`: the
         # allowlist of areas with enough training malware -- the shipped model lists `npm` and
         # `mcp`). Every other area -- `skill`, `package` and the fallback included -- is add-only: it
@@ -424,6 +480,51 @@ class Verdict:
             findings, score, block, liftable, floor, keep, area, out, repository=repository
         )
         return out, summary
+
+    @staticmethod
+    def explain(
+        model: dict[str, Any], scored: dict[str, float], findings: Sequence[Finding]
+    ) -> dict[str, Any]:
+        """What drove a block by the model, strongest first: the facts the model reads that pushed the log-odds up, each with the places in the package that hold it (path and line). A fact the scan cannot place (a package-wide capability) is named under `unlocated` and not among the listed ones, so every listed fact can be checked against the files."""
+        names = [n for n in model["features"] if scored.get(n, 0.0) != 0.0 and not n.endswith("#n")]
+        listed: list[dict[str, Any]] = []
+        unlocated: list[str] = []
+        for name, gain in VerdictModel.drivers(model, scored, names, top=len(names)):
+            places = Verdict.places(name, findings)
+            if not places:
+                unlocated.append(name)
+            elif len(listed) < Verdict.DRIVERS_LISTED:
+                listed.append({"fact": name, "contribution": round(gain, 4), "locations": places})
+        return {"facts": listed, "unlocated": unlocated[: Verdict.DRIVERS_LISTED]}
+
+    DRIVERS_LISTED: ClassVar[int] = 5
+
+    @staticmethod
+    def places(name: str, findings: Sequence[Finding]) -> list[str]:
+        """Where a model feature is in the package: the findings it was made from, as `path:line`, five at most."""
+        kind, _, key = name.partition(":")
+        if kind == "r":
+            held = [f for f in findings if f.rule_id == key]
+        elif kind == "fam":
+            held = [f for f in findings if f.rule_id.rpartition(".")[0] == key]
+        elif kind == "cat":
+            held = [f for f in findings if f.category.value == key]
+        elif name == "w:code":
+            held = [f for f in findings if VerdictFeatures.is_code(f.rule_id)]
+        elif name in ("gate", "max") and findings:
+            top = (
+                max(int(f.severity) for f in findings if VerdictFeatures.is_code(f.rule_id))
+                if any(VerdictFeatures.is_code(f.rule_id) for f in findings)
+                else None
+            )
+            held = [
+                f
+                for f in findings
+                if top is not None and VerdictFeatures.is_code(f.rule_id) and int(f.severity) == top
+            ]
+        else:
+            held = []
+        return sorted({f"{f.location.path}:{f.location.line or 1}" for f in held})[:5]
 
     LIFT_AREAS_ALLOWED: ClassVar[frozenset[str]] = frozenset({"npm", "pypi"})
     """The only areas the model may lower a block in, whatever the model file lists (S6, lead

@@ -15,7 +15,8 @@ thing. It keeps counts, hashes and names of artefacts, never a unit."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Collection, Iterable, Mapping
+from dataclasses import dataclass, field
 from typing import Any, Final
 
 from bench.cdi.drift import DriftSeries
@@ -31,7 +32,9 @@ class RetrainRefused(ValueError):
 class TrainingList:
     @staticmethod
     def build(
-        standing: Iterable[str], captures: Iterable[Mapping[str, Any]], held_out: frozenset[str] = frozenset()
+        standing: Iterable[str],
+        captures: Iterable[Mapping[str, Any]],
+        held_out: frozenset[str] = frozenset(),
     ) -> dict[str, Any]:
         """The standing ids plus each capture labelled by two distinct reviewers. A capture is `{"id", "reviewers": [...]}`."""
         ids = set(standing)
@@ -51,7 +54,9 @@ class TrainingList:
 
 class Cadence:
     @staticmethod
-    def due(now: float, last_run: float | None, every_seconds: float, new_batch: bool) -> str | None:
+    def due(
+        now: float, last_run: float | None, every_seconds: float, new_batch: bool
+    ) -> str | None:
         """Why a retrain runs now (`batch` or `cadence`), or None when it does not."""
         if new_batch:
             return "batch"
@@ -76,8 +81,12 @@ class Retrain:
         """One retrain. `train(ids)` returns the model's description (`model`, `training_list_sha`); `evidence(model)` the numbers
         `ModelAcceptance` reads; `shadow(model)` records the shadow run."""
         model = dict(train(list(training["ids"])))
-        if not model.get("model") or not str(model.get("training_list_sha", "")).startswith("sha256:"):
-            raise RetrainRefused("the trainer gave no model or no training list hash: it did not run through the entry point")
+        if not model.get("model") or not str(model.get("training_list_sha", "")).startswith(
+            "sha256:"
+        ):
+            raise RetrainRefused(
+                "the trainer gave no model or no training list hash: it did not run through the entry point"
+            )
         report = ModelAcceptance.report(evidence(model))
         shadow_run: dict[str, Any] | None = None
         if report["accepted"]:
@@ -94,3 +103,78 @@ class Retrain:
             "outcome": "shadow" if shadow_run else "research",
             "drift": points,
         }
+
+
+@dataclass(frozen=True)
+class FlipReport:
+    unblocked: tuple[str, ...]
+    """Blocked by the last model, allowed by the new one."""
+    newly_blocked: tuple[str, ...]
+    """Allowed by the last model, blocked by the new one."""
+    kept_blocked: int
+    lost: tuple[str, ...] = field(default=())
+    """The never-lose units among `unblocked`, and any never-lose unit the new scores lack."""
+    refused: str | None = None
+
+    def counts(self) -> dict[str, int]:
+        return {
+            "unblocked": len(self.unblocked),
+            "newly_blocked": len(self.newly_blocked),
+            "kept_blocked": self.kept_blocked,
+            "lost": len(self.lost),
+        }
+
+
+class RetrainCheck:
+    @staticmethod
+    def compare(
+        old_scores: Mapping[str, float],
+        old_line: float,
+        new_scores: Mapping[str, float],
+        new_line: float,
+        never_lose: Collection[str],
+    ) -> FlipReport:
+        unblocked, newly, kept = [], [], 0
+        for unit in sorted(set(old_scores) | set(new_scores)):
+            was = unit in old_scores and old_scores[unit] >= old_line
+            now = unit in new_scores and new_scores[unit] >= new_line
+            if was and now:
+                kept += 1
+            elif was:
+                unblocked.append(unit)
+            elif now:
+                newly.append(unit)
+        lost = sorted({unit for unit in never_lose if unit in unblocked or unit not in new_scores})
+        reason = None
+        if lost:
+            reason = f"{len(lost)} never-lose unit(s) go from blocked to allowed or are not scored by the new model"
+        return FlipReport(tuple(unblocked), tuple(newly), kept, tuple(lost), reason)
+
+    @staticmethod
+    def thresholds(
+        old_scores: Mapping[str, Mapping[str, float]],
+        old_lines: Mapping[str, float],
+        new_scores: Mapping[str, Mapping[str, float]],
+        new_lines: Mapping[str, float],
+        established: Collection[str],
+    ) -> list[str]:
+        """Why the retrained model's lines are looser than the last model's, one reason for each area, or nothing.
+
+        A line is looser when it blocks more of the established legit units the two models both scored in its area: a threshold only tightens between retrains, and it is measured on established
+        legit units alone, never on a unit the loop itself added. An area the last model had a line for and the new one has none for is refused too.
+        """
+        reasons: list[str] = []
+        for area in sorted(old_lines):
+            if area not in new_lines:
+                reasons.append(f"{area}: the new model has no line for it")
+                continue
+            shared = sorted(
+                set(established) & set(old_scores.get(area, {})) & set(new_scores.get(area, {}))
+            )
+            before = sum(1 for unit in shared if old_scores[area][unit] >= old_lines[area])
+            after = sum(1 for unit in shared if new_scores[area][unit] >= new_lines[area])
+            if after > before:
+                reasons.append(
+                    f"{area}: the new line blocks {after} of {len(shared)} established legit units, the last one {before}"
+                )
+        return reasons

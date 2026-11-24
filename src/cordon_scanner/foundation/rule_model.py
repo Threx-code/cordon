@@ -4,6 +4,7 @@ licence, and the tests that pin what it must and must not match.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -16,6 +17,7 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 from cordon_scanner.foundation.capabilities import Capability, MatchKind
+from cordon_scanner.foundation.errors import RulePackError
 from cordon_scanner.foundation.models import Category, Confidence, RedactionMode, Severity
 
 
@@ -74,6 +76,18 @@ class RuleTests:
 
     positive: tuple[str, ...] = ()
     negative: tuple[str, ...] = ()
+    facts_positive: tuple[str, ...] = ()
+    facts_negative: tuple[str, ...] = ()
+    """Fact-vector samples of a package-scope rule: `facts/v1` records, each as canonical JSON, that the rule must fire on and must not."""
+
+    @staticmethod
+    def facts_samples(raw: Any, *, where: str) -> tuple[str, ...]:
+        """Each fact-vector sample of `raw` as canonical JSON; `RulePackError` when it is not a list of facts records."""
+        if raw is None:
+            return ()
+        if not isinstance(raw, list) or not all(isinstance(item, dict) for item in raw):
+            raise RulePackError(f"{where}: fact-vector samples must be a list of facts records")
+        return tuple(json.dumps(item, sort_keys=True, separators=(",", ":")) for item in raw)
 
 
 @dataclass(frozen=True, slots=True)

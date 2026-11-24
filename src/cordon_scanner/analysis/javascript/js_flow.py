@@ -89,6 +89,17 @@ class JsFlow:
             return []
         return JsFlow.MEMO.get("flows", text, lambda: JsFlow._flows(text))
 
+    @classmethod
+    def file_flows(cls, text: str) -> list[Flow]:
+        """The flows into a file's path or content (sink `file`: `fs.open`, `writeFile`, `appendFile`, `createWriteStream`), a second read of the text that only measurement runs and tests make. `flows` never carries them, so what the rules and the verdict read is what it was."""
+        if len(text) > MAX_BYTES:
+            return []
+        return JsFlow.MEMO.get(
+            "file_flows",
+            text,
+            lambda: [f for f in _Analysis(text, files=True).run() if f.sink == "file"],
+        )
+
     #: Each distinct text's flows, worked out once per process (`analysis.shared.content_memo`).
     MEMO: ClassVar[ContentMemo] = ContentMemo()
 

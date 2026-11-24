@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from cordon_scanner.foundation.capabilities import MatchKind
+from cordon_scanner.rules.fact_terms import FactTerms
 from cordon_scanner.rules.pack import CompiledRule, RulePack
 
 if TYPE_CHECKING:
@@ -50,6 +52,9 @@ class RuleTester:
 
         for compiled in pack.rules:
             rule = compiled.rule
+            if compiled.match.kind is MatchKind.COMPOSITE and compiled.match.scope == "package":
+                failures.extend(RuleTester._fact_samples(compiled))
+                continue
             if compiled.match.kind not in {MatchKind.REGEX, MatchKind.LITERAL, MatchKind.AST}:
                 continue
 
@@ -69,6 +74,26 @@ class RuleTester:
                     )
 
         return tuple(failures)
+
+    @staticmethod
+    def _fact_samples(compiled: CompiledRule) -> list[RuleTestFailure]:
+        """A package-scope rule's fact-vector samples, decided by the same evaluation a scan uses (`FactTerms.fires` over the terms of the facts record `FactTerms.of_facts` reads), not a second one."""
+        failures = []
+        rule = compiled.rule
+        for kind, samples, expected in (
+            ("positive", rule.tests.facts_positive, True),
+            ("negative", rule.tests.facts_negative, False),
+        ):
+            for sample in samples:
+                terms = FactTerms.of_facts(json.loads(sample))
+                if FactTerms.fires(compiled.match, terms.__contains__) is not expected:
+                    said = (
+                        "expected the rule to fire, it did not"
+                        if expected
+                        else "expected no fire, but it fired"
+                    )
+                    failures.append(RuleTestFailure(rule.id, kind, sample[:120], said))
+        return failures
 
     @staticmethod
     def _sample_matches(compiled: CompiledRule, sample: str) -> bool | None:

@@ -597,3 +597,48 @@ class TestARenamedRepository:
         assert (
             ProvenanceDetector._renamed(("github.com", "tox-dev", "py-filelock"), [refused]) is None
         )
+
+
+class TestAPolicyListOfSigningIdentities:
+    """A recorded GitHub Actions attestation verifies offline, against the pinned trust root, when its signing identity is on the policy list, and is refused when it is not."""
+
+    @staticmethod
+    def recorded() -> tuple[str, str, str]:
+        bundle, digest, repository = Fixtures.npm("npm-provenance-dsse")
+        assert repository is not None
+        return bundle, digest, f"{repository[1]}/{repository[2]}"
+
+    def test_an_identity_on_the_list_verifies(self) -> None:
+        bundle, digest, signer = self.recorded()
+        result = attest.SigstoreVerification.verify_for_policy(
+            bundle, digest_hex=digest, algorithm="sha512", allowed=["acme/other", signer]
+        )
+        assert result.outcome is Outcome.VERIFIED, result.detail
+
+    def test_the_list_is_read_without_regard_to_case(self) -> None:
+        bundle, digest, signer = self.recorded()
+        result = attest.SigstoreVerification.verify_for_policy(
+            bundle, digest_hex=digest, algorithm="sha512", allowed=[signer.upper()]
+        )
+        assert result.outcome is Outcome.VERIFIED, result.detail
+
+    def test_an_identity_not_on_the_list_is_refused_and_says_so(self) -> None:
+        bundle, digest, _ = self.recorded()
+        result = attest.SigstoreVerification.verify_for_policy(
+            bundle, digest_hex=digest, algorithm="sha512", allowed=["acme/one", "acme/two"]
+        )
+        assert result.outcome is Outcome.INVALID and "not in the policy list" in result.detail
+
+    def test_an_empty_list_names_no_identity_and_verifies_nothing(self) -> None:
+        bundle, digest, _ = self.recorded()
+        result = attest.SigstoreVerification.verify_for_policy(
+            bundle, digest_hex=digest, algorithm="sha512", allowed=[]
+        )
+        assert result.outcome is Outcome.UNVERIFIABLE
+
+    def test_a_bundle_about_other_bytes_is_refused_whatever_the_list(self) -> None:
+        bundle, _, signer = self.recorded()
+        result = attest.SigstoreVerification.verify_for_policy(
+            bundle, digest_hex="cd" * 64, algorithm="sha512", allowed=[signer]
+        )
+        assert result.outcome is Outcome.INVALID and "subject" in result.detail

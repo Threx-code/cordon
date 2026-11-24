@@ -10,6 +10,7 @@ check must use (train-content ∩ eval-content == 0), the leakage that bit us tw
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from cordon_scanner.decide.verdict import VerdictFeatures
@@ -17,20 +18,47 @@ from cordon_scanner.decide.verdict import VerdictFeatures
 from . import schemas
 
 EXTRACTOR = "cdi.featureset"
-EXTRACTOR_VERSION = "1.0.0"
+EXTRACTOR_VERSION = "1.1.0"
 _VERDICT_EXTRACTOR = "decide.verdict.VerdictFeatures"
 
 #: A finding path suffix → the slot it sits in. Mirrors VerdictFeatures._PLACES so the two agree.
 _AGENT_TEXT = ("skill.md", "agents.md", "claude.md", "gemini.md", ".mdc")
-_PROSE = (".md", ".mdc", ".txt", ".rst")
 _PACKAGING = ("package.json", "setup.py", "pyproject.toml", ".gemspec", "cargo.toml", "cargo.lock")
+_OPAQUE = (".so", ".dll", ".dylib", ".node", ".wasm", ".pyc", ".exe", ".class", ".jar", ".min.js")
+
+SLOTS = ("install", "build", "import", "when_called", "opaque", "packaging", "agent_text", "none")
+"""Where a feature sits, in the row's words: `install` (an install hook or entry), `build` (a CI hook), `import` (what importing the package loads), `when_called` (what an agent runs when it calls the tool or skill), `opaque` (a file that is compiled or minified), `packaging`, `agent_text` and `none`."""
+
+PLACE_SLOT = {
+    "install_hook": "install",
+    "install_entry": "install",
+    "ci_hook": "build",
+    "agent_tool": "when_called",
+    "skill_named": "when_called",
+    "import_entry": "import",
+    "library_entry": "import",
+    "library_closure": "import",
+    "startup_closure": "import",
+}
+"""The scan's places (`ScanContext.PLACES`) by the slot they are; a file in two places takes the first slot in `SLOTS` order."""
 
 
 class FeatureSetBuilder:
     """Build a FeatureSet from a scan row. Stateless; call the static methods."""
 
     @staticmethod
-    def _slot(path: str | None) -> str:
+    def _placed(places: Mapping[str, Iterable[str]] | None) -> dict[str, str]:
+        """Each file path of the row's `places` (place -> paths) with the slot of the place it runs from."""
+        placed: dict[str, str] = {}
+        for place in sorted(places or {}, key=lambda p: SLOTS.index(PLACE_SLOT.get(p, "none"))):
+            slot = PLACE_SLOT.get(place)
+            for path in (places or {})[place]:
+                if slot is not None:
+                    placed.setdefault(str(path).lower().rsplit("!", 1)[-1], slot)
+        return placed
+
+    @staticmethod
+    def _slot(path: str | None, placed: Mapping[str, str] | None = None) -> str:
         p = (path or "").lower().rsplit("!", 1)[-1]
         if not p:
             return "none"
@@ -43,12 +71,14 @@ class FeatureSetBuilder:
             return "agent_text"
         if p.endswith(_PACKAGING):
             return "packaging"
-        if p.endswith(_PROSE):
-            return "text"
-        return "code"
+        if p.endswith(_OPAQUE):
+            return "opaque"
+        return (placed or {}).get(p, "none")
 
     @staticmethod
-    def _finding_feature(finding: list[Any]) -> dict[str, Any]:
+    def _finding_feature(
+        finding: list[Any], placed: Mapping[str, str] | None = None
+    ) -> dict[str, Any]:
         # A scan finding is the 7-tuple [rule, severity, confidence, category, path, line, detector].
         rule, severity, confidence, category, path, line, detector = (list(finding) + [None] * 7)[
             :7
@@ -57,7 +87,7 @@ class FeatureSetBuilder:
             "name": f"finding:{rule}",
             "value": True,
             "source": "intel" if VerdictFeatures.is_intel(str(rule)) else "content",
-            "slot": FeatureSetBuilder._slot(path),
+            "slot": FeatureSetBuilder._slot(path, placed),
             "location": {"path": path, "line": line},
             "confidence": confidence,
             "evidence": rule,
@@ -107,8 +137,9 @@ class FeatureSetBuilder:
         verdict = scan_row.get("verdict") if isinstance(scan_row.get("verdict"), dict) else {}
         pkg = package_features if package_features is not None else (verdict.get("package") or {})
 
+        placed = FeatureSetBuilder._placed(scan_row.get("places"))
         features: list[dict[str, Any]] = [
-            FeatureSetBuilder._finding_feature(f) for f in (scan_row.get("findings") or [])
+            FeatureSetBuilder._finding_feature(f, placed) for f in (scan_row.get("findings") or [])
         ]
         features += [FeatureSetBuilder._package_feature(k, v) for k, v in sorted(pkg.items())]
 

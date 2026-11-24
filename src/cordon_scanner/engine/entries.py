@@ -123,6 +123,23 @@ class PackageEntries:
         return ""
 
     @staticmethod
+    def name(units: list[FileUnit], distribution: str) -> str:
+        """The name the published package declares, or "": its manifest's `name` where the ecosystem keeps one, else the `Name:` header of the core-metadata file at the archive's top."""
+        value = PackageEntries.manifest(units, distribution).get("name")
+        if isinstance(value, str):
+            return value
+        for unit in units:
+            member = unit.path.rsplit("!", 1)[-1]
+            if member.count("/") != 1 or unit.content.is_binary:
+                continue
+            head = unit.content.text_head(8_192)
+            if head.startswith("Metadata-Version:"):
+                found = re.search(r"(?m)^Name:[ \t]*(\S{1,214})", head)
+                if found:
+                    return found.group(1)
+        return ""
+
+    @staticmethod
     def repository(units: list[FileUnit], distribution: str) -> str:
         """The published package's own `repository` URL, or "": a string, or an object's `url`, as
         its manifest declares it."""

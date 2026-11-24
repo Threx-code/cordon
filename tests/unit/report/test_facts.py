@@ -343,8 +343,8 @@ class TestEachFileCarriesHowItIsReached:
         assert entry["reach_depth"] <= 4
         assert "a-name-the-package-chose" not in json.dumps(record)
 
-    def test_the_version_is_five(self) -> None:
-        assert FACTS_VERSION == "5"
+    def test_the_version_is_six(self) -> None:
+        assert FACTS_VERSION == "6"
 
     def test_a_real_scan_classes_a_chain_and_an_orphan(self, tmp_path: Path) -> None:
         (tmp_path / "package.json").write_text(
@@ -470,7 +470,7 @@ class TestFactsVersionFiveBinariesAndToolList:
     digest. Everything version 4 carried keeps its value."""
 
     GOLDEN = ROOT / "tests" / "unit" / "contracts" / "tool_list_digests.golden.json"
-    NEW = ("binaries", "binaries_truncated", "tool_list")
+    NEW = ("binaries", "binaries_truncated", "tool_list", "mcp_tools")
 
     @staticmethod
     def scan(path: Path) -> dict:
@@ -603,4 +603,4 @@ class TestFactsVersionFiveBinariesAndToolList:
         }
         strip = lambda record: {k: v for k, v in record["package"].items() if k not in self.NEW}  # noqa: E731
         assert strip(plain) == strip(richer)
-        assert plain["facts_version"] == "5" and set(self.NEW) <= set(plain["package"])
+        assert plain["facts_version"] == "6" and set(self.NEW) <= set(plain["package"])

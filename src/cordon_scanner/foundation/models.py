@@ -595,6 +595,11 @@ class Finding:
         return digest[:16]
 
     @property
+    def assurance(self) -> str | None:
+        """How sure the finding is of itself: `suspected, machine-made` for a finding of a learned rule (a measured probability, never a confirmed verdict), None for any other. Every surface that lists findings shows it."""
+        return "suspected, machine-made" if self.rule_id.startswith("LEARNED.") else None
+
+    @property
     def is_suppressed(self) -> bool:
         return self.suppressed is not None
 
@@ -633,6 +638,8 @@ class Finding:
                 self.attack_category.value if self.attack_category else "unspecified"
             ),
         }
+        if self.assurance:
+            out["assurance"] = self.assurance
         if self.references:
             out["references"] = list(self.references)
         if self.related:

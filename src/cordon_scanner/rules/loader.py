@@ -36,7 +36,7 @@ from cordon_scanner.foundation.paths import PackagePaths
 from cordon_scanner.foundation.rule_model import Rule, RuleProvenance, RuleTests
 from cordon_scanner.foundation.text.literals import LiteralGate
 from cordon_scanner.rules.derivations import PatternDerivations
-from cordon_scanner.rules.fact_terms import FactTerms
+from cordon_scanner.rules.fact_terms import FactTerms, RuleSkipped, UnknownTermVersion
 from cordon_scanner.rules.learned import LearnedBlock
 from cordon_scanner.rules.pack import CompiledMatch, CompiledRule, RulePack
 from cordon_scanner.rules.patterns import PatternCompiler
@@ -55,7 +55,9 @@ them greppable and lets a policy target a family.
 
 SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
 
-_PACK_KEYS = frozenset({"id", "version", "license", "source", "requires_engine", "description"})
+_PACK_KEYS = frozenset(
+    {"id", "version", "license", "source", "requires_engine", "description", "expires"}
+)
 
 _ENGINE_REQUIREMENT = re.compile(r"(>=|<=|==|>|<)\s*(\d{1,9}(?:\.\d{1,9}){0,3})")
 """One comparator clause in a `requires_engine` string."""
@@ -153,7 +155,7 @@ class RuleLoader:
     def load_text(self, text: str, *, source: str = "<string>") -> RulePack:
         data = RestrictedYamlParser._load_yaml_subset(text, source=source)
         pack = self._parse_pack_header(data, source=source)
-        rules = self._parse_rules(data, pack_id=pack["id"], source=source)
+        rules, skipped = self._parse_rules(data, pack_id=pack["id"], source=source)
 
         return RulePack(
             id=pack["id"],
@@ -161,6 +163,8 @@ class RuleLoader:
             license=pack["license"],
             source=pack.get("source", ""),
             description=pack.get("description", ""),
+            expires=pack.get("expires", ""),
+            skipped=skipped,
             rules=tuple(rules),
             content_hash=hashlib.sha256(text.encode("utf-8")).hexdigest()[:16],
         )
@@ -206,6 +210,11 @@ class RuleLoader:
         requirement = pack.get("requires_engine")
         if requirement:
             RuleLoader._check_engine_requirement(str(requirement), source=source)
+        expires = pack.get("expires")
+        if expires is not None and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(expires)):
+            raise RulePackError(
+                f"{source}: pack.expires must be an ISO date (YYYY-MM-DD), got {expires!r}"
+            )
 
         return {k: str(v) for k, v in pack.items()}
 
@@ -261,13 +270,14 @@ class RuleLoader:
 
     def _parse_rules(
         self, data: Mapping[str, Any], *, pack_id: str, source: str
-    ) -> list[CompiledRule]:
+    ) -> tuple[list[CompiledRule], tuple[tuple[str, str], ...]]:
         raw_rules = data.get("rules")
         if not isinstance(raw_rules, list) or not raw_rules:
             raise RulePackError(f"{source}: `rules` must be a non-empty list")
 
         seen: set[str] = set()
         out: list[CompiledRule] = []
+        skipped: list[tuple[str, str]] = []
 
         for index, raw in enumerate(raw_rules):
             where = f"{source}: rules[{index}]"
@@ -292,9 +302,12 @@ class RuleLoader:
                 raise RulePackError(f"{where}: duplicate rule id {rule_id!r}")
             seen.add(rule_id)
 
-            out.append(self._parse_rule(raw, rule_id=rule_id, pack_id=pack_id, where=where))
+            try:
+                out.append(self._parse_rule(raw, rule_id=rule_id, pack_id=pack_id, where=where))
+            except RuleSkipped as skip:
+                skipped.append((rule_id, str(skip)))
 
-        return out
+        return out, tuple(skipped)
 
     def _parse_rule(
         self, raw: Mapping[str, Any], *, rule_id: str, pack_id: str, where: str
@@ -541,6 +554,8 @@ class RuleLoader:
             ):
                 try:
                     FactTerms.of_spec(term)
+                except UnknownTermVersion as problem:
+                    raise RuleSkipped(f"{where}: package term {term!r}: {problem}") from None
                 except ValueError as problem:
                     raise RulePackError(f"{where}: package term {term!r}: {problem}") from None
         proximity = int(raw.get("proximity", 0))
@@ -710,12 +725,14 @@ class RuleLoader:
             return RuleTests()
         if not isinstance(raw, dict):
             raise RulePackError(f"{where}: `tests` must be a mapping")
-        unknown = set(raw) - {"positive", "negative"}
+        unknown = set(raw) - {"positive", "negative", "facts_positive", "facts_negative"}
         if unknown:
             raise RulePackError(f"{where}: unknown tests key(s): {', '.join(sorted(unknown))}")
         return RuleTests(
             positive=RuleLoader._str_tuple(raw.get("positive")),
             negative=RuleLoader._str_tuple(raw.get("negative")),
+            facts_positive=RuleTests.facts_samples(raw.get("facts_positive"), where=where),
+            facts_negative=RuleTests.facts_samples(raw.get("facts_negative"), where=where),
         )
 
     # ---------------------------------------------------------------------------

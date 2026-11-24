@@ -42,7 +42,7 @@ from cordon_scanner.engine.pipeline.constants import (
     REPOSITORY_SCOPE,
 )
 from cordon_scanner.engine.pipeline.facts import TreeFacts
-from cordon_scanner.engine.pipeline.graph import Graph
+from cordon_scanner.engine.pipeline.graph import Graph, ParsedManifests
 from cordon_scanner.engine.pipeline.history import History
 from cordon_scanner.engine.pipeline.hooks import BuildRoots, Hooks
 from cordon_scanner.engine.pipeline.images import Images
@@ -52,9 +52,9 @@ from cordon_scanner.engine.window_pass import WindowPass
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.foundation.formats.served_json import ServedJson
-from cordon_scanner.foundation.models import Confidence, Scope, Severity
+from cordon_scanner.foundation.models import Confidence, Hook, Scope, Severity
 from cordon_scanner.foundation.paths import ContainerPaths
-from cordon_scanner.foundation.results import Dependency, OperationalFinding, ScanStats
+from cordon_scanner.foundation.results import Dependency, OperationalFinding, Repository, ScanStats
 from cordon_scanner.foundation.text.confusion_versions import ConfusionVersions
 from cordon_scanner.sources.registry import ArchiveReader
 
@@ -275,12 +275,12 @@ class ArchiveStages:
             import_entry_paths=(used := PackageEntries.of(units, early_format))
             | (project := PackageEntries.project_run(units, early_format)),
             library_entry_paths=PackageEntries.of(units, early_format, with_bin=False),
-            # Seeded from every entry, `bin` included: a command's relative requires run when it
-            # does (5E-1: the closure was seeded from the library entries only, so a bin script's
-            # helper was in no reach set). And from what the project scripts run.
+            # Seeded from every entry, `bin` included (a command's relative requires run when it
+            # does), and from what the project scripts run.
             library_closure_paths=frozenset(Hooks.hook_js_closure(units, set(used | project))),
             declared_dependencies=EcosystemRegistry.declared_dependencies(units, early_format),
             package_repository=PackageEntries.repository(units, early_format),
+            package_name=PackageEntries.name(units, early_format),
             confusion_version=ConfusionVersions.reason(PackageEntries.version(units, early_format))
             or "",
             package_code_bytes=(name_facts := InstallFacts.of(units))[0],
@@ -517,6 +517,36 @@ class ArchiveStages:
                 break  # the pool stopped at the budget and said so; no slice after it
         return detectors
 
+    @staticmethod
+    def repository(path: Path, acc: Accumulator, ctx: ScanContext) -> Repository:
+        """What an archive scan reports of its target: where it is, how many files it held, and the lifecycle hooks the context worker read from its manifests."""
+        hooks = ctx.repository.hooks if ctx.repository is not None else ()
+        return Repository(root=str(path), file_count=acc.files_scanned, hooks=hooks)
+
+    @staticmethod
+    def manifest_hooks(units: list[FileUnit]) -> tuple[Hook, ...]:
+        """The lifecycle hooks the archive's manifests declare, read as a directory scan reads them (the same parser, the same test of which of them execute), so a published package
+        and the same files as a directory give the same hooks."""
+        package_directories: set[str] = set()
+        for unit in units:
+            BuildRoots.note(unit.path, package_directories)
+        tree = frozenset(unit.path for unit in units)
+        found: list[Hook] = []
+        for unit in units:
+            ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
+            ecosystem = EcosystemRegistry.get(ecosystem_id) if ecosystem_id is not None else None
+            if ecosystem is None or SourcePaths.is_vendored(unit.path):
+                continue  # a directory scan does not walk vendored trees, so their manifests are not the package's own
+            try:
+                manifest = ecosystem.parse_manifest(unit.content)
+                from_tree = getattr(ecosystem, "hooks_from_tree", None)
+                if from_tree is not None:
+                    manifest = from_tree(manifest, tree)
+                found.extend(manifest.hooks)
+            except Exception as exc:  # noqa: BLE001  # S2: a manifest that does not parse is said once by the manifest reader
+                ParsedManifests.record_raised(unit.path, exc)
+        return tuple(hook for hook in found if Hooks.hook_executes(hook, package_directories))
+
     def release_checks(self, acc: Accumulator, ctx: ScanContext, units: list[FileUnit]) -> None:
         """The checks on the release as a whole, after every member was read in the workers. There
         is no per-member pass here: this process never inspects a member."""
@@ -541,7 +571,7 @@ class ArchiveStages:
             duration_ms=int((time.monotonic() - started) * 1000),
             detector_cpu_ms=DetectorClock.milliseconds(),
             view_files=DetectorClock.counts(),
-            model_refusals=Ceilings.model_refusals(),
+            **Ceilings.delivered_gaps(),
         )
 
     def deferred(

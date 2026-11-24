@@ -60,6 +60,8 @@ class Rescore:
             "predicate_digest": Terms.digest(predicate),
             "size": len(predicate),
             "train": {
+                "legit_units": train.legit_mask.bit_count(),
+                "legit_hits": train.legit_fires(train.mask_of(predicate)),
                 "families": train.families(train.mask_of(predicate)),
                 "legit_upper": round(train_upper, 6),
                 "worst_stratum_upper": worst,
@@ -115,6 +117,8 @@ class Rescore:
             terms_of=terms_of,
             generator=params["generator"],
             lofo=params["lofo"],
+            max_unscored_share=params.get("max_unscored_share", 0.02),
+            min_legit_for_bar=params.get("min_legit_for_bar", 740),
         ).distill(list(units))
 
     @staticmethod

@@ -203,6 +203,7 @@ class CordonRuntime:
         scope_path: tuple[str, ...] = (),
         relation: str = "direct",
         online: bool = False,
+        actor: str = "human",
     ) -> Outcome:
         resolver = self._resolvers.get(kind)
         resolution = (
@@ -224,6 +225,7 @@ class CordonRuntime:
                 scope_path=scope_path,
                 relation=relation,
                 online=online,
+                actor=actor,
             )
             decision, source = answer.decision, answer.source
         if self._act is not None:

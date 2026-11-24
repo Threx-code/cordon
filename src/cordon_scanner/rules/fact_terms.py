@@ -16,6 +16,7 @@ A term is a tuple:
                                                 stem_only, unreached: nothing reaches it at all)
     ("package_rule", rule_id)                   a finding about the whole package with that rule id
     ("hook", kind)                              a lifecycle hook of that kind (preinstall, postinstall, ...)
+    ("target", kind)                            what was scanned: a published package, a source tree, an image, ... (`TARGETS`)
 
 What a rule may NOT be written in: names, hosts, ages, publishers, programs. An identity belongs to threat
 intel (it is exact, and it ages); age and publisher only stratify measurement (learning loop LL-19, LL-66)."""
@@ -24,12 +25,22 @@ from __future__ import annotations
 
 import itertools
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any, ClassVar, Final
 
 from cordon_scanner.foundation.capabilities import Capability
+from cordon_scanner.foundation.errors import RulePackError
 
 Term = tuple[str, ...]
+
+
+class UnknownTermVersion(ValueError):
+    """A term written for a newer meaning than this scanner reads: the rule is skipped and said, never evaluated with the old meaning."""
+
+
+class RuleSkipped(RulePackError):
+    """One rule of a pack this scanner cannot evaluate: the pack still loads without it."""
+
 
 ANY: Final = "any"
 UNREACHED: Final = "unreached"
@@ -53,6 +64,18 @@ _HOOK_KIND: Final = re.compile(r"[a-z][a-z0-9_\-]{0,31}")
 class FactTerms:
     """Terms from facts, and terms from a rule's written form."""
 
+    @staticmethod
+    def fires(match: Any, has: Callable[[Term], bool]) -> bool:
+        """Whether a package-scope composite match is satisfied where `has(term)` says which terms hold: every `all` term, one of the `any` terms when there are any, and none of the `unless` terms. The scan and the pack's own fact-vector tests both decide through this."""
+        all_of = [FactTerms.of_spec(t) for t in match.all_of]
+        any_of = [FactTerms.of_spec(t) for t in match.any_of]
+        unless = [FactTerms.of_spec(t) for t in match.unless]
+        return (
+            all(has(t) for t in all_of)
+            and (not any_of or any(has(t) for t in any_of))
+            and not any(has(t) for t in unless)
+        )
+
     PLACES: ClassVar[frozenset[str]] = frozenset(
         {
             "install_hook",
@@ -74,8 +97,20 @@ class FactTerms:
     WHERE: ClassVar[frozenset[str]] = (
         PLACES | {ANY, UNREACHED} | frozenset(REACH_PREFIX + kind for kind in _REACH)
     )
-    KINDS: ClassVar[frozenset[str]] = frozenset({"file", "package_rule", "hook"})
-    REFUSED: ClassVar[frozenset[str]] = frozenset({"name", "host", "age", "publisher", "program"})
+    KINDS: ClassVar[frozenset[str]] = frozenset({"file", "package_rule", "hook", "target"})
+    VERSIONS: ClassVar[dict[str, int]] = {"file": 1, "package_rule": 1, "hook": 1, "target": 1}
+    """The semantics version of each term kind this scanner reads. A term is written `kind` (version 1) or `kind@N`; a version above this one is a meaning the scanner does not know."""
+    TARGETS: ClassVar[frozenset[str]] = frozenset(
+        {"source", "package", "archive", "image", "host", "sbom"}
+    )
+    """What a scan can be of (`ScanResult.target_kind`): the same file is reached differently in a published package and in a source tree, so a rule may name the kind."""
+
+    NOT_COMPUTABLE: ClassVar[frozenset[str]] = frozenset({"change"})
+    """Term kinds the scanner cannot compute from one release: a `change` term is over a release pair, and the scanner has no previous release. Every kind in `KINDS` is scanner-computable; a pack rule over one of these is refused, and such a detector ships feed-side or through `--previous-facts`."""
+    REFUSED: ClassVar[frozenset[str]] = frozenset(
+        {"name", "host", "age", "publisher", "program", "absent", "absence", "missing", "no"}
+    )
+    """Kinds of term no rule and no distilled detector may use: identities belong to intel, age and publisher only stratify, and an absence (no tests, no repository link, no README) is metadata that stands in for age or publisher, not a behaviour."""
     CAPABILITIES: ClassVar[frozenset[str]] = frozenset(str(c) for c in Capability)
 
     @staticmethod
@@ -139,7 +174,22 @@ class FactTerms:
         terms |= FactTerms.of_package(
             package.get("rules", {}), (str(h.get("kind", "")) for h in package.get("hooks", ()))
         )
+        if record.get("target_kind") in FactTerms.TARGETS:
+            terms.add(("target", str(record["target_kind"])))
         return terms
+
+    @classmethod
+    def check_version(cls, kind: str, at: str, written: str) -> None:
+        """Nothing for a term with no version or one this scanner reads; `UnknownTermVersion` for a newer one; `ValueError` for a version that is not a whole number from 1."""
+        if not at:
+            return
+        if not re.fullmatch(r"[1-9][0-9]{0,3}", written):
+            raise ValueError(f"term version {written!r} is not a whole number from 1")
+        known = cls.VERSIONS.get(kind)
+        if known is not None and int(written) > known:
+            raise UnknownTermVersion(
+                f"term {kind} is written for version {written}; this scanner reads version {known}"
+            )
 
     @staticmethod
     def of_spec(spec: Any) -> Term:
@@ -149,10 +199,16 @@ class FactTerms:
             raise ValueError(
                 "a package term is a mapping with exactly one key: file, package_rule or hook"
             )
-        (kind, value), *_ = spec.items()
+        (key, value), *_ = spec.items()
+        kind, at, written = str(key).partition("@")
+        FactTerms.check_version(kind, at, written)
         if kind in FactTerms.REFUSED:
             raise ValueError(
-                f"refused term kind: {kind} (identities belong to intel; age and publisher only stratify)"
+                f"refused term kind: {kind} (identities belong to intel; age and publisher only stratify; an absence is metadata, not behaviour)"
+            )
+        if kind in FactTerms.NOT_COMPUTABLE:
+            raise ValueError(
+                f"term kind {kind} is over a release pair and not scanner-computable: the scanner has no previous release"
             )
         if kind == "file":
             if not isinstance(value, Mapping):
@@ -180,6 +236,12 @@ class FactTerms:
             if not _HOOK_KIND.fullmatch(str(value)):
                 raise ValueError(f"not a hook kind: {value!r}")
             return ("hook", str(value))
+        if kind == "target":
+            if value not in FactTerms.TARGETS:
+                raise ValueError(
+                    f"not a scan target: {value!r}; expected one of: {', '.join(sorted(FactTerms.TARGETS))}"
+                )
+            return ("target", str(value))
         raise ValueError(
             f"unknown term kind {kind!r}; expected one of: {', '.join(sorted(FactTerms.KINDS))}"
         )

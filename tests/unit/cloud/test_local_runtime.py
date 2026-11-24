@@ -242,14 +242,17 @@ class TestAnOfflineRunWithTheStore:
             )
             for n, artifact in enumerate(Things.artifacts(6))
         ]
-        assert [json.loads(item.body)["decision"] for item in store.pending()] == [
-            d.to_json() for d in decisions
-        ]
+        assert [item.kind for item in store.pending()] == ["feed-serial", *["decision"] * 6]
+        assert [
+            json.loads(i.body)["decision"] for i in store.pending() if i.kind == "decision"
+        ] == [d.to_json() for d in decisions]
         upstream = Upstream()
         drained = runtime.drain(upstream)
-        assert (drained.sent, drained.left) == (6, 0)
-        assert [json.loads(upstream.received[i])["decision"] for i in upstream.order] == [
-            d.to_json() for d in decisions
+        assert (drained.sent, drained.left) == (7, 0)
+        sent = [json.loads(upstream.received[i]) for i in upstream.order]
+        assert [s["decision"] for s in sent if "decision" in s] == [d.to_json() for d in decisions]
+        assert [s for s in sent if "decision" not in s] == [
+            {"intel_serial": "none", "serial": "none"}
         ]
 
     def test_a_connection_that_drops_mid_drain_loses_nothing_and_sends_nothing_twice(
@@ -267,9 +270,9 @@ class TestAnOfflineRunWithTheStore:
                 environment="production",
             )
         upstream = Upstream(fail_on=3)
-        assert runtime.drain(upstream).left == 3
+        assert runtime.drain(upstream).left == 4
         assert runtime.drain(upstream).left == 0
-        assert len(upstream.received) == 5 and len(upstream.order) == 5
+        assert len(upstream.received) == 6 and len(upstream.order) == 6
 
     def test_the_same_question_in_the_same_moment_is_answered_from_the_store_and_queued_once(
         self, tmp_path: Path
@@ -291,7 +294,8 @@ class TestAnOfflineRunWithTheStore:
         assert (
             asked[0].canonical_bytes() == asked[1].canonical_bytes() == asked[2].canonical_bytes()
         )
-        assert len(store.pending()) == 1 and store.cache_size() == 1
+        assert len([i for i in store.pending() if i.kind == "decision"]) == 1
+        assert store.cache_size() == 1
 
     def test_a_kept_decision_is_the_decision_that_would_be_made(self, tmp_path: Path) -> None:
         platform = Platform()
@@ -376,3 +380,54 @@ class TestAnOfflineRunWithTheStore:
                 ).canonical_bytes()
             )
         assert small.drain(Upstream()).left == 0
+
+
+class TestASessionStartQueuesOneSightingPerSerialPair:
+    """The outbox holds decisions and feed-serial sightings: starting a session reports the feed serial pair once, whatever the number of sessions and decisions after it."""
+
+    def sightings(self, store: LocalStore) -> list[dict[str, str]]:
+        return [json.loads(i.body) for i in store.pending() if i.kind == "feed-serial"]
+
+    def test_accepting_the_first_bundle_queues_the_sighting_before_any_decision(
+        self, tmp_path: Path
+    ) -> None:
+        platform = Platform()
+        store = LocalStore(tmp_path)
+        Kit.runtime(platform, store).accept([Kit.first(platform)], T0)
+        assert self.sightings(store) == [{"intel_serial": "none", "serial": "none"}]
+        assert [i.kind for i in store.pending()] == ["feed-serial"]
+
+    def test_a_second_session_on_the_same_pair_queues_no_second_sighting(
+        self, tmp_path: Path
+    ) -> None:
+        platform = Platform()
+        store = LocalStore(tmp_path)
+        Kit.runtime(platform, store).accept([Kit.first(platform)], T0)
+        again = Kit.runtime(platform, store)
+        assert again.resume(T0 + timedelta(hours=1)) is True
+        assert len(self.sightings(store)) == 1
+
+    def test_the_drain_sends_the_sighting_to_the_feed_endpoint_and_the_decisions_to_the_rest(
+        self, tmp_path: Path
+    ) -> None:
+        platform = Platform()
+        store = LocalStore(tmp_path)
+        runtime = Kit.runtime(platform, store)
+        runtime.accept([Kit.first(platform)], T0)
+        runtime.ask(
+            "cli",
+            Things.artifacts(1)[0],
+            EvidenceSet(),
+            T0 + timedelta(seconds=1),
+            environment="production",
+        )
+        decisions, feed = Upstream(), Upstream()
+        drained = runtime.drain(decisions, feed_send=feed)
+        assert (drained.sent, drained.left) == (2, 0)
+        assert [json.loads(b) for b in feed.received.values()] == [
+            {"intel_serial": "none", "serial": "none"}
+        ]
+        assert (
+            all("decision" in json.loads(b) for b in decisions.received.values())
+            and len(decisions.received) == 1
+        )

@@ -25,8 +25,13 @@ class Structure:
     """The lowest layer of `js_flow._Analysis`: the token stream, the functions and scopes found in
     it, and name resolution. Every layer above reads the file through these."""
 
-    def __init__(self, text: str, seed: Callable[[str], str | None] | None = None) -> None:
+    def __init__(
+        self, text: str, seed: Callable[[str], str | None] | None = None, *, files: bool = False
+    ) -> None:
         self.text = text
+        #: Opt-in, measurement only: a call that opens or writes a file is a `file` sink (`JsFlow.file_flows`). Off
+        #: for every analysis the rules run, so their flows are what they were.
+        self.files = files
         #: Opt-in: a label for a string literal, ahead of every other fact about it -- what a caller
         #: follows that no rule reads (`js_persist.py`). None for every analysis the rules run.
         self.seed = seed

@@ -76,7 +76,7 @@ class GithubReporter(BaseReporter):
             message = GithubReporter._escape_data(
                 f"{finding.message} "
                 f"[{finding.severity}/{finding.confidence}, "
-                f"risk {finding.risk.value}/100] {finding.remediation}"
+                f"risk {finding.risk.value}/100{', ' + finding.assurance if finding.assurance else ''}] {finding.remediation}"
             )
             yield f"::{level} {','.join(parts)}::{message}\n".encode()
 

@@ -14,8 +14,10 @@ host. What it does carry is the scanner's own vocabulary about the package:
   (never the names), and, for a file left unread, the rule of its gap;
 * per package: the scan's completeness and the rules of its gaps, the files scanned and unread, how many files
   each place holds, each lifecycle hook's kind and the programs it runs (from a closed list of tools), dependency
-  counts, the number of files scanned under each extension class (a quiet native file no finding lists is still counted) and
-  the package-level rule ids.
+  counts, the number of files scanned under each extension class (a quiet native file no finding lists is still counted), the number
+  under each size class, how many encoded literals the text files hold of each kind (base64, hex, hex escapes, unicode escapes: counts, never the
+  literals), how many agent instruction files there are, how many tools a package declares as data, and the package-level rule ids. The scanner has
+  no source for the age of a publisher: whoever captures the release records it.
 
 Every name in the record comes from a closed vocabulary: a rule id only from a Cordon pack, a program or an
 extension only from its list; anything else is OTHER. Counts and the file list are bounded.
@@ -23,7 +25,7 @@ extension only from its list; anything else is OTHER. Counts and the file list a
 The record is canonical (sorted keys, no whitespace, no timestamp) and carries the digest of its own canonical
 form, so two scans of the same content by the same scanner give the same bytes and the same digest.
 `facts_version` changes whenever a field changes meaning; a fact the loop learned from an older version is
-not read against a newer one (LL-104)."""
+not read against a newer one."""
 
 from __future__ import annotations
 
@@ -36,6 +38,7 @@ from typing import TYPE_CHECKING, Any, Final
 from cordon_scanner.contracts.digests import ArtifactDigests
 from cordon_scanner.decide.reach import MAX_DEPTH, FileReach
 from cordon_scanner.foundation.files.extension import FileExtension
+from cordon_scanner.foundation.files.file_facts import FileFacts
 from cordon_scanner.foundation.results import INTERNAL_PREFIX
 from cordon_scanner.report.base import BaseReporter, ReportOptions
 
@@ -44,7 +47,7 @@ if TYPE_CHECKING:
 
     from cordon_scanner.foundation.results import ScanResult
 
-FACTS_VERSION: Final = "5"
+FACTS_VERSION: Final = "6"
 PACKAGE_SCOPE: Final = "."
 """The path a finding about the whole package carries (`engine.pipeline.constants.REPOSITORY_SCOPE`)."""
 
@@ -61,6 +64,8 @@ MAX_BINARIES: Final = 256
 """Native file digests in one record at most; `package.binaries_truncated` says when there were more or one could not be hashed."""
 MAX_COUNT: Final = 1_000
 """A count above this is recorded as this: a package that emits a million hits is not a distinguishing number."""
+MAX_FILE_COUNT: Final = 1_000_000
+"""A count of files in one size class is recorded as no more than this."""
 
 PROGRAMS: Final = frozenset(
     {
@@ -118,6 +123,27 @@ class ScanFacts:
             name = "none" if not raw else (raw if raw in EXTENSIONS else "other")
             classed[name] = classed.get(name, 0) + int(count)
         return dict(sorted(classed.items()))
+
+    @staticmethod
+    def file_counts(result: ScanResult) -> dict[str, Any]:
+        """What the scan counted about its files: by size class, the encoded literals by kind, the agent instruction files, and the tools declared as data."""
+        return {
+            "size_classes": ScanFacts.size_classes(result.size_classes or {}),
+            "encoded_literals": ScanFacts.encoded_literals(result.encoded_literals or {}),
+            "instruction_files": result.instruction_files or 0,
+            "mcp_tools": len(result.tool_list or ()),
+        }
+
+    @staticmethod
+    def size_classes(counts: Mapping[str, int]) -> dict[str, int]:
+        """The scan's files by size class: every class of the closed list is in the answer, a class with no file at zero."""
+        names = [name for name, _bound in FileFacts.SIZE_CLASSES] + [FileFacts.HUGE]
+        return {name: min(int(counts.get(name, 0)), MAX_FILE_COUNT) for name in names}
+
+    @staticmethod
+    def encoded_literals(counts: Mapping[str, int]) -> dict[str, int]:
+        """The encoded literals the scan counted, by kind: every kind of the closed list is in the answer, a kind with none at zero, a count capped."""
+        return {kind: min(int(counts.get(kind, 0)), MAX_COUNT) for kind in FileFacts.ENCODINGS}
 
     @staticmethod
     def programs(command: str) -> list[str]:
@@ -200,6 +226,7 @@ class ScanFacts:
             "package": {
                 "files_scanned": result.stats.files_scanned,
                 "extensions": ScanFacts.extension_counts(result.extensions or {}),
+                **ScanFacts.file_counts(result),
                 "places": {place: len(paths) for place, paths in sorted(places.items())},
                 "hooks": hooks,
                 "dependencies": {

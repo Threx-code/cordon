@@ -57,7 +57,11 @@ class AgentCommand:
         if action not in ("inventory", "report"):
             print(f"{PROGRAM}: agent needs inventory, report or mcp-approve", file=sys.stderr)
             return int(ExitCode.CONFIG_ERROR)
-        payload = device.DeviceInventory.collect()
+        from cordon_scanner.cloud.agent.collection_status import CollectionStatus
+
+        payload = device.DeviceInventory.collect(
+            collection=CollectionStatus.payload(CollectionStatus.reason())
+        )
         if action == "inventory" and getattr(args, "signed", False):
             return cls._signed(payload, getattr(args, "url", None))
         if action == "inventory":

@@ -301,6 +301,9 @@ class TextReporter(BaseReporter):
             rest = headline[len(path) :].lstrip(": ")
             headline = (rest[:1].upper() + rest[1:]) if rest else headline
 
+        if f.assurance:
+            headline = f"[{f.assurance}] {headline}"
+
         head = f" {DIM}{where:<{position}}{RESET} {self._badge(f.severity)}"
 
         if room >= MIN_MESSAGE_ROOM:
@@ -357,6 +360,10 @@ class TextReporter(BaseReporter):
 
         yield self._line(f"  {f.location}", color)
         meta = f"  {DIM}{f.category} · confidence {f.confidence} · detector {f.detector}{RESET}"
+        if f.assurance:
+            meta = meta.replace(
+                f" · detector {f.detector}", f" · {f.assurance} · detector {f.detector}"
+            )
         yield self._line(meta, color)
 
         if f.is_suppressed and f.suppressed:

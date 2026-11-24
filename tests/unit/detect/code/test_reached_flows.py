@@ -168,3 +168,63 @@ class TestAMissingDocumentIsAGapNotACrash:
         assert all(k.startswith("code_package_") for k in facts)
         assert [f.rule_id for f in acc.findings] == ["OPERATIONAL.WORKER.DOCUMENT_UNAVAILABLE"]
         assert not acc.complete
+
+
+NAMED = (
+    "const note = 'zz-unique-host.example.invalid/zz-unique-path';\n"
+    "const key = process.env.ZZ_UNIQUE_SECRET_NAME;\n"
+) + SENDS
+
+
+class TestAFlowIsShapeOnly:
+    """A flow is named by its source kind, its sink kind and the kind of its destination; no string of the file (a variable name, a host, a path) is ever part of a fact."""
+
+    def test_the_flow_of_a_named_host_is_the_pair_and_the_destination_kind(self) -> None:
+        facts = Fixture.of(
+            [Fixture.unit("index.js", NAMED)], Fixture.ctx(entries=frozenset({"index.js"}))
+        )
+        assert any(key.startswith("import_flow_") and "request" in key for key in facts), sorted(
+            facts
+        )
+
+    def test_no_string_of_the_file_is_in_any_fact_key_or_the_worker_s_record(self) -> None:
+        units = [Fixture.unit("index.js", NAMED)]
+        ctx = Fixture.ctx(entries=frozenset({"index.js"}))
+        shown = repr(Fixture.of(units, ctx)) + repr(Fixture.facts(units, ctx))
+        for text in ("zz-unique", "ZZ_UNIQUE", "example.invalid"):
+            assert text.lower() not in shown.lower()
+
+
+class TestTheCodeFeatureBudgetsAreGated:
+    """The budgets the code features run under, held where the prepush suite fails when one is passed: files read per place, the size of a file read, the size of every shipped model, and no shipped model reading a feature only measurement runs make."""
+
+    MEGABYTE = 1 << 20
+
+    def test_a_place_reads_at_most_fifty_files(self) -> None:
+        from cordon_scanner.engine.engine import Engine
+
+        assert ReachedFlows.FILES == 50 and Engine._PROFILE_FILES == 50
+
+    def test_a_file_over_one_megabyte_is_not_read(self) -> None:
+        assert ReachedFlows.MAX_SIZE <= self.MEGABYTE
+
+    def test_every_shipped_model_is_under_ten_megabytes(self) -> None:
+        from cordon_scanner.decide.verdict import MODEL_PATH, PYPI_MODEL_PATH
+
+        for path in (MODEL_PATH, PYPI_MODEL_PATH):
+            assert path.stat().st_size < 10 * self.MEGABYTE, path.name
+
+    def test_no_shipped_model_reads_a_feature_only_a_measurement_run_computes(self) -> None:
+        import gzip
+        import json
+
+        from cordon_scanner.decide.feature_schema import FeatureScope
+        from cordon_scanner.decide.verdict import MODEL_PATH, PYPI_MODEL_PATH, VerdictModel
+
+        for path in (MODEL_PATH, PYPI_MODEL_PATH):
+            model = json.loads(gzip.decompress(path.read_bytes()))
+            names = set(model["features"]) | set().union(
+                *(set(s["features"]) for s in (model.get("by_area") or {}).values())
+            )
+            assert [n for n in sorted(names) if not FeatureScope.computed(n)] == [], path.name
+        assert VerdictModel.load(MODEL_PATH) is not None

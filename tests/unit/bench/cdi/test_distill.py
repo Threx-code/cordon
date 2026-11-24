@@ -164,6 +164,44 @@ class TestLeakageAndRefusedTerms:
             with pytest.raises(ValueError, match="refused term kind"):
                 Terms.check((kind, "younger-than-30-days"))
 
+    @pytest.mark.parametrize(
+        "term",
+        [
+            ("absent", "tests"),
+            ("absent", "repository_link"),
+            ("absent", "readme"),
+            ("absence", "readme"),
+            ("missing", "readme"),
+            ("no", "tests"),
+        ],
+    )
+    def test_an_absence_term_is_refused(self, term: tuple[str, ...]) -> None:
+        with pytest.raises(ValueError, match="refused term kind"):
+            Terms.check(term)
+
+    def test_an_absence_term_in_a_units_terms_is_never_part_of_a_candidate(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        real = Terms.of
+        monkeypatch.setattr(
+            Terms, "of", staticmethod(lambda facts: real(facts) | {("absent", "readme")})
+        )
+        units = (
+            FactsKit.planted(4, 5)
+            + FactsKit.legit(12_000)
+            + FactsKit.planted(2, 3, split="confirm")
+            + FactsKit.legit(9_000, split="confirm", seed=11)
+        )
+        run = Distiller().distill(units)
+        assert run.refused.get("refused_kind", 0) >= 1
+        assert run.candidate is not None
+        assert all(term[0] != "absent" for term in run.candidate["predicate"])
+
+    def test_a_pack_rule_that_names_an_absence_is_refused_when_it_is_read(self) -> None:
+        from cordon_scanner.rules.fact_terms import FactTerms
+
+        assert {"absent", "absence", "missing", "no"} <= FactTerms.REFUSED
+
     def test_a_metadata_term_from_one_ecosystem_is_refused(self) -> None:
         units = [
             Unit(
@@ -250,6 +288,18 @@ class TestACandidateShipsAsAnOrdinaryRule:
         }
         with pytest.raises(ValueError, match="LEARNED"):
             PackRenderer.render(candidate, "SUSPECT.MCP.001")
+
+    def test_a_candidate_over_a_release_pair_term_is_not_rendered_as_a_pack_rule(self) -> None:
+        from bench.cdi.distill import PackRenderer
+
+        candidate = {
+            "predicate": [["change", "capability", "added", "egress"]],
+            "predicate_digest": "0" * 64,
+            "train": {"families": 3, "legit_upper": 0.001},
+            "confirm": {"families": 1, "legit_upper": 0.002},
+        }
+        with pytest.raises(ValueError, match="not scanner-computable"):
+            PackRenderer.render(candidate, "LEARNED.NPM.001")
 
 
 class TestOneDistillationReadsOneFactsVersion:
@@ -369,3 +419,127 @@ class TestACandidateCarriesOutOfFamilyNumbers:
         first = Distiller().distill(self.rows(4))
         again = Distiller().distill(self.rows(4))
         assert first.candidate == again.candidate
+
+
+class TestAPlaceTermIsReadPerFile:
+    """A place-qualified term holds for a file that is in that place and has the capability: not for a unit that has some file in the place and some file with the capability. Counted per file, a unit whose two halves sit in two files does not satisfy it."""
+
+    SPLIT = FactsKit.facts([(True, ["install_hook"], ["spawn"]), (True, [], ["egress"])])
+    TOGETHER = FactsKit.facts([(True, ["install_hook"], ["spawn", "egress"])])
+    TERM = ("file", "install_hook", "egress")
+
+    def test_a_unit_whose_place_and_capability_are_in_two_files_does_not_satisfy_it(self) -> None:
+        from bench.cdi.distill import Terms
+
+        unit_level = (
+            {c for f in self.SPLIT["files"] for c in f["capabilities"]},
+            {p for f in self.SPLIT["files"] for p in f["places"]},
+        )
+        assert (
+            "egress" in unit_level[0] and "install_hook" in unit_level[1]
+        )  # a unit-level reading would say yes
+        assert self.TERM not in Terms.of(self.SPLIT)
+
+    def test_a_unit_whose_file_is_in_the_place_with_the_capability_satisfies_it(self) -> None:
+        from bench.cdi.distill import Terms
+
+        assert self.TERM in Terms.of(self.TOGETHER)
+
+    def test_the_scanner_reads_the_same_facts_the_same_way(self) -> None:
+        from cordon_scanner.rules.fact_terms import FactTerms
+
+        assert self.TERM not in FactTerms.of_facts(self.SPLIT) and self.TERM in FactTerms.of_facts(
+            self.TOGETHER
+        )
+
+    def test_a_candidate_over_the_term_counts_only_the_unit_with_both_in_one_file(self) -> None:
+        from bench.cdi.distill import Terms
+
+        units = [
+            FactsKit.facts([(True, ["install_hook"], ["spawn"]), (True, [], ["egress"])])
+            for _ in range(5)
+        ] + [self.TOGETHER] * 3
+        counted = sum(1 for facts in units if self.TERM in Terms.of(facts))
+        assert counted == 3
+
+
+class Sets:
+    @staticmethod
+    def units(train_legit: int, confirm_legit: int = 9_000) -> list[Unit]:
+        return (
+            FactsKit.planted(4, 5)
+            + FactsKit.legit(train_legit)
+            + FactsKit.planted(2, 3, split="confirm")
+            + FactsKit.legit(confirm_legit, split="confirm", seed=11)
+        )
+
+    @staticmethod
+    def unscore(units: list[Unit], count: int) -> list[Unit]:
+        """The first `count` train legit units become unscored: still counted, holding no facts a term could be read from."""
+        out, done = [], 0
+        for unit in units:
+            if unit.label == "legit" and unit.split == "train" and done < count:
+                out.append(replace(unit, scored=False, facts=FactsKit.facts([])))
+                done += 1
+            else:
+                out.append(unit)
+        return out
+
+
+class TestUnscoredUnitsStayInTheLegitDenominator:
+    """A legit unit the reader or the scan could not score is counted, as unscored, and a candidate over the unscored bound fails with the count."""
+
+    def test_a_share_over_the_bound_fails_every_candidate_and_says_how_many(self) -> None:
+        units = Sets.unscore(Sets.units(12_000), 360)
+        found = Distiller().distill(units)
+        assert found.candidate is None
+        assert found.refused.get("over_unscored_bound", 0) >= 1
+        assert found.search["unscored"] == {
+            "units": 360,
+            "legit_units": 12_000,
+            "share": 0.03,
+            "bound": 0.02,
+        }
+
+    def test_a_share_under_the_bound_still_gives_a_candidate_and_the_count_is_recorded(
+        self,
+    ) -> None:
+        found = Distiller().distill(Sets.unscore(Sets.units(12_000), 120))
+        assert found.candidate is not None and found.search["unscored"]["units"] == 120
+        assert "over_unscored_bound" not in found.refused
+
+    def test_the_unscored_units_are_in_the_denominator_not_dropped(self) -> None:
+        found = Distiller().distill(Sets.unscore(Sets.units(12_000), 120))
+        assert (
+            found.search["train_units"]
+            == len(Sets.units(12_000)) - len(FactsKit.planted(2, 3, split="confirm")) - 9_000
+        )
+
+
+class TestASmallEcosystemHoldsItsCandidateAtShadow:
+    """With fewer clean legit units than a 0.5% bound needs (about 740), a candidate is kept at shadow with the reason, never at block."""
+
+    def test_a_small_set_gives_a_shadow_candidate_with_the_reason(self) -> None:
+        found = Distiller().distill(Sets.units(500, confirm_legit=300))
+        assert found.candidate is not None
+        assert found.candidate["enforcement"] == "shadow"
+        assert "500 clean legit units, fewer than the 740" in found.candidate["held"]
+
+    def test_unscored_units_do_not_count_as_clean(self) -> None:
+        found = Distiller(max_unscored_share=1.0).distill(
+            Sets.unscore(Sets.units(900, confirm_legit=300), 300)
+        )
+        assert found.candidate is not None and found.candidate["enforcement"] == "shadow"
+        assert "600 clean legit units" in found.candidate["held"]
+
+    def test_a_large_set_is_not_held(self) -> None:
+        found = Distiller().distill(Sets.units(12_000))
+        assert (
+            found.candidate is not None
+            and found.candidate["enforcement"] == "block"
+            and "held" not in found.candidate
+        )
+
+    def test_the_two_thresholds_are_recorded_with_the_run(self) -> None:
+        params = Distiller(max_unscored_share=0.05, min_legit_for_bar=500).params()
+        assert params["max_unscored_share"] == 0.05 and params["min_legit_for_bar"] == 500

@@ -49,7 +49,7 @@ from cordon_scanner.intel.base import AttestationOutcome as Outcome
 from cordon_scanner.intel.base import AttestationResult as Result
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
     from cordon_scanner.intel.provenance.sigstore_bundle import Verified
 
@@ -152,6 +152,30 @@ class SigstoreVerification:
             return subject
         return Result(
             Outcome.VERIFIED, f"built by github.com/{repository} and signed for that identity"
+        )
+
+    @classmethod
+    def verify_for_policy(
+        cls, bundle_json: str | bytes, *, digest_hex: str, algorithm: str, allowed: Sequence[str]
+    ) -> Result:
+        """Verify a bundle against a policy list: the bundle verifies when its signing identity is one of the `owner/name` repositories listed. A signature or a subject that fails ends the check at once; a certificate naming a repository the list does not hold is refused as not in the policy list."""
+        if not allowed:
+            return Result(Outcome.UNVERIFIABLE, "the policy lists no signing identity")
+        for repository in allowed:
+            owner, _, name = repository.partition("/")
+            result = cls.verify(
+                bundle_json,
+                digest_hex=digest_hex,
+                algorithm=algorithm,
+                source_repo=("github.com", owner, name),
+            )
+            if result.outcome is Outcome.VERIFIED:
+                return result
+            if result.outcome is Outcome.INVALID and "does not match" in result.detail:
+                continue
+            return result
+        return Result(
+            Outcome.INVALID, "verification failed: the signing identity is not in the policy list"
         )
 
     @staticmethod

@@ -69,6 +69,32 @@ class Ceilings:
         return path.rsplit("!", 1)[-1].lower().endswith(Ceilings._VERDICT_SOURCES)
 
     @staticmethod
+    def rule_gaps() -> dict[str, str] | None:
+        """The delivered rules a scan could not evaluate, by rule id and reason, for its stats (`FeedGaps.skipped`)."""
+        from cordon_scanner.rules.feed_gaps import FeedGaps
+
+        return FeedGaps.skipped() or None
+
+    @staticmethod
+    def rules_demoted() -> dict[str, str] | None:
+        """The delivered rules a scan ran as warnings, by rule id and reason, for its stats (`FeedGaps.demoted`)."""
+        from cordon_scanner.rules.feed_gaps import FeedGaps
+
+        return FeedGaps.demoted() or None
+
+    @staticmethod
+    def delivered_gaps() -> dict[str, Any]:
+        """What the scan could not use of what the feed delivered, as the stats fields that carry it: the models it turned down and the rules it could not evaluate."""
+        from cordon_scanner.rules.feed_gaps import FeedGaps
+
+        return {
+            "model_refusals": Ceilings.model_refusals(),
+            "rule_gaps": Ceilings.rule_gaps(),
+            "rules_demoted": Ceilings.rules_demoted(),
+            "feed": FeedGaps.feed(),
+        }
+
+    @staticmethod
     def model_refusals() -> dict[str, str] | None:
         """The delivered models a scan turned down and why, for its stats (`Verdict.model_refusals`)."""
         from cordon_scanner.decide.verdict import Verdict

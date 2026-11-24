@@ -45,6 +45,7 @@ import hashlib
 import itertools
 import json
 import re
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +63,9 @@ except ImportError:  # pragma: no cover - script invocation puts bench/model on 
 
     _sys.path.insert(0, str(_pl.Path(__file__).resolve().parents[2]))
     from bench.tools.content import Content
+
+from bench.model.area_lines import AreaLines
+from bench.model.capacity import Capacity
 
 #: Findings the benign measure does not count: a secret, a policy choice, a known vulnerability or
 #: the scan's own notes are not a malware verdict (review 98).
@@ -474,6 +478,29 @@ class VerdictTrain:
         return float(grid[lo])
 
     @staticmethod
+    def search_capacity(x, y, families: list[str], build, grid=None, folds=None) -> dict[str, Any]:
+        """The capacity record for rows `x`, `y` whose malware families (one name per row) are `families`: each grid point is fitted on the rows of the fit families and scored by the share of held-out malware scored above the 99th percentile of held-out legitimate rows."""
+        import numpy as np
+
+        names = np.array(families)
+
+        def score(point: dict[str, float], fit: set[str], held: set[str]) -> float:
+            tr = np.flatnonzero(np.isin(names, list(fit)))
+            te = np.flatnonzero(np.isin(names, list(held)))
+            if len(set(y[tr])) < 2 or len(set(y[te])) < 2:
+                return 0.0
+            p = build(point).fit(x[tr], y[tr]).predict_proba(x[te])[:, 1]
+            line = float(np.quantile(p[y[te] == 0], 0.99))
+            return float((p[y[te] == 1] > line).mean())
+
+        return Capacity.select(sorted(set(families)), score, grid, folds)
+
+    @staticmethod
+    def own_trees(separate: Iterable[str], malware: Mapping[str, int], minimum: int) -> list[str]:
+        """The areas asked to have trees of their own that have enough work-half malware to separate them: each other area keeps the shared trees (and, below `minimum`, is add-only)."""
+        return [area for area in separate if malware.get(area, 0) >= minimum]
+
+    @staticmethod
     def export_lightgbm(clf, names: list[str]) -> dict[str, Any]:
         """LightGBM's trees as `VerdictModel.score` walks them, naming only the features a split
         reads (six figures of columns in, a few thousand used). Fitted with `use_missing=False`, so
@@ -632,6 +659,20 @@ class VerdictTrain:
             "work-half malware out-of-fold (0.98), instead of the lowest line within --budget",
         )
         p.add_argument("--jobs", type=int, default=4, help="LightGBM threads")
+        p.add_argument(
+            "--line-upper",
+            type=float,
+            default=None,
+            help="hold every area's line so that the upper end of the 95% interval of the legitimate "
+            "work-set share it blocks is within this fraction (0.005), and record the bound per area",
+        )
+        p.add_argument(
+            "--capacity-search",
+            action="store_true",
+            help="set the tree count, leaves, learning rate and minimum leaf by family-grouped "
+            "cross-validation on the work half, fit with the chosen values and record the grid, "
+            "the curve and the choice in the model",
+        )
         p.add_argument(
             "--keep-rule-min",
             type=int,
@@ -916,15 +957,22 @@ class VerdictTrain:
 
         monotone = [_mono(k) for k in names]
 
-        def model():
+        def model(point: dict[str, float] | None = None):
+            shape = {
+                "trees": 300,
+                "leaves": 31,
+                "learning_rate": 0.08,
+                "min_leaf": 20,
+                **(point or {}),
+            }
             if a.learner == "lightgbm":
                 import lightgbm
 
                 return lightgbm.LGBMClassifier(
-                    n_estimators=300,
-                    learning_rate=0.08,
-                    num_leaves=31,
-                    min_child_samples=20,
+                    n_estimators=int(shape["trees"]),
+                    learning_rate=shape["learning_rate"],
+                    num_leaves=int(shape["leaves"]),
+                    min_child_samples=int(shape["min_leaf"]),
                     reg_lambda=1.0,
                     colsample_bytree=0.5 if len(names) > 5000 else 1.0,
                     monotone_constraints=monotone,
@@ -937,15 +985,25 @@ class VerdictTrain:
                     verbose=-1,
                 )
             return HistGradientBoostingClassifier(
-                max_iter=300,
-                learning_rate=0.08,
-                max_leaf_nodes=31,
+                max_iter=int(shape["trees"]),
+                learning_rate=shape["learning_rate"],
+                max_leaf_nodes=int(shape["leaves"]),
+                min_samples_leaf=int(shape["min_leaf"]),
                 l2_regularization=1.0,
                 monotonic_cst=monotone,
                 random_state=a.seed,
             )
 
         xw, yw = matrix(work), np.array([r["label"] for r in work])
+        capacity = None
+        if a.capacity_search:
+            capacity = cls.search_capacity(xw, yw, [r["family"] for r in work], model)
+            chosen = capacity["chosen"]
+            _model = model
+
+            def model(point: dict[str, float] | None = None, _m=_model, _c=chosen):
+                return _m(point or _c)
+
         # xw now holds every work feature; the CV and the per-area fits read it, not the dicts. The
         # work rows' dicts are needed again only for `r:` rule keys (has_code, attribution), so drop
         # their bulky code/package columns here to free ~half the resident feature dicts before the
@@ -1007,6 +1065,8 @@ class VerdictTrain:
         # area, `package` and the fallback included, so an area the scan computes but the split
         # never trained (actions as `package`) is add-only, not lifted (review 98 G7).
         lift_areas = {r["area"] for r in data} - add_only_areas
+        # An area with too little malware to separate it gets no trees of its own: it is scored by the shared trees and stays add-only.
+        own_areas = VerdictTrain.own_trees(a.separate, area_malware, a.keep_rule_min)
         print(
             f"keep-rule-min={a.keep_rule_min}: {len(rare_rules)} thin-support rules + "
             f"{len(NAME_PROVENANCE_RULES)} name/provenance rules in `keep`; "
@@ -1063,7 +1123,7 @@ class VerdictTrain:
             ) or row_gate
             r["has_code"] = any(k.startswith("r:") for k in r["f"])
 
-        groups = {x: [i for i, r in enumerate(work) if r["area"] == x] for x in a.separate}
+        groups = {x: [i for i, r in enumerate(work) if r["area"] == x] for x in own_areas}
         taken = {i for idx in groups.values() for i in idx}
         groups["*"] = [i for i in range(len(work)) if i not in taken]
         for idx in groups.values():
@@ -1170,9 +1230,20 @@ class VerdictTrain:
         # G6 rule work's job, not the model's.
         for area in add_only_areas:
             lines[area] = 1.01
+        line_bounds = None
+        if a.line_upper is not None:
+            legit_scores: dict[str, list[float]] = collections.defaultdict(list)
+            for r in work:
+                if not r["label"]:
+                    legit_scores[r["area"]].append(float(r["score"]))
+            lines, line_bounds = AreaLines.enforce(lines, legit_scores, a.line_upper)
 
         fitted = {x: model().fit(xw[idx], yw[idx]) for x, idx in groups.items()}
         exported = cls.export(fitted["*"], names)
+        if capacity is not None:
+            exported = Capacity.attach(exported, capacity)
+        if line_bounds is not None:
+            exported["line_bounds"] = line_bounds
         # On the WORK half, every fit: the shipped trees must score what the fitted model scores.
         sample = groups["*"][:400]
         if sample:
@@ -1187,8 +1258,8 @@ class VerdictTrain:
             print(f"exported trees against the fit (work half, {len(sample)} rows): {drift:.2e}")
             if drift >= 1e-4:
                 raise SystemExit(f"exported trees do not score what was fitted: {drift}")
-        if a.separate:
-            exported["by_area"] = {x: cls.export(fitted[x], names) for x in a.separate}
+        if own_areas:
+            exported["by_area"] = {x: cls.export(fitted[x], names) for x in own_areas}
         if a.finals:
             # HELD-OUT read -- only at the finals (see --finals). Score the holdout with the fitted
             # per-area models, then check the exported trees reproduce those scores.
@@ -1341,6 +1412,7 @@ class VerdictTrain:
                 "add_only": sorted(add_only_areas),
                 "lift_areas": sorted(lift_areas),
                 "keep": sorted(rare_rules | NAME_PROVENANCE_RULES),
+                "rules": VerdictModel.reads(exported),
                 # Format 3: fitted on folded features; loaded only at this tree's fold.
                 **FeatureFold.stamp(),
             }

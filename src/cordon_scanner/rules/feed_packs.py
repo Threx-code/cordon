@@ -14,6 +14,7 @@ Rules sit above intel, so the loading lives here and intel never imports the rul
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import replace
@@ -23,11 +24,18 @@ from cordon_scanner.foundation.errors import ConfigError, RulePackError
 from cordon_scanner.intel.malware.feed_rules import PACK_FILE, FeedRules
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping
     from pathlib import Path
     from typing import Any
 
-    from cordon_scanner.rules.pack import RulePack
+
+from cordon_scanner.rules.benign_fixtures import BenignFixtures
+from cordon_scanner.rules.demotion import RuleDemotion
+from cordon_scanner.rules.feed_floor import FeedFloor
+from cordon_scanner.rules.pack import RulePack
+from cordon_scanner.rules.pack_signatures import PackSignatures
+from cordon_scanner.rules.pack_time import PackTime
+from cordon_scanner.rules.warn_list import WarnList
 
 logger = logging.getLogger("cordon_scanner.intel.malware.feed_rules")
 
@@ -59,6 +67,11 @@ class PackLimits:
     """The only form a delivered rule's id may take: `LEARNED.<area>.<n>`. Anything else could stand for a bundled or an organisation's rule."""
 
     @classmethod
+    def delivered_problem(cls, pack: RulePack, retired: frozenset[str]) -> str | None:
+        """Why a delivered pack may not be activated beyond its size: an id outside the learned form or retired, or the bytes of a sample in a rule (a bundled pack may name indicators; a delivered one is predicates and fact terms)."""
+        return cls.id_problem(pack, retired) or cls.payload_problem(pack)
+
+    @classmethod
     def id_problem(cls, pack: RulePack, retired: frozenset[str]) -> str | None:
         """Why a rule id of the pack may not be delivered (outside the learned form, or retired), or `None`."""
         for compiled in pack.rules:
@@ -68,6 +81,44 @@ class PackLimits:
             if rule_id in retired:
                 return f"rule id {rule_id} is retired"
         return None
+
+    MAX_ENCODED_RUN = 64
+    """The longest run of base64 or hex characters any text of a rule may hold: more is a sample's bytes, not a detector."""
+
+    MIN_DISTINCT = 14
+    """Distinct characters a window of `MAX_ENCODED_RUN` must hold to be encoded bytes: a run of one word and padding holds fewer."""
+
+    _ENCODED = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=_-")
+
+    @classmethod
+    def payload_problem(cls, pack: RulePack) -> str | None:
+        """Why a rule of the pack carries what looks like the bytes of a sample (a long run of encoded characters in any of its text: patterns, tests, messages), or `None`. A delivered pack holds predicates and fact terms, never a sample."""
+        for compiled in pack.rules:
+            if cls.looks_encoded(json.dumps(dict(compiled.rule.raw), default=str)):
+                return f"rule {compiled.rule.id} carries a run of more than {cls.MAX_ENCODED_RUN} encoded characters, which is a sample's bytes"
+        return None
+
+    @classmethod
+    def looks_encoded(cls, text: str) -> bool:
+        """Whether some window of `MAX_ENCODED_RUN` + 1 characters, all of the base64 or hex alphabet, holds `MIN_DISTINCT` distinct ones."""
+        width = cls.MAX_ENCODED_RUN + 1
+        held: dict[str, int] = {}
+        run = 0
+        for index, char in enumerate(text):
+            if char not in cls._ENCODED:
+                held, run = {}, 0
+                continue
+            held[char] = held.get(char, 0) + 1
+            run += 1
+            if run > width:
+                old = text[index - width]
+                held[old] -= 1
+                if not held[old]:
+                    del held[old]
+                run = width
+            if run == width and len(held) >= cls.MIN_DISTINCT:
+                return True
+        return False
 
     @classmethod
     def file_problem(cls, path: Path) -> str | None:
@@ -104,10 +155,39 @@ class FeedPacks:
 
     @classmethod
     def packs(
-        cls, loader: PackFiles, bundled_ids: Iterable[str], *, shadow: bool | None = None
+        cls,
+        loader: PackFiles,
+        bundled_ids: Iterable[str],
+        *,
+        shadow: bool | None = None,
+        demote: Mapping[str, str] | None = None,
     ) -> tuple[RulePack, ...]:
-        """The delivered packs this scan loads: verified, not colliding, shadow only when asked."""
-        return tuple(pack for _, pack in cls._select(loader, bundled_ids, shadow=shadow))
+        """The delivered packs this scan loads: verified, not colliding, shadow only when asked. `demote` names rules (by id, with the reason) the caller's own record says to run as warnings."""
+        return tuple(
+            pack for _, pack in cls._select(loader, bundled_ids, shadow=shadow, demote=demote)
+        )
+
+    @classmethod
+    def demoted(
+        cls, loader: PackFiles, bundled_ids: Iterable[str], *, shadow: bool | None = None
+    ) -> tuple[tuple[str, str], ...]:
+        """The delivered rules this scan runs as warnings, as (rule id, reason): a gap in what can block, said and counted."""
+        return tuple(
+            item
+            for _, pack in cls._select(loader, bundled_ids, shadow=shadow)
+            for item in pack.demoted
+        )
+
+    @classmethod
+    def skipped(
+        cls, loader: PackFiles, bundled_ids: Iterable[str], *, shadow: bool | None = None
+    ) -> tuple[tuple[str, str], ...]:
+        """The delivered rules this scan could not evaluate (a term written for a meaning this scanner does not know), as (rule id, reason): a gap in what it checked, said and counted, never a rule run with another meaning."""
+        return tuple(
+            gap
+            for _, pack in cls._select(loader, bundled_ids, shadow=shadow)
+            for gap in pack.skipped
+        )
 
     @classmethod
     def loaded(
@@ -125,14 +205,36 @@ class FeedPacks:
         )
 
     @classmethod
-    def _select(
-        cls, loader: PackFiles, bundled_ids: Iterable[str], *, shadow: bool | None
-    ) -> list[tuple[str, RulePack]]:
-        from cordon_scanner.foundation.models import Category, Confidence, Severity
+    def _with_warn(cls, pack: RulePack, entry: dict[str, Any]) -> RulePack:
+        """The pack with the entry's warning list when two signatures are required and held (the list was checked against the signed statement), else without."""
+        listed = WarnList.parse(entry.get("warn")) if FeedFloor.REQUIRE_PACK_SIGNATURES else None
+        return replace(pack, warn=listed) if listed else pack
 
+    @classmethod
+    def _floor_problem(cls, pack: RulePack, entry: dict[str, Any], path: Path) -> str | None:
+        """Why this release will not take the pack however it loads: past its expiry, or, where two signatures are required, not signed twice."""
+        if FeedFloor.REQUIRE_PACK_SIGNATURES:
+            signed = PackSignatures.problem(entry, path.read_bytes())
+            if signed is not None:
+                return signed
+        return FeedFloor.pack_problem(pack)
+
+    @classmethod
+    def _select(
+        cls,
+        loader: PackFiles,
+        bundled_ids: Iterable[str],
+        *,
+        shadow: bool | None,
+        demote: Mapping[str, str] | None = None,
+    ) -> list[tuple[str, RulePack]]:
         shadow = FeedRules.shadow_enabled() if shadow is None else shadow
         taken = set(bundled_ids)
         index = FeedRules.index()
+        set_problem = FeedFloor.set_problem(index)
+        if set_problem is not None:
+            logger.warning("feed rule packs not loaded: %s", set_problem)
+            return []
         retired = frozenset(str(item) for item in index.get("tombstones") or ())
         out: list[tuple[str, RulePack]] = []
         for entry in index.get("packs") or ():
@@ -156,47 +258,40 @@ class FeedPacks:
                 # A bad delivered pack never breaks the scan: it runs on what is bundled.
                 logger.warning("feed rule pack %s not loaded: %s", name, exc)
                 continue
-            problem = PackLimits.pack_problem(pack) or PackLimits.id_problem(pack, retired)
+            problem = (
+                PackLimits.pack_problem(pack)
+                or PackLimits.delivered_problem(pack, retired)
+                or cls._floor_problem(pack, entry, path)
+            )
             if problem is not None:
                 logger.warning("feed rule pack %s not loaded: %s", name, problem)
                 continue
             from cordon_scanner.rules.tester import RuleTester
 
+            cls._say_skipped(pack)
             if RuleTester.run(pack):
                 # Its own samples fail: the rule would load and match nothing, or the wrong thing.
                 logger.warning("feed rule pack %s not loaded: it fails its own samples", name)
                 continue
+            over = PackTime.problem(pack)
+            if over is not None:
+                logger.warning("feed rule pack %s not run: %s", name, over)
+                pack = cls._refused(pack, over)
+            fired = dict.fromkeys(
+                BenignFixtures.firing(pack), "it fired on a bundled benign fixture"
+            )
+            pack = RuleDemotion.apply(pack, {**fired, **(demote or {})})
             ids = {rule.id for rule in pack.rules}
             if ids & taken:
                 continue  # a delivered pack adds detection; it never replaces a bundled rule
             taken |= ids
             if enforcement == "shadow":
-                pack = replace(
-                    pack,
-                    id=f"shadow:{pack.id}",
-                    rules=tuple(
-                        replace(
-                            compiled,
-                            # LOW, where the hardening tier records what decides nothing: INFO is
-                            # below the default report threshold, so nobody would see it. Severity
-                            # alone is not enough either: a `malicious` rule's category floor lifts
-                            # it back to HIGH, so a shadow rule blocked (found end to end). Demoted
-                            # in category too, marked by pack, and said in its message.
-                            rule=replace(
-                                compiled.rule,
-                                severity=Severity.LOW,
-                                confidence=Confidence.LOW,
-                                category=Category.POLICY,
-                                rulepack=f"shadow:{compiled.rule.rulepack}",
-                                message=f"[shadow: would {compiled.rule.category.value}] "
-                                f"{compiled.rule.message}",
-                            ),
-                        )
-                        for compiled in pack.rules
-                    ),
-                )
-            out.append((str(entry.get("candidate_id", ""))[:128], pack))
-        out = cls._without_repeats(sorted(out, key=lambda entry: (entry[1].id, entry[1].version)))
+                pack = cls._shadowed(pack)
+            out.append((str(entry.get("candidate_id", ""))[:128], cls._with_warn(pack, entry)))
+        out = cls._within_total_budget(
+            sorted(out, key=lambda entry: (entry[1].id, entry[1].version))
+        )
+        out = cls._without_repeats(out)
         disabled = cls.disabled(index, delivered={r.id for _, p in out for r in p.rules})
         if disabled:
             out = [
@@ -228,9 +323,61 @@ class FeedPacks:
                 if digest not in seen:
                     seen.add(digest)
                     rules.append(compiled)
-            if rules:
+            if rules or pack.skipped:
                 kept.append((candidate, replace(pack, rules=tuple(rules))))
         return kept
+
+    @staticmethod
+    def _say_skipped(pack: RulePack) -> None:
+        for rule_id, why in pack.skipped:
+            logger.warning("feed rule %s not evaluated: %s", rule_id, why)
+
+    @staticmethod
+    def _refused(pack: RulePack, why: str) -> RulePack:
+        """A pack not run: no rules, and each of its rules recorded as one the scan did not evaluate, with the reason."""
+        return replace(
+            pack, rules=(), skipped=(*pack.skipped, *((c.rule.id, why) for c in pack.rules))
+        )
+
+    @classmethod
+    def _within_total_budget(cls, out: list[tuple[str, RulePack]]) -> list[tuple[str, RulePack]]:
+        """The packs in order, until the time they took together passes the per-scan budget: a pack after that is not run and says why."""
+        spent, kept = 0.0, []
+        for candidate, pack in out:
+            spent += PackTime.measure(pack)
+            why = PackTime.total_problem(spent)
+            kept.append((candidate, cls._refused(pack, why) if why else pack))
+        return kept
+
+    @staticmethod
+    def _shadowed(pack: RulePack) -> RulePack:
+        """A pack that blocks nothing: every rule reports at low severity and confidence, demoted in category, marked by pack and said in its message."""
+        from cordon_scanner.foundation.models import Category, Confidence, Severity
+
+        return replace(
+            pack,
+            id=f"shadow:{pack.id}",
+            rules=tuple(
+                replace(
+                    compiled,
+                    # LOW, where the hardening tier records what decides nothing: INFO is
+                    # below the default report threshold, so nobody would see it. Severity
+                    # alone is not enough either: a `malicious` rule's category floor lifts
+                    # it back to HIGH, so a shadow rule blocked (found end to end). Demoted
+                    # in category too, marked by pack, and said in its message.
+                    rule=replace(
+                        compiled.rule,
+                        severity=Severity.LOW,
+                        confidence=Confidence.LOW,
+                        category=Category.POLICY,
+                        rulepack=f"shadow:{compiled.rule.rulepack}",
+                        message=f"[shadow: would {compiled.rule.category.value}] "
+                        f"{compiled.rule.message}",
+                    ),
+                )
+                for compiled in pack.rules
+            ),
+        )
 
     @staticmethod
     def disabled(index: dict[str, Any], *, delivered: set[str]) -> frozenset[str]:

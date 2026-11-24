@@ -73,3 +73,46 @@ class TestTheResolver:
         found = IntegrationResolver.resolve("a/b", "c", OPENAPI)
         assert (found.resolved, found.reason) == (False, "unparseable")
         assert found.subject_id.startswith("int:unparsed/")
+
+
+class TestAnIntegrationFixtureResolvesAndDecides:
+    """An integration resolves to its contract digest and goes through `decide()` like any other subject: with a contract it is decided on; with none it fails closed, naming the unresolved reason."""
+
+    @staticmethod
+    def decide(resolution):
+        from datetime import UTC, datetime
+
+        from cordon_scanner.decide.decision.decider import Decider
+        from cordon_scanner.decide.decision.evidence import Context, EvidenceSet
+        from cordon_scanner.decide.decision.legacy import LegacyBridge
+        from cordon_scanner.foundation.config.settings import Config
+
+        table = LegacyBridge.compiled(Config.default().policy)
+        evidence = resolution.evidence(EvidenceSet())
+        clock = datetime(2026, 11, 23, 12, tzinfo=UTC)
+        return Decider.decide(resolution.artifact(), Context("cli", "dev"), table, evidence, clock)
+
+    def test_an_integration_with_a_contract_is_decided_on_its_digest(self) -> None:
+        found = IntegrationResolver.resolve("Stripe", "Payments API", OPENAPI, version="2.1.0")
+        artifact = found.artifact()
+        assert (
+            artifact.kind == "third_party_integration"
+            and artifact.subject_id == "int:stripe/payments-api"
+        )
+        decision = self.decide(found)
+        assert "R203" not in decision.reason_codes and decision.inputs_digest
+
+    def test_an_integration_with_no_contract_fails_closed_with_the_unresolved_code(self) -> None:
+        decision = self.decide(IntegrationResolver.resolve("stripe", "payments-api", None))
+        assert decision.blocked and "R203" in decision.reason_codes
+
+    def test_a_changed_contract_is_decided_as_another_artifact(self) -> None:
+        a = self.decide(IntegrationResolver.resolve("stripe", "payments-api", OPENAPI))
+        b = self.decide(
+            IntegrationResolver.resolve(
+                "stripe",
+                "payments-api",
+                {**OPENAPI, "info": {"title": "Payments", "version": "2.2.0"}},
+            )
+        )
+        assert a.inputs_digest != b.inputs_digest

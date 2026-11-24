@@ -15,6 +15,8 @@ from cordon_scanner.analysis.javascript.flow.vocabulary import (
     _DECODERS,
     _DNS_CALL,
     _DNS_MODULES,
+    _FILE_WRITE,
+    _FS_MODULES,
     _LOOPBACK,
     _PROCESS_CALL,
     _PROCESS_MODULES,
@@ -107,6 +109,8 @@ class Sinks(Bindings):
             return "request"
         if len(parts) >= 2 and parts[-2] in ("http", "https") and last in ("request", "get"):
             return "request"
+        if self.files and root in _FS_MODULES and last in _FILE_WRITE:
+            return "file"
         return None
 
     def _opens(self, k: int) -> bool:

@@ -236,6 +236,8 @@ class Config:
     profile: str = "balanced"
     cache_dir: str | None = None
     use_cache: bool = True
+    facts_export: str = "off"
+    """What a scan sends of what it found (`cloud/facts_export.py`): `off` (the default) sends nothing, `counts` queues counts only, `silver` waits for per-organisation consent. Not part of `fingerprint`: it changes no finding."""
 
     constraints: OrgConstraints = field(default_factory=OrgConstraints.permissive)
 
