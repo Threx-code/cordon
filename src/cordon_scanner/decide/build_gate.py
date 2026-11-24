@@ -52,8 +52,9 @@ class BuildGate:
         *,
         environment: str,
         scope_path: tuple[str, ...] = (),
+        point: str = POINT,
     ) -> GateVerdict:
-        """A decision for each locked artifact; one whose evidence cannot be fetched is decided with the evidence missing."""
+        """A decision for each locked artifact at `point`; one whose evidence cannot be fetched is decided with the evidence missing."""
         decided = []
         for artifact in artifacts:
             try:
@@ -64,7 +65,7 @@ class BuildGate:
                 (
                     artifact,
                     PointRuntime.ask(
-                        cls.POINT,
+                        point,
                         artifact,
                         evidence,
                         policy,

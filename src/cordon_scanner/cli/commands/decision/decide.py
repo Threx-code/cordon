@@ -11,7 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from typing import Any, TextIO
+from typing import Any, ClassVar, TextIO
 
 from cordon_scanner.foundation.errors import ConfigError, ExitCode
 
@@ -35,6 +35,89 @@ class DecideCommand:
         mode.add_argument(
             "--release", action="store_true", help="decide a release on its provenance"
         )
+        mode.add_argument(
+            "--admission",
+            action="store_true",
+            help="answer a Kubernetes AdmissionReview: every image of the workload is decided",
+        )
+
+    #: Where a workload keeps its pod spec: a pod itself, a Deployment-like template, a CronJob's job template.
+    POD_SPECS: ClassVar[tuple[tuple[str, ...], ...]] = (
+        ("spec",),
+        ("spec", "template", "spec"),
+        ("spec", "jobTemplate", "spec", "template", "spec"),
+    )
+    CONTAINERS: ClassVar[tuple[str, ...]] = ("initContainers", "containers", "ephemeralContainers")
+
+    @classmethod
+    def images(cls, workload: Any) -> list[str]:
+        """The distinct image references of a workload's containers, in the order they are listed."""
+        found: dict[str, None] = {}
+        for path in cls.POD_SPECS:
+            node = workload
+            for key in path:
+                node = node.get(key) if isinstance(node, dict) else None
+            if not isinstance(node, dict):
+                continue
+            for kind in cls.CONTAINERS:
+                for container in node.get(kind) or []:
+                    image = container.get("image") if isinstance(container, dict) else None
+                    if isinstance(image, str) and image:
+                        found.setdefault(image, None)
+        return list(found)
+
+    @classmethod
+    def _admission(
+        cls,
+        question: dict[str, Any],
+        policy: Any,
+        clock: Any,
+        keywords: dict[str, Any],
+        out: TextIO,
+    ) -> int:
+        """The webhook's answer to an AdmissionReview: allowed only when every image of the workload passes at the deploy admission point."""
+        from cordon_scanner.decide.build_gate import BuildGate
+        from cordon_scanner.decide.decision.evidence import ArtifactRef, EvidenceSet
+
+        review = question["review"]
+        request = review["request"]
+        evidence = question.get("evidence", {})
+        artifacts = []
+        for image in cls.images(request.get("object") or {}):
+            digest = image.partition("@")[2] if "@sha256:" in image else None
+            artifacts.append(
+                ArtifactRef(kind="container_image", subject_id=f"image:{image}", digest=digest)
+            )
+        verdict = BuildGate.locked(
+            artifacts,
+            lambda artifact: EvidenceSet.from_json(
+                evidence[artifact.subject_id.removeprefix("image:")]
+            ),
+            policy,
+            clock,
+            point="deploy_admission",
+            **keywords,
+        )
+        refused = [
+            a.subject_id.removeprefix("image:")
+            for a, d in verdict.decisions
+            if d.state in ("BLOCK", "REVIEW")
+        ]
+        response: dict[str, Any] = {"uid": request.get("uid", ""), "allowed": verdict.passes}
+        if not verdict.passes:
+            response["status"] = {"message": "Cordon refused: " + ", ".join(refused)}
+        out.write(
+            json.dumps(
+                {
+                    "apiVersion": review.get("apiVersion", "admission.k8s.io/v1"),
+                    "kind": "AdmissionReview",
+                    "response": response,
+                },
+                sort_keys=True,
+            )
+            + "\n"
+        )
+        return int(ExitCode.CLEAN)
 
     @classmethod
     def run(
@@ -62,6 +145,8 @@ class DecideCommand:
                 "environment": context.environment,
                 "scope_path": context.scope_path,
             }
+            if getattr(args, "admission", False):
+                return cls._admission(question, policy, clock, keywords, out)
             if args.lock:
                 artifacts = [ArtifactRef.from_json(item) for item in question["artifacts"]]
                 evidence = question.get("evidence", {})

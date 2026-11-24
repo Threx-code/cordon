@@ -12,6 +12,7 @@ from cordon_scanner.contracts.digests import ArtifactDigests
 from cordon_scanner.decide.decision.compiler import PolicyCompiler
 from cordon_scanner.decide.decision.policy_source import PolicySource
 from cordon_scanner.decide.points import PointRuntime
+from support import ROOT
 from unit.decide.decision.test_points_matrix import Matrix
 
 
@@ -135,3 +136,81 @@ class TestTheGatesThroughTheCommand:
         )
         assert Ask.run(none, "ci_gate", release=True)[0] == 1
         assert Ask.run(no_sbom, "ci_gate", release=True)[0] == 1
+
+
+class TestTheAdmissionAnswer:
+    DIGEST = "sha256:" + "ab" * 32
+
+    @classmethod
+    def review(cls, spec: dict[str, Any], kind: str = "Pod") -> dict[str, Any]:
+        return {
+            "apiVersion": "admission.k8s.io/v1",
+            "kind": "AdmissionReview",
+            "request": {"uid": "u-1", "object": {"kind": kind, "spec": spec}},
+        }
+
+    @classmethod
+    def ask(cls, review: dict[str, Any], evidence: dict[str, Any]) -> dict[str, Any]:
+        document = GateFixture.question(review=review, evidence=evidence)
+        code, out = Ask.run(document, "deploy_admission", admission=True)
+        assert code == 0
+        response: dict[str, Any] = out["response"]
+        return response
+
+    def test_a_pod_whose_images_pass_is_allowed(self) -> None:
+        pod = self.review({"containers": [{"image": "registry.example/app:1"}]})
+        response = self.ask(pod, {"registry.example/app:1": {}})
+        assert response["allowed"] is True and response["uid"] == "u-1"
+
+    def test_one_refused_image_refuses_the_pod_and_names_it(self) -> None:
+        pod = self.review(
+            {
+                "initContainers": [{"image": "registry.example/init:1"}],
+                "containers": [{"image": "registry.example/app:1"}],
+            }
+        )
+        evidence = {"registry.example/init:1": {}, "registry.example/app:1": {"revoked": True}}
+        response = self.ask(pod, evidence)
+        assert response["allowed"] is False
+        assert "registry.example/app:1" in response["status"]["message"]
+        assert "init:1" not in response["status"]["message"]
+
+    def test_the_images_of_a_deployment_template_are_decided_too(self) -> None:
+        deployment = self.review(
+            {"template": {"spec": {"containers": [{"image": f"r.example/app@{self.DIGEST}"}]}}},
+            "Deployment",
+        )
+        assert DecideCommand.images(deployment["request"]["object"]) == [
+            f"r.example/app@{self.DIGEST}"
+        ]
+        response = self.ask(deployment, {f"r.example/app@{self.DIGEST}": {"revoked": True}})
+        assert response["allowed"] is False
+
+    def test_an_image_with_no_evidence_is_not_let_through(self) -> None:
+        pod = self.review({"containers": [{"image": "registry.example/app:1"}]})
+        assert self.ask(pod, {})["allowed"] is False
+
+
+class TestTheFourGatesAreInTheRepository:
+    GATES = (
+        "action/action.yml",
+        "ci/gitlab/cordon.gitlab-ci.yml",
+        "ci/jenkins/Jenkinsfile.snippet",
+    )
+
+    def test_the_github_action_the_gitlab_component_and_the_jenkins_step_run_the_scanner(
+        self,
+    ) -> None:
+        for name in self.GATES:
+            text = (ROOT / name).read_text(encoding="utf-8")
+            assert "cordon-scanner" in text, name
+
+    def test_the_fourth_gate_is_the_admission_answer_of_the_same_command(self) -> None:
+        assert any(action.dest == "admission" for action in self.options())
+
+    @staticmethod
+    def options() -> list[argparse.Action]:
+        parser = argparse.ArgumentParser()
+        DecideCommand.add_parser(parser.add_subparsers())
+        sub = parser._subparsers._group_actions[0].choices["decide"]  # type: ignore[union-attr,attr-defined]
+        return list(sub._actions)

@@ -1104,6 +1104,8 @@ Ask the decision function: JSON in, a decision out.
 │ --lock                    decide every artifact of a lock at the build     │
 │                           gate                                             │
 │ --release                 decide a release on its provenance               │
+│ --admission               answer a Kubernetes AdmissionReview: every image │
+│                           of the workload is decided                       │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
