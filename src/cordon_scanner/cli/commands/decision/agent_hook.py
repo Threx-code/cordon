@@ -41,6 +41,7 @@ class AgentHookCommand:
         runtime: tuple[CordonRuntime, LocalStore] | None = None,
         clock: datetime | None = None,
         store_dir: Path | None = None,
+        archive: Any = None,
     ) -> int:
         from cordon_scanner.cloud.agent.agent_hook import AgentCalls, AgentHook
 
@@ -62,7 +63,7 @@ class AgentHookCommand:
         if AgentCalls.of(hook_input) is None:
             answer = AgentHook.answer("allow")
         else:
-            runtime = runtime or cls._device(store_dir, clock)
+            runtime = runtime or cls._device(store_dir, clock, archive)
             if runtime is None:
                 answer = AgentHook.answer("deny", cls.NO_RUNTIME)
             else:
@@ -73,10 +74,14 @@ class AgentHookCommand:
         return int(ExitCode.CLEAN)
 
     @staticmethod
-    def _device(store_dir: Path | None, clock: datetime) -> tuple[CordonRuntime, LocalStore] | None:
+    def _device(
+        store_dir: Path | None, clock: datetime, archive: Any = None
+    ) -> tuple[CordonRuntime, LocalStore] | None:
         """The runtime the device store was pulled for, or None when it never was."""
         from cordon_scanner.cloud.agent.collection_status import STORE_FOLDER
         from cordon_scanner.cloud.agent.device_runtime import DeviceRuntime
         from cordon_scanner.cloud.auth import CloudAuth
 
-        return DeviceRuntime.open(store_dir or CloudAuth.config_dir() / STORE_FOLDER, clock)
+        return DeviceRuntime.open(
+            store_dir or CloudAuth.config_dir() / STORE_FOLDER, clock, archive
+        )

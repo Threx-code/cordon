@@ -7,9 +7,11 @@ import io
 import json
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from cordon_scanner.cli.commands.decision.agent_hook import AgentHookCommand
+from cordon_scanner.contracts.digests import ArtifactDigests
+from cordon_scanner.intel.base import PackageArchive
 from kits.bundle_kit import T0, Kit, Platform
 from unit.cli.test_policy_pull import Pull, Site
 from unit.contracts.test_agent_hook import DENY, Scan, World
@@ -23,6 +25,7 @@ class Run:
         category: str | None = None,
         store_dir: Path | None = None,
         minutes: int = 5,
+        archive: Any = None,
     ) -> tuple[int, dict[str, Any], str]:
         out, err = io.StringIO(), io.StringIO()
         runtime = None
@@ -39,6 +42,7 @@ class Run:
             runtime=runtime,
             clock=T0 + timedelta(minutes=minutes),
             store_dir=store_dir,
+            archive=archive,
         )
         return code, json.loads(out.getvalue()), err.getvalue()
 
@@ -88,26 +92,50 @@ class TestItFailsClosed:
         assert Run.hook("")[0] == 2
 
 
+class Registry:
+    """The registry as the hook's package resolver sees it: a stand-in that records what was asked and never touches a network."""
+
+    asked: ClassVar[list[tuple[str, str, str | None]]] = []
+
+    @classmethod
+    def online(cls, ecosystem: str, name: str, version: str | None) -> PackageArchive:
+        cls.asked.append((ecosystem, name, version))
+        return PackageArchive(
+            ecosystem, name, version or "9.9.9", "x.tgz", b"bytes of " + name.encode()
+        )
+
+    @staticmethod
+    def offline(ecosystem: str, name: str, version: str | None) -> PackageArchive:
+        raise OSError("no route to the registry")
+
+
 class TestAPulledStoreAnswersThroughTheHook:
     """`policy pull` leaves a store the hook opens: the pinned root, the delegation, the tenant and the verified bundle."""
 
     @staticmethod
-    def pulled(tmp_path: Path) -> Path:
+    def pulled(tmp_path: Path, deny_digest: str | None = None) -> Path:
         platform = Platform()
-        policy = Kit.compiled(
-            1,
-            T0 + timedelta(days=2),
-            default="allow",
-            on_incomplete={"*": "warn"},
-            rules=[
+        rules: list[dict[str, Any]] = [
+            {
+                "id": "no-commands",
+                "tier": "deny",
+                "then": "block",
+                "reason": "R401",
+                "when": {"subject.kind": "agent"},
+            }
+        ]
+        if deny_digest is not None:
+            rules.append(
                 {
-                    "id": "no-commands",
+                    "id": "known-bad",
                     "tier": "deny",
                     "then": "block",
                     "reason": "R401",
-                    "when": {"subject.kind": "agent"},
+                    "when": {"artifact.digest": deny_digest},
                 }
-            ],
+            )
+        policy = Kit.compiled(
+            1, T0 + timedelta(days=2), default="allow", on_incomplete={"*": "warn"}, rules=rules
         )
         envelope = platform.publish(policy, issued=T0, expires=T0 + timedelta(days=2))
         assert Pull.run(tmp_path, platform, Site([envelope])) == 0
@@ -122,12 +150,30 @@ class TestAPulledStoreAnswersThroughTheHook:
     def test_an_install_whose_name_cannot_be_resolved_is_refused_by_the_decision_function(
         self, tmp_path: Path
     ) -> None:
-        """The device resolves no name to a digest offline, and the decision function refuses a subject it cannot resolve (R203)."""
+        """Offline the registry cannot be asked, and the decision function refuses a subject it cannot resolve (R203)."""
         store = self.pulled(tmp_path)
         text = json.dumps(World.hook("Bash", command="npm install left-pad@1.3.0"))
-        code, answer, _ = Run.hook(text, store_dir=store, minutes=70)
+        code, answer, _ = Run.hook(text, store_dir=store, minutes=70, archive=Registry.offline)
         reason = answer["hookSpecificOutput"]["permissionDecisionReason"]
         assert code == 0 and Run.permission(answer) == "deny" and "R203" in reason
+
+    def test_an_install_the_registry_resolves_is_decided_on_its_digest_and_allowed(
+        self, tmp_path: Path
+    ) -> None:
+        store = self.pulled(tmp_path)
+        text = json.dumps(World.hook("Bash", command="npm install left-pad@1.3.0"))
+        code, answer, _ = Run.hook(text, store_dir=store, minutes=70, archive=Registry.online)
+        assert code == 0 and Run.permission(answer) == "allow"
+        assert Registry.asked == [("npm", "left-pad", "1.3.0")]
+
+    def test_a_digest_the_policy_denies_is_denied_once_the_name_resolves(
+        self, tmp_path: Path
+    ) -> None:
+        store = self.pulled(tmp_path, deny_digest=ArtifactDigests.of_bytes(b"bytes of evil-pkg"))
+        text = json.dumps(World.hook("Bash", command="pip install evil-pkg==2.0"))
+        code, answer, _ = Run.hook(text, store_dir=store, minutes=70, archive=Registry.online)
+        assert code == 0 and Run.permission(answer) == "deny"
+        assert Registry.asked[-1] == ("pypi", "evil-pkg", "2.0")
 
     def test_a_command_is_denied_on_a_pulled_store(self, tmp_path: Path) -> None:
         store = self.pulled(tmp_path)

@@ -18,9 +18,11 @@ from typing import TYPE_CHECKING, Any, Final
 from cordon_scanner.cloud.local_runtime import LocalRuntime
 from cordon_scanner.cloud.local_store import LocalStore
 from cordon_scanner.cloud.runtime import CordonRuntime, Sources
+from cordon_scanner.contracts.digests import ArtifactDigests
 from cordon_scanner.decide.decision.compiler import PolicyCompiler
 from cordon_scanner.decide.decision.policy_source import PolicySource
 from cordon_scanner.decide.resolve.resolution import Resolution
+from cordon_scanner.ecosystems.specs.install_specs import InstallSpec
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -62,7 +64,12 @@ class DeviceRuntime:
             return None  # S2: a delegation that is not JSON leaves the device with no runtime, which denies
 
     @classmethod
-    def open(cls, directory: Path, now: datetime) -> tuple[CordonRuntime, LocalStore] | None:
+    def open(
+        cls,
+        directory: Path,
+        now: datetime,
+        archive: Callable[[str, str, str | None], Any] | None = None,
+    ) -> tuple[CordonRuntime, LocalStore] | None:
         store = LocalStore(directory)
         pinned = cls.pins(store)
         if pinned is None:
@@ -77,7 +84,7 @@ class DeviceRuntime:
         )
         local.resume(now)
         return CordonRuntime(
-            local, resolvers=cls.resolvers(), sources=Sources(rules_version=RULES_VERSION)
+            local, resolvers=cls.resolvers(archive), sources=Sources(rules_version=RULES_VERSION)
         ), store
 
     @staticmethod
@@ -88,9 +95,40 @@ class DeviceRuntime:
         return resolve
 
     @classmethod
-    def resolvers(cls) -> dict[str, Callable[[str], Resolution]]:
+    def package(cls, archive: Callable[[str, str, str | None], Any]) -> Callable[[str], Resolution]:
+        """A package resolver that asks the registry the package manager uses: the archive is downloaded (never run), checked
+        against the registry's own digest, and its sha256 is the subject's digest. Any failure leaves the name unresolved."""
+
+        def resolve(reference: str) -> Resolution:
+            ecosystem, _, spec = reference.partition(":")
+            name, version = InstallSpec.split(ecosystem, spec)
+            try:
+                found = archive(ecosystem, name, version)
+            except Exception:  # noqa: BLE001 -- offline, refused, unknown or oversized all mean: not resolved
+                return Resolution.failed(
+                    "package", Resolution.stand_in("package", reference), "source_unreachable"
+                )
+            return Resolution(
+                kind="package",
+                subject_id=f"pkg:{ecosystem}/{found.name}",
+                status="resolved",
+                version=found.version,
+                digest=ArtifactDigests.of_bytes(found.data),
+                ecosystem=ecosystem,
+            )
+
+        return resolve
+
+    @classmethod
+    def resolvers(
+        cls, archive: Callable[[str, str, str | None], Any] | None = None
+    ) -> dict[str, Callable[[str], Resolution]]:
+        if archive is None:
+            from cordon_scanner.intel.registries.registry_client import RegistryClient
+
+            archive = RegistryClient.package_archive
         return {
-            "package": cls.unresolved("package", "package", "source_unreachable"),
+            "package": cls.package(archive),
             "mcp_server": cls.unresolved("mcp_server", "mcp", "source_unreachable"),
             "skill": cls.unresolved("agent_skill", "skill", "source_unreachable"),
             "command": cls.unresolved("agent", "agent", "local_command"),
