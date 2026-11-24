@@ -109,6 +109,27 @@ class ApprovalRequests:
 class AgentHook:
     """The answer a pre-tool hook gives its agent."""
 
+    @staticmethod
+    def _ask(
+        runtime: CordonRuntime,
+        call: AgentCall,
+        clock: datetime,
+        environment: str,
+        scope_path: tuple[str, ...],
+        *,
+        online: bool,
+    ) -> Outcome:
+        return runtime.run(
+            call.resolver,
+            call.reference,
+            POINT,
+            clock,
+            environment=environment,
+            scope_path=scope_path,
+            actor=ACTOR,
+            online=online,
+        )
+
     DENIED: ClassVar[tuple[str, ...]] = ("BLOCK", "REVIEW")
 
     @staticmethod
@@ -130,19 +151,16 @@ class AgentHook:
         environment: str,
         scope_path: tuple[str, ...] = (),
         approver: str = "your approver",
+        retry_online: bool = False,
     ) -> dict[str, Any]:
+        """The agent's answer. With `retry_online`, a denial is asked once more of the platform (the runtime's cloud source), so
+        an approval given since is seen: the retry of an approved call decides ALLOW (R901)."""
         call = AgentCalls.of(hook_input)
         if call is None:
             return cls.answer("allow")
-        outcome = runtime.run(
-            call.resolver,
-            call.reference,
-            POINT,
-            clock,
-            environment=environment,
-            scope_path=scope_path,
-            actor=ACTOR,
-        )
+        outcome = cls._ask(runtime, call, clock, environment, scope_path, online=False)
+        if outcome.decision.state in cls.DENIED and retry_online:
+            outcome = cls._ask(runtime, call, clock, environment, scope_path, online=True)
         decision = outcome.decision
         if decision.state not in cls.DENIED:
             return cls.answer("allow")

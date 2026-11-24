@@ -42,6 +42,7 @@ class AgentHookCommand:
         clock: datetime | None = None,
         store_dir: Path | None = None,
         archive: Any = None,
+        cloud: Any = None,
     ) -> int:
         from cordon_scanner.cloud.agent.agent_hook import AgentCalls, AgentHook
 
@@ -63,19 +64,36 @@ class AgentHookCommand:
         if AgentCalls.of(hook_input) is None:
             answer = AgentHook.answer("allow")
         else:
-            runtime = runtime or cls._device(store_dir, clock, archive)
+            cloud = cloud or cls._cloud()
+            runtime = runtime or cls._device(store_dir, clock, archive, cloud)
             if runtime is None:
                 answer = AgentHook.answer("deny", cls.NO_RUNTIME)
             else:
                 answer = AgentHook.respond(
-                    runtime[0], runtime[1], hook_input, clock, environment=cls.ENVIRONMENT
+                    runtime[0],
+                    runtime[1],
+                    hook_input,
+                    clock,
+                    environment=cls.ENVIRONMENT,
+                    retry_online=cloud is not None,
                 )
         out.write(json.dumps(answer, sort_keys=True) + "\n")
         return int(ExitCode.CLEAN)
 
+    @classmethod
+    def _cloud(cls) -> Any:
+        """How this device asks the platform for a decision after a local denial: with the device token the MDM profile supplies,
+        or not at all (a device with no token decides locally)."""
+        import os
+
+        from cordon_scanner.cloud.agent.cloud_decisions import CloudAsk
+
+        token = os.environ.get("CORDON_DEVICE_TOKEN", "")
+        return CloudAsk(token, cls.ENVIRONMENT) if token else None
+
     @staticmethod
     def _device(
-        store_dir: Path | None, clock: datetime, archive: Any = None
+        store_dir: Path | None, clock: datetime, archive: Any = None, cloud: Any = None
     ) -> tuple[CordonRuntime, LocalStore] | None:
         """The runtime the device store was pulled for, or None when it never was."""
         from cordon_scanner.cloud.agent.collection_status import STORE_FOLDER
@@ -83,5 +101,5 @@ class AgentHookCommand:
         from cordon_scanner.cloud.auth import CloudAuth
 
         return DeviceRuntime.open(
-            store_dir or CloudAuth.config_dir() / STORE_FOLDER, clock, archive
+            store_dir or CloudAuth.config_dir() / STORE_FOLDER, clock, archive, cloud
         )

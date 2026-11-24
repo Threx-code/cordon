@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
+from cordon_scanner.cloud.agent.cloud_decisions import CloudAsk, CloudDecisions
 from cordon_scanner.cloud.local_runtime import LocalRuntime
 from cordon_scanner.cloud.local_store import LocalStore
 from cordon_scanner.cloud.runtime import CordonRuntime, Sources
@@ -69,6 +70,7 @@ class DeviceRuntime:
         directory: Path,
         now: datetime,
         archive: Callable[[str, str, str | None], Any] | None = None,
+        cloud: CloudAsk | None = None,
     ) -> tuple[CordonRuntime, LocalStore] | None:
         store = LocalStore(directory)
         pinned = cls.pins(store)
@@ -83,8 +85,11 @@ class DeviceRuntime:
             store=store,
         )
         local.resume(now)
+        asked = CloudDecisions.source(pinned, now, cloud) if cloud is not None else None
         return CordonRuntime(
-            local, resolvers=cls.resolvers(archive), sources=Sources(rules_version=RULES_VERSION)
+            local,
+            resolvers=cls.resolvers(archive),
+            sources=Sources(cloud=asked, rules_version=RULES_VERSION),
         ), store
 
     @staticmethod
