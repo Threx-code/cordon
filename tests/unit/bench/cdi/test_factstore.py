@@ -63,3 +63,17 @@ class TestFactsAreKeptByWhatMadeThem:
         store.facts("unit-0", b"a")
         store.facts("unit-1", b"a")
         assert len(store.made) == 6
+
+
+class TestACandidateReadingANewFactIsRefused:
+    def test_a_fact_the_store_has_is_admitted(self) -> None:
+        store = FactStore(Kit.readers(), "1")
+        assert store.refuses({"flows", "hooks"}, "1") is None
+
+    def test_a_fact_no_reader_of_the_store_makes_is_refused_and_named(self) -> None:
+        reason = FactStore(Kit.readers(), "1").refuses({"flows", "environment_gate"}, "1")
+        assert reason is not None and "environment_gate" in reason and "rebuild" in reason
+
+    def test_terms_of_another_version_are_refused(self) -> None:
+        reason = FactStore(Kit.readers(), "1").refuses({"flows"}, "2")
+        assert reason is not None and "version 2" in reason
