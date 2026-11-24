@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.cloud import CloudEndpoint, CloudError
+from cordon_scanner.cloud.agent.hook_install import AGENT_PRODUCTS, HookInstall
 from cordon_scanner.cloud.transport import CloudTransport, Transport
 from cordon_scanner.foundation.evidence_key import EvidenceKey
 from cordon_scanner.version import __version__
@@ -365,6 +366,22 @@ class DeviceInventory:
         return out
 
     @staticmethod
+    def _hooks(home: Path, tools: set[str]) -> dict[str, bool]:
+        """For each agent product found: whether its own settings run Cordon's hook (never another tool's)."""
+        documents: dict[str, list[Any]] = {}
+        for source in DeviceInventory.sources(home):
+            if source.kind not in ("settings", "mcp") or source.tool not in AGENT_PRODUCTS:
+                continue
+            raw = DeviceInventory._read(source.path)
+            if raw is None:
+                continue
+            try:
+                documents.setdefault(source.tool, []).append(json.loads(raw))
+            except ValueError:
+                continue  # S2: a settings file that is not JSON installs no hook we can read
+        return HookInstall.by_product(tools, documents)
+
+    @staticmethod
     def _logical_mcp(servers: dict[str, Any]) -> bytes:
         return json.dumps({"mcpServers": servers}).encode()
 
@@ -395,6 +412,7 @@ class DeviceInventory:
                 "extensions": extensions,
                 "installed_extensions": installed,
                 "registries": registries,
+                "hooks": DeviceInventory._hooks(home, tools),
             },
             "findings": findings,
         }
