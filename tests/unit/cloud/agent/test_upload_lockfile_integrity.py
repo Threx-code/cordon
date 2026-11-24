@@ -108,3 +108,9 @@ class TestEveryListedHashReachesThePlatform:
         text = f"requests==2.31.0 --hash={self.A}\n"
         dep = self.uploaded(tmp_path, {"requirements.txt": text})["requests"]
         assert dep["hashes"] == [self.A] and dep["integrity"] == self.A
+
+    def test_text_that_is_not_a_digest_is_never_listed(self, tmp_path: Path) -> None:
+        stray = "ghp_" + "x" * 30
+        text = f"requests==2.31.0 --hash={self.A} --hash={stray} --hash=sha256:not-hex\n"
+        dep = self.uploaded(tmp_path, {"requirements.txt": text})["requests"]
+        assert dep["hashes"] == [self.A] and stray not in json.dumps(dep)

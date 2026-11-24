@@ -47,7 +47,15 @@ class PypiLockfiles:
             for item in group if isinstance(group, list) else ():
                 if isinstance(item, dict) and item.get("hash") and str(item["hash"]) not in found:
                     found.append(str(item["hash"]))
-        return tuple(found)
+        return PypiLockfiles._well_formed(found)
+
+    @staticmethod
+    def _well_formed(values: Any) -> tuple[str, ...]:
+        """The `algorithm:hex` digests among the values, in order and once each; anything else a lockfile puts there is dropped, since a report carries only what is a digest."""
+        wanted = (str(v) for v in values) if isinstance(values, (list, tuple)) else ()
+        return tuple(
+            dict.fromkeys(v for v in wanted if re.fullmatch(r"[a-z0-9]+:[0-9a-f]{32,128}", v))
+        )
 
     @staticmethod
     def _first_hash(package: dict[str, Any]) -> str | None:
@@ -509,7 +517,7 @@ class PypiLockfiles:
             for name, meta in sorted((data.get(section) or {}).items()):
                 if not isinstance(meta, dict):
                     continue
-                hashes = meta.get("hashes") or []
+                hashes = PypiLockfiles._well_formed(meta.get("hashes"))
                 resolved = None
                 if isinstance(meta.get("git"), str):
                     resolved = f"git+{meta['git']}" + (
@@ -525,7 +533,7 @@ class PypiLockfiles:
                         name=str(name),
                         version=str(meta.get("version", "")).lstrip("="),
                         integrity=str(hashes[0]) if hashes else None,
-                        hashes=tuple(dict.fromkeys(str(h) for h in hashes)),
+                        hashes=hashes,
                         resolved_from=resolved,
                         scope=scope,
                         # Pipfile.lock lists every package flat, with no edges and no mark of
@@ -562,7 +570,7 @@ class PypiLockfiles:
         for line in lines:
             if line.startswith("-"):
                 continue
-            hashes = re.findall(r"--hash[=\s]\s*(\S+)", line)
+            hashes = PypiLockfiles._well_formed(re.findall(r"--hash[=\s]\s*(\S+)", line))
             requirement = re.split(r"\s--hash", line, maxsplit=1)[0]
             parsed = PypiRequirement.parse(requirement)
             if parsed is None:
@@ -575,7 +583,7 @@ class PypiLockfiles:
                     name=name,
                     version=PypiManifest._version_of(spec[2:].lstrip("=")),
                     integrity=hashes[0] if hashes else None,
-                    hashes=tuple(dict.fromkeys(hashes)),
+                    hashes=hashes,
                     resolved_from=index,
                     direct=True,
                     platform=(marker,) if marker else (),
