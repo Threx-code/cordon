@@ -49,3 +49,29 @@ class TestTheUploadCarriesParents:
 
     def test_a_top_level_dependency_has_no_parent_package(self, tmp_path: Path) -> None:
         assert "parents" not in Graph.uploaded(tmp_path)["a"]
+
+
+class TestTheUploadCarriesVendoredCopies:
+    def test_a_bundled_package_is_listed_with_its_state_and_a_plain_tree_lists_none(
+        self, tmp_path: Path
+    ) -> None:
+        vendor = tmp_path / "vendor" / "left-pad"
+        vendor.mkdir(parents=True)
+        (vendor / "package.json").write_text(
+            '{"name":"left-pad","version":"1.3.0"}', encoding="utf-8"
+        )
+        (vendor / "index.js").write_text("module.exports = pad;\n", encoding="utf-8")
+        result = Scanner(Config.default().with_overrides(use_cache=False, offline=True)).scan(
+            tmp_path
+        )
+        copies = SignedResults.vendored(tmp_path)
+        document = json.loads(SignedResults.results_bytes(result, copies))
+        assert document["vendored"] == [
+            {
+                "path": "vendor/left-pad",
+                "purl": "pkg:npm/left-pad@1.3.0",
+                "digest": copies[0]["digest"],
+                "state": "unknown",
+            }
+        ]
+        assert "vendored" not in json.loads(SignedResults.results_bytes(result))

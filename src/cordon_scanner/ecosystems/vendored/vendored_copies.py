@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import urllib.parse
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import ClassVar
 
 
@@ -56,6 +58,32 @@ class VendoredCopies:
             )
             found.append(VendoredCopy(root, purl, digest, state))
         return tuple(sorted(found, key=lambda copy: (copy.path.count("/"), copy.path)))
+
+    @classmethod
+    def of_directory(
+        cls, root: Path, known: Mapping[str, str] | None = None
+    ) -> tuple[VendoredCopy, ...]:
+        """The copies in a directory tree, reading only what they need: the files under each vendored package, bounded in count and size."""
+        candidates: list[str] = []
+        for here, dirs, names in os.walk(root):
+            dirs[:] = sorted(d for d in dirs if d not in ("node_modules", ".git"))
+            if "package.json" in names and Path(here) != root:
+                candidates.append(Path(here).relative_to(root).as_posix())
+        files: dict[str, bytes] = {}
+        for base in candidates:
+            for here, dirs, names in os.walk(root / base):
+                dirs[:] = sorted(d for d in dirs if d != "node_modules")
+                for name in sorted(names):
+                    path = Path(here, name)
+                    key = path.relative_to(root).as_posix()
+                    if len(files) >= cls.MAX_FILES or path.is_symlink() or key in files:
+                        continue
+                    if path.stat().st_size <= cls.MAX_BYTES:
+                        files[key] = path.read_bytes()
+        return cls.of(files, known)
+
+    MAX_FILES: ClassVar[int] = 5000
+    MAX_BYTES: ClassVar[int] = 2 << 20
 
     @staticmethod
     def digest(files: Mapping[str, bytes], root: str) -> str:
