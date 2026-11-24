@@ -19,13 +19,16 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.decide.decision.decider import Decider
 from cordon_scanner.decide.decision.evidence import Context
+from cordon_scanner.decide.plugins.evaluator_plugins import EvaluatorPlugins
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from datetime import datetime
 
     from cordon_scanner.decide.decision.evidence import ArtifactRef, EvidenceSet
     from cordon_scanner.decide.decision.outcome import Decision
     from cordon_scanner.decide.decision.table import CompiledPolicy
+    from cordon_scanner.decide.plugins.evaluator_plugins import EvaluatorPlugin
 
 
 class PointRuntime:
@@ -49,8 +52,12 @@ class PointRuntime:
         online: bool = True,
         bundle_age_s: int | None = None,
         intel_age_s: int | None = None,
+        plugins: Sequence[EvaluatorPlugin] = (),
     ) -> Decision:
-        """The decision for `artifact` as asked by `point` (one of `POINTS`; any other is a `DecisionError`)."""
+        """The decision for `artifact` as asked by `point` (one of `POINTS`; any other is a `DecisionError`).
+
+        The verdicts of the evaluator `plugins` join the evidence as findings before the policy reads it."""
+        evidence = EvaluatorPlugins.apply(plugins, artifact, point, environment, evidence)
         context = cls._context(
             point, environment, scope_path, actor, relation, online, bundle_age_s, intel_age_s
         )
@@ -72,8 +79,10 @@ class PointRuntime:
         online: bool = True,
         bundle_age_s: int | None = None,
         intel_age_s: int | None = None,
+        plugins: Sequence[EvaluatorPlugin] = (),
     ) -> str:
         """The `inputs_digest` the decision `ask` gives for the same arguments carries, without deciding."""
+        evidence = EvaluatorPlugins.apply(plugins, artifact, point, environment, evidence)
         context = cls._context(
             point, environment, scope_path, actor, relation, online, bundle_age_s, intel_age_s
         )

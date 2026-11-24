@@ -3,12 +3,22 @@
 from __future__ import annotations
 
 import copy
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, ClassVar
 
 import pytest
 
-from cordon_scanner.decide.decision.evidence import EvidenceSet
-from cordon_scanner.decide.plugins.evaluator_plugins import EvaluatorPlugins, PluginRefused
+from cordon_scanner.contracts.digests import ArtifactDigests
+from cordon_scanner.decide.decision.compiler import PolicyCompiler
+from cordon_scanner.decide.decision.evidence import ArtifactRef, EvidenceSet
+from cordon_scanner.decide.decision.outcome import Decision
+from cordon_scanner.decide.decision.policy_source import PolicySource
+from cordon_scanner.decide.plugins.evaluator_plugins import (
+    EvaluatorPlugin,
+    EvaluatorPlugins,
+    PluginRefused,
+)
+from cordon_scanner.decide.points import PointRuntime
 from cordon_scanner.intel.provenance._ed25519_signer import Ed25519Signer
 from cordon_scanner.rules.pack_signatures import PackSignatures
 
@@ -90,3 +100,67 @@ class TestTheVerdictIsEvidence:
     def test_an_artifact_the_table_does_not_name_gives_nothing(self) -> None:
         plugin = EvaluatorPlugins.load(Kit.signed(MANIFEST), PINNED)
         assert plugin.evaluate({"ecosystem": "pypi", "publisher": "new"}) is None
+
+
+class Asking:
+    CLOCK = datetime(2026, 11, 24, 10, 0, tzinfo=UTC)
+    MANIFEST: ClassVar[dict[str, Any]] = {
+        "id": "acme-eval",
+        "version": "1.2.0",
+        "kind": "evaluator",
+        "table": [
+            {
+                "id": "npm-package",
+                "when": {"ecosystem": "npm", "kind": "package"},
+                "severity": "high",
+                "reason": "this evaluator distrusts npm packages",
+            }
+        ],
+    }
+
+    @staticmethod
+    def decide(plugins: tuple[EvaluatorPlugin, ...]) -> Decision:
+        source = {
+            "policy_schema": 2,
+            "id": "acme/policy",
+            "version": 1,
+            "scope": ["acme"],
+            "rules": [
+                {
+                    "id": "plugin-deny",
+                    "tier": "deny",
+                    "then": "block",
+                    "when": {"finding.category": "policy"},
+                }
+            ],
+            "defaults": {},
+        }
+        artifact = ArtifactRef(
+            kind="package",
+            subject_id="pkg:npm/left-pad",
+            digest=ArtifactDigests.of_bytes(b"artifact"),
+            ecosystem="npm",
+            released_at="2026-06-01T00:00:00Z",
+        )
+        return PointRuntime.ask(
+            "ci_gate",
+            artifact,
+            EvidenceSet(),
+            PolicyCompiler.compile(PolicySource.from_json(source)),
+            Asking.CLOCK,
+            environment="production",
+            scope_path=("acme",),
+            plugins=plugins,
+        )
+
+
+class TestAPluginChangesTheDecision:
+    def test_a_signed_plugins_finding_changes_the_decision(self) -> None:
+        plugin = EvaluatorPlugins.load(Kit.signed(Asking.MANIFEST), PINNED)
+        assert Asking.decide(()).state != "BLOCK"
+        assert Asking.decide((plugin,)).state == "BLOCK"
+
+    def test_an_unsigned_plugin_is_refused_so_the_decision_does_not_change(self) -> None:
+        with pytest.raises(PluginRefused):
+            EvaluatorPlugins.load({"manifest": Asking.MANIFEST}, PINNED)
+        assert Asking.decide(()).state != "BLOCK"

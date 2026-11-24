@@ -11,11 +11,11 @@ enters the decision as a finding of category `policy`, named by the plugin and i
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 from typing import Any, ClassVar, Final
 
-from cordon_scanner.decide.decision.evidence import FindingFact
+from cordon_scanner.decide.decision.evidence import ArtifactRef, EvidenceSet, FindingFact
 from cordon_scanner.rules.pack_signatures import PackSignatures
 
 MAX_RULES: Final = 200
@@ -94,6 +94,30 @@ class EvaluatorPlugins:
         if not PackSignatures.verifies(bundle["signature"], keys, message):
             raise PluginRefused("the signature does not verify under a pinned key")
         return cls._plugin(manifest)
+
+    @staticmethod
+    def apply(
+        plugins: Sequence[EvaluatorPlugin],
+        artifact: ArtifactRef,
+        point: str,
+        environment: str,
+        evidence: EvidenceSet,
+    ) -> EvidenceSet:
+        """The evidence with the finding of each plugin whose table names this artifact; the evidence itself when none does."""
+        named = {
+            "kind": artifact.kind,
+            "ecosystem": artifact.ecosystem,
+            "subject.id": artifact.subject_id,
+            "point": point,
+            "environment": environment,
+        }
+        facts = {name: value for name, value in named.items() if value is not None}
+        added = []
+        for plugin in plugins:
+            verdict = plugin.evaluate(facts)
+            if verdict is not None:
+                added.append(plugin.evidence(verdict, artifact.subject_id))
+        return replace(evidence, findings=(*evidence.findings, *added)) if added else evidence
 
     @classmethod
     def _plugin(cls, manifest: dict[str, Any]) -> EvaluatorPlugin:
