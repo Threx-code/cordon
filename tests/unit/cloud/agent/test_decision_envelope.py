@@ -69,13 +69,22 @@ class Fixture:
                 {
                     "keyid": Dsse.keyid(DECIDER.public),
                     "public": DECIDER.public.hex(),
-                    "role": "decider",
+                    "role": "decision.cli",
                     "not_before": not_before.isoformat(),
                     "version": 1,
                 }
             ],
         }
         return Platform.sign("application/vnd.cordon.delegation+json", document, platform.root)
+
+    @staticmethod
+    def sign(decision: Decision, signer: Ed25519Signer) -> dict[str, Any]:
+        return DecisionEnvelope.sign(
+            decision,
+            signer,
+            subject_id="pkg:npm/left-pad",
+            digest=ArtifactDigests.of_bytes(b"artifact"),
+        )
 
     @staticmethod
     def verify(envelope: object, platform: Platform, delegation: dict[str, Any]) -> dict[str, Any]:
@@ -92,13 +101,13 @@ class TestADecisionSignedByTheDecider:
     def test_it_verifies_offline_and_carries_the_decision(self) -> None:
         platform = Platform()
         decision = Fixture.decision()
-        envelope = DecisionEnvelope.sign(decision, DECIDER)
+        envelope = Fixture.sign(decision, DECIDER)
         found = Fixture.verify(envelope, platform, Fixture.delegation(platform))
-        assert found["state"] == decision.state
+        assert found["predicate"]["state"] == decision.state
 
     def test_an_edit_after_signing_is_refused(self) -> None:
         platform = Platform()
-        envelope = DecisionEnvelope.sign(Fixture.decision(), DECIDER)
+        envelope = Fixture.sign(Fixture.decision(), DECIDER)
         altered = copy.deepcopy(envelope)
         body = base64.b64decode(altered["payload"]).replace(b"ALLOW", b"BLOCK")
         altered["payload"] = base64.b64encode(body).decode("ascii")
@@ -107,20 +116,20 @@ class TestADecisionSignedByTheDecider:
 
     def test_a_key_the_root_did_not_delegate_is_refused(self) -> None:
         platform = Platform()
-        envelope = DecisionEnvelope.sign(Fixture.decision(), STRANGER)
+        envelope = Fixture.sign(Fixture.decision(), STRANGER)
         with pytest.raises(BundleError):
             Fixture.verify(envelope, platform, Fixture.delegation(platform))
 
     def test_a_key_before_its_window_is_refused(self) -> None:
         platform = Platform()
-        envelope = DecisionEnvelope.sign(Fixture.decision(), DECIDER)
+        envelope = Fixture.sign(Fixture.decision(), DECIDER)
         late = Fixture.delegation(platform, not_before=T0 + timedelta(days=1))
         with pytest.raises(BundleError):
             Fixture.verify(envelope, platform, late)
 
     def test_a_policy_key_cannot_sign_a_decision(self) -> None:
         platform = Platform()
-        envelope = DecisionEnvelope.sign(Fixture.decision(), platform.policy_key)
+        envelope = Fixture.sign(Fixture.decision(), platform.policy_key)
         with pytest.raises(BundleError):
             Fixture.verify(envelope, platform, platform.delegation())
 
@@ -146,9 +155,42 @@ class TestTheRuntimeSignsWhatItQueues:
         answer = Kit.ask(runtime, NOW)
         queued = json.loads(store.pending()[0].body)
         found = Fixture.verify(queued["signed"], platform, Fixture.delegation(platform))
-        assert found == answer.to_json() and queued["decision"] == found
+        assert found["predicate"] == answer.to_json() and queued["decision"] == found["predicate"]
 
     def test_with_no_signer_the_upload_carries_no_envelope(self, tmp_path: Path) -> None:
         runtime, store, _ = self.runtime(tmp_path, None)
         Kit.ask(runtime, NOW)
         assert "signed" not in json.loads(store.pending()[0].body)
+
+
+class TestThePlatformsShape:
+    def test_it_is_an_in_toto_statement_in_the_platforms_envelope_type(self) -> None:
+        envelope = Fixture.sign(Fixture.decision(), DECIDER)
+        statement = json.loads(base64.b64decode(envelope["payload"]))
+        assert envelope["payloadType"] == "application/vnd.in-toto+json"
+        assert statement["_type"] == "https://in-toto.io/Statement/v1"
+        assert statement["predicateType"] == "https://cordonscan.com/decision/v1"
+        subject = statement["subject"][0]
+        assert subject["name"] == "pkg:npm/left-pad" and list(subject["digest"]) == ["sha256"]
+
+    def test_a_key_delegated_for_a_role_the_platform_does_not_have_is_refused(self) -> None:
+        platform = Platform()
+        document = {
+            "_type": "cordon.delegation/v1",
+            "tenant": TENANT,
+            "issued_at": T0.isoformat(),
+            "keys": [
+                {
+                    "keyid": Dsse.keyid(DECIDER.public),
+                    "public": DECIDER.public.hex(),
+                    "role": "decider",
+                    "not_before": (T0 - timedelta(days=1)).isoformat(),
+                    "version": 1,
+                }
+            ],
+        }
+        delegation = Platform.sign(
+            "application/vnd.cordon.delegation+json", document, platform.root
+        )
+        with pytest.raises(BundleError):
+            Fixture.verify(Fixture.sign(Fixture.decision(), DECIDER), platform, delegation)

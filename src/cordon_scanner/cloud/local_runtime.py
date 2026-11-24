@@ -454,8 +454,10 @@ class LocalRuntime:
             "decision": decision.to_json(),
             "feed": FeedGaps.feed(),
         }
-        if self._signer is not None:
-            document["signed"] = DecisionEnvelope.sign(decision, self._signer)
+        if self._signer is not None and artifact.digest is not None:
+            document["signed"] = DecisionEnvelope.sign(
+                decision, self._signer, subject_id=artifact.subject_id, digest=artifact.digest
+            )
         return ArtifactDigests.canonical_json(document)
 
     def _intel_age(self, clock: datetime) -> int | None:
