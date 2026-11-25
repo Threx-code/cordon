@@ -99,6 +99,7 @@ PROVENANCE_NOT_PUBLISHED: Final = MappingProxyType(
         "hex": "Hex signs its registry index with one fixed key and publishes no per-release signature or attestation (hex.pm public keys page).",
         "opam": "The default opam-repository is unsigned; the signed-metadata scheme (conex) is a separate beta, not the default (discuss.ocaml.org).",
         "conda": "anaconda.org and conda-forge publish no attestations: conda-content-trust is out of support and Sigstore attestations (CEP 27) exist only on prefix.dev.",
+        "nix": "A Nix dependency here is a pinned source revision (a flake input with its narHash): cache.nixos.org signs built store paths in its narinfo files, which a flake.lock does not name, so there is nothing to look up (nix manual, binary cache; checked 2026-11-25).",
         "swift": "Swift packages resolve from git repositories; no public default package registry publishes signatures (SE-0292 registries may sign, none is the default).",
     }
 )

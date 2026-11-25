@@ -33,7 +33,7 @@
  {"ids": ["image", "maven"], "site": "src/cordon_scanner/engine/sbom_ingest.py::NAME_FORMS#0"},
  {"ids": ["cargo", "cocoapods", "conan", "conda", "cran", "hackage", "hex", "homebrew", "nuget", "pub", "pypi", "rubygems"], "site": "src/cordon_scanner/engine/sbom_ingest.py::NAME_FORMS#1"},
  {"ids": ["ansible", "bazel", "gradle", "helm", "homebrew", "image", "maven", "npm", "pypi", "rubygems"], "site": "src/cordon_scanner/foundation/dependencies.py::PROVENANCE_ECOSYSTEMS#0"},
- {"ids": ["cargo", "cocoapods", "composer", "conan", "conda", "cran", "hex", "julia", "opam", "pub", "swift", "vcpkg"], "reason": "The written reasons of the provenance feature: one row per registry that publishes nothing to verify, each naming the page read and its date; it is the reason column of the feature, not its coverage.", "site": "src/cordon_scanner/foundation/dependencies.py::PROVENANCE_NOT_PUBLISHED#0"},
+ {"ids": ["cargo", "cocoapods", "composer", "conan", "conda", "cran", "hex", "julia", "nix", "opam", "pub", "swift", "vcpkg"], "reason": "The written reasons of the provenance feature: one row per registry that publishes nothing to verify, each naming the page read and its date; it is the reason column of the feature, not its coverage.", "site": "src/cordon_scanner/foundation/dependencies.py::PROVENANCE_NOT_PUBLISHED#0"},
  {"ids": ["gomod", "rubygems"], "site": "src/cordon_scanner/images/langpkgs.py::kind#0"},
  {"ids": ["cargo", "pypi"], "site": "src/cordon_scanner/intel/advisories/advisories.py::NAME_FOLDS#0"},
  {"ids": ["npm", "pypi"], "site": "src/cordon_scanner/intel/advisories/advisory_text.py::APPLIES_TO#0"},
