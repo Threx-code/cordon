@@ -277,20 +277,21 @@ class TestALossOfAnyKindBlocks:
 
 
 class TestNoWorkerCanStart:
-    def test_it_is_a_scanner_error(self, tmp_path, monkeypatch) -> None:
+    def test_the_scan_ends_incomplete_naming_the_files_and_blocks(self, tmp_path, monkeypatch) -> None:
+        from cordon_scanner.decide.policy import PolicyGate
         from cordon_scanner.engine import engine as engine_module
-        from cordon_scanner.engine.isolation.supervisor import IsolationUnavailable
         from cordon_scanner.foundation.errors import ExitCode
 
         def broken(self):
             return Template.start(lambda sock: os._exit(3))  # every worker ends before it is ready
 
         monkeypatch.setattr(engine_module.Engine, "_start_template", broken)
-        with pytest.raises(IsolationUnavailable) as raised:
-            Scanner(Config.default().with_overrides(use_cache=False)).scan(
-                Tree.make(tmp_path / "pkg", ["a.txt"])
-            )
-        assert raised.value.exit_code == ExitCode.SCANNER_ERROR
+        result = Scanner(Config.default().with_overrides(use_cache=False)).scan(
+            Tree.make(tmp_path / "pkg", ["a.txt"])
+        )
+        ids = {finding.rule_id for finding in result.findings}
+        assert ids & {"OPERATIONAL.FILE.WORKER_ISOLATION", "OPERATIONAL.WORKER.CONTEXT_FAILED"}
+        assert PolicyGate.evaluate(result, Config.default().policy).exit_code is not ExitCode.CLEAN
 
 
 class Slow(Planted):

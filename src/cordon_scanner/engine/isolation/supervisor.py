@@ -56,6 +56,7 @@ class Reason:
     WALL = "wall"  # the wall-clock backstop: a unit that hangs without burning CPU
     DIED = "died"  # any other end: killed (the out-of-memory killer's SIGKILL), crashed
     FAILED = "failed"  # the unit raised: its exception's type and message follow, after ": "
+    UNAVAILABLE = "unavailable"  # no worker could start here, so the unit never ran; why follows, after ": "
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,7 +150,12 @@ class Worker:
 
     def __init__(self, context: BaseContext, setup: tuple[str, tuple[Any, ...]], work: str,
                  bounds: Bounds, template: Template | None = None,
-                 stacks: str | None = None) -> None:  # fmt: skip
+                 stacks: str | None = None, backstop: float | None = None,
+                 attempt: int = 0) -> None:  # fmt: skip
+        #: This worker's own start backstop: the class's, or a longer one when many were starting at once.
+        self.backstop = Worker.START_BACKSTOP if backstop is None else backstop
+        #: 0 for a worker started first, 1 for the one that replaced a worker that did not become ready.
+        self.attempt = attempt
         self.process: Any
         if template is not None:
             sock, pid = template.fork_worker()
@@ -157,14 +163,14 @@ class Worker:
             # forked before they existed: its first message. A worker already gone is seen as one
             # that ended before it was ready, not as an error here.
             with contextlib.suppress(OSError):
-                self.conn.send((setup, work, bounds, self.stacks_at(stacks)))
+                self.conn.send((setup, work, bounds, self.stacks_at(stacks, self.backstop)))
             self.process = TemplateProcess(template, pid, self.conn)
         else:
             ours, theirs = context.Pipe()
             self.conn = ours
             self.process = context.Process(  # type: ignore[attr-defined]  # spawn and forkserver have it
                 target=WorkerMain.run,
-                args=(theirs, setup, work, bounds, self.stacks_at(stacks)),
+                args=(theirs, setup, work, bounds, self.stacks_at(stacks, self.backstop)),
                 daemon=True,
             )
             self.process.start()
@@ -181,14 +187,14 @@ class Worker:
         self.user_at_give: int | None = None
 
     @staticmethod
-    def stacks_at(directory: str | None) -> tuple[str, float] | None:
+    def stacks_at(directory: str | None, backstop: float | None = None) -> tuple[str, float] | None:
         """Where and when a worker not ready writes its stacks: before the backstop, by
         `STACKS_BEFORE` or a quarter of it, whichever is less. The time is a wall-clock deadline
         counted from now, when the supervisor starts the worker, so the seconds the worker takes
         to start and import before it arms the dump do not push the dump past the backstop."""
         if directory is None:
             return None
-        backstop = Worker.START_BACKSTOP
+        backstop = Worker.START_BACKSTOP if backstop is None else backstop
         return directory, time.time() + backstop - min(Worker.STACKS_BEFORE, backstop / 4)
 
     def stacks(self, directory: str | None) -> str:
@@ -218,13 +224,13 @@ class Worker:
 
     def overdue(self, bounds: Bounds, now: float) -> bool:
         if not self.ready:
-            return now - self.started_at > Worker.START_BACKSTOP
+            return now - self.started_at > self.backstop
         return self.unit is not None and now - self.given_at > bounds.wall_budget(self.unit.size)
 
     def due(self, bounds: Bounds, now: float) -> float | None:
         """Seconds until `overdue`; None while it waits for no backstop (ready, holding nothing)."""
         if not self.ready:
-            return self.started_at + Worker.START_BACKSTOP - now
+            return self.started_at + self.backstop - now
         if self.unit is not None:
             return self.given_at + bounds.wall_budget(self.unit.size) - now
         return None
@@ -245,7 +251,7 @@ class Worker:
         (2026-11-14)."""
         after = f"{time.monotonic() - worker.started_at:.0f} s after it started"
         how = (
-            f"no ready message within {Worker.START_BACKSTOP:.0f} s, ended by the start backstop"
+            f"no ready message within {worker.backstop:.0f} s, ended by the start backstop"
             if ended
             else f"{worker.reason()}, exit {worker.process.exitcode}"
         )
@@ -578,13 +584,35 @@ class Supervisor:
                 self._stacks = None
         return self.outcome
 
-    def _start(self) -> Worker:
-        return Worker(self.context, self.setup, self.work, self.bounds, self.template, self._stacks)
+    #: The most a start backstop is scaled by: a worker started again, when others were starting beside it, waits this many times
+    #: the backstop at most (a loaded machine starts them slowly; a machine that cannot start them at all is still found out).
+    START_SCALE_MAX: ClassVar[int] = 4
+
+    def _start(self, scale: int = 1, attempt: int = 0) -> Worker:
+        backstop = Worker.START_BACKSTOP * max(1, min(scale, self.START_SCALE_MAX))
+        return Worker(
+            self.context, self.setup, self.work, self.bounds, self.template, self._stacks, backstop, attempt
+        )
+
+    def run_or_lose(self, units: Iterable[Unit]) -> Outcome:
+        """`run`, except that a run in which no worker could start (`IsolationUnavailable`) is reported, not raised: every unit it did not run is
+        lost (`Reason.UNAVAILABLE`, the cause after ": "), and none is read in this process (the parent never parses scanned content). The
+        scan ends incomplete naming each file, which the default policy blocks: a verdict, not a scanner error."""
+        queued = list(units)
+        try:
+            return self.run(queued)
+        except IsolationUnavailable as unavailable:
+            why = str(unavailable)
+            self.outcome.isolation["start"] = why
+            short = why.split("; its threads before the backstop:", 1)[0]
+            for unit in queued:
+                if unit.index not in self.outcome.results and unit.index not in self.outcome.failed:
+                    self.outcome.failed[unit.index] = f"{Reason.UNAVAILABLE}: {short}"
+            return self.outcome
 
     def _drain(self, pool: list[Worker], queue: deque[Unit], *, retried: bool) -> None:
         """Every unit of `queue` run on `pool`, a dead worker replaced while units remain."""
         started_any = False
-        unready_ends = 0
         try:
             while pool and (queue or any(w.unit is not None for w in pool)):
                 if self.deadline is not None and self.clock() >= self.deadline:
@@ -621,16 +649,16 @@ class Supervisor:
                     if not worker.ready:
                         # It ended before it was ready: tried once more in a fresh worker; when no
                         # worker has started at all and that one ends too, nothing can run here.
-                        unready_ends += 1
                         stacks = worker.stacks(self._stacks)
-                        if not started_any and unready_ends >= 2:
+                        if not started_any and worker.attempt >= 1:
                             where = (
                                 f"; its threads before the backstop:\n{stacks}" if stacks else ""
                             )
                             raise IsolationUnavailable(
                                 Worker.never_ready(worker, ended=alive) + where
                             )
-                        pool.append(self._start())
+                        # Once more, its backstop scaled by the workers starting beside it.
+                        pool.append(self._start(1 + sum(1 for other in pool if not other.ready), worker.attempt + 1))
                     elif queue:
                         pool.append(self._start())
         finally:

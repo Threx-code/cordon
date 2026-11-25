@@ -626,7 +626,7 @@ class ParallelScanner:
         )  # fmt: skip
         supervisor.template = template
         timed = DetectorClock.enabled()
-        outcome = supervisor.run(
+        outcome = supervisor.run_or_lose(
             Unit(k, (item, root, deadline, timed), item[2]) for k, item in enumerate(files)
         )
         if unstarted is not None:

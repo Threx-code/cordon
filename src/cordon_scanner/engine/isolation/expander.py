@@ -347,7 +347,7 @@ class ArchiveExpander:
             )  # fmt: skip
             supervisor.template = template
             item = (str(path), path.name, scan_deadline, str(self.spill.path))
-            outcome = supervisor.run([Unit(0, item, size)])
+            outcome = supervisor.run_or_lose([Unit(0, item, size)])
             why = ""
             accepted = None
             if 0 in outcome.results and isinstance(outcome.results[0], str):

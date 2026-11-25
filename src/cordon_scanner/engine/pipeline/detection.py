@@ -269,6 +269,7 @@ class Detection:
         "cpu": ("HUNG", "used up its CPU budget"),
         "wall": ("HUNG", "stopped answering"),
         "failed": ("FAILED", "raised an error"),
+        "unavailable": ("ISOLATION", "was never started: no worker could start here"),
     }
 
     def work_items(
