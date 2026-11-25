@@ -141,12 +141,14 @@ class TestNestedTemplatesCostWhatFlatOnesCost:
     def sized(cls, unit: str, megabytes: float) -> str:
         return unit * max(1, int(megabytes * 1_000_000) // len(unit))
 
-    def test_per_token_a_nested_file_is_within_twice_a_flat_one_at_each_size(self) -> None:
+    def test_per_token_a_nested_file_is_within_four_times_a_flat_one_at_each_size(self) -> None:
         for megabytes in (1, 2):
             flat, nested = self.sized(self.FLAT, megabytes), self.sized(self.NESTED, megabytes)
             per_flat = Tokens.seconds(flat) / len(JsEval.tokens(flat, templates=True))
             per_nested = Tokens.seconds(nested) / len(JsEval.tokens(nested, templates=True))
-            assert per_nested <= 2 * per_flat, (megabytes, per_nested / per_flat)
+            # Measured 1.7 to 2.4 on a quiet machine (a nested token does more work than a flat one); the quadratic scan this guards against
+            # was two to three orders of magnitude slower per token, so four times is a bound it cannot meet and a loaded machine does not break.
+            assert per_nested <= 4 * per_flat, (megabytes, per_nested / per_flat)
 
     def test_time_grows_with_size_and_no_faster(self) -> None:
         one = Tokens.seconds(self.sized(self.NESTED, 1))
