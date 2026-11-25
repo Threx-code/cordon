@@ -1336,6 +1336,7 @@
   "test_lexer.py": "analysis/javascript/front",
   "test_parser.py": "analysis/javascript/front",
   "test_resolve.py": "analysis/javascript/front",
+  "test_scope_kinds.py": "analysis/javascript/front",
   "test_js_eval.py": "analysis/javascript",
   "test_role_normaliser.py": "analysis/javascript",
   "test_jsonc.py": "foundation/formats",
