@@ -160,24 +160,68 @@ class TestTheKeysAreTheDetectorsForEveryKindOfFile:
 #: command-string hooks in package.json (keyed by their shape above); every other ecosystem runs a file, which is
 #: code and so has a code key like any other.
 INSTALL_TIME = (
-    ("pypi", "setup.py", b"import os\nos.system('echo building the package for this platform now')\n" * 20),
-    ("cargo", "build.rs", b"fn main() { println!(\"cargo:rerun-if-changed=build.rs and more text here\"); }\n" * 20),
-    ("rubygems", "ext/demo/extconf.rb", b"require 'mkmf'\ncreate_makefile('demo_native_extension_here')\n" * 20),
-    ("nuget", "tools/install.ps1", b"param($installPath, $toolsPath, $package, $project)\nWrite-Host done\n" * 20),
-    ("conda", "info/recipe/post-link.sh", b"#!/bin/sh\necho linking the package into the environment now\n" * 20),
-    ("cpan", "Makefile.PL", b"use ExtUtils::MakeMaker;\nWriteMakefile(NAME => 'Demo::Module::Name');\n" * 20),
-    ("cran", "configure", b"#!/bin/sh\necho configuring the native code for this package build\n" * 20),
-    ("julia", "deps/build.jl", b"println(\"building the native dependency for this package now\")\n" * 20),
-    ("composer", "src/Plugin.php", b"<?php\nclass Plugin { public function activate() { echo 'active'; } }\n" * 20),
-    ("chocolatey", "tools/chocolateyinstall.ps1", b"$ErrorActionPreference = 'Stop'\nWrite-Host installing\n" * 20),
+    (
+        "pypi",
+        "setup.py",
+        b"import os\nos.system('echo building the package for this platform now')\n" * 20,
+    ),
+    (
+        "cargo",
+        "build.rs",
+        b'fn main() { println!("cargo:rerun-if-changed=build.rs and more text here"); }\n' * 20,
+    ),
+    (
+        "rubygems",
+        "ext/demo/extconf.rb",
+        b"require 'mkmf'\ncreate_makefile('demo_native_extension_here')\n" * 20,
+    ),
+    (
+        "nuget",
+        "tools/install.ps1",
+        b"param($installPath, $toolsPath, $package, $project)\nWrite-Host done\n" * 20,
+    ),
+    (
+        "conda",
+        "info/recipe/post-link.sh",
+        b"#!/bin/sh\necho linking the package into the environment now\n" * 20,
+    ),
+    (
+        "cpan",
+        "Makefile.PL",
+        b"use ExtUtils::MakeMaker;\nWriteMakefile(NAME => 'Demo::Module::Name');\n" * 20,
+    ),
+    (
+        "cran",
+        "configure",
+        b"#!/bin/sh\necho configuring the native code for this package build\n" * 20,
+    ),
+    (
+        "julia",
+        "deps/build.jl",
+        b'println("building the native dependency for this package now")\n' * 20,
+    ),
+    (
+        "composer",
+        "src/Plugin.php",
+        b"<?php\nclass Plugin { public function activate() { echo 'active'; } }\n" * 20,
+    ),
+    (
+        "chocolatey",
+        "tools/chocolateyinstall.ps1",
+        b"$ErrorActionPreference = 'Stop'\nWrite-Host installing\n" * 20,
+    ),
 )
 
 
 class TestEveryEcosystemsInstallTimeCodeIsKeyed:
-    @pytest.mark.parametrize("ecosystem,path,body", INSTALL_TIME, ids=[e for e, _, _ in INSTALL_TIME])
+    @pytest.mark.parametrize(
+        "ecosystem,path,body", INSTALL_TIME, ids=[e for e, _, _ in INSTALL_TIME]
+    )
     def test_its_install_time_file_has_a_code_key(self, tmp_path, ecosystem, path, body):
         target = tmp_path / path
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(body)
         reuse = Package.facts(tmp_path, reuse=True)["package"]["reuse"]
-        assert ReuseIndex.fingerprint(body).hex() in reuse["code"], f"{ecosystem}: {path} carries no reuse key"
+        assert ReuseIndex.fingerprint(body).hex() in reuse["code"], (
+            f"{ecosystem}: {path} carries no reuse key"
+        )
