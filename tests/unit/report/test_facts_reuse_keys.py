@@ -284,3 +284,32 @@ class TestTheCampaignFingerprintIsInTheFacts:
             tmp_path, "demo-1.0.0", {"Cargo.toml": b'[package]\nname = "demo"\nversion = "1"\n'}
         )
         assert "campaign" not in Package.facts(path, reuse=False)["package"]
+
+
+class TestTheParentNeverParsesTheManifest:
+    """The campaign fingerprint's content facets come from the worker as facts; the parent holds only paths."""
+
+    def test_the_accumulator_keeps_the_manifests_path_not_its_content(self):
+        from cordon_scanner.engine.pipeline.accumulator import Accumulator
+
+        acc = Accumulator(reuse_keys=True)
+        acc._campaign("demo.tar.gz!demo-1.0.0/Cargo.toml")
+        acc.facts["demo.tar.gz!demo-1.0.0/Cargo.toml"] = {"campaign.facet": [["deps", "a" * 16]]}
+        assert acc.campaign_manifest == ("cargo", "demo.tar.gz!demo-1.0.0/Cargo.toml")
+        assert acc.campaign()["deps"] == "a" * 16
+
+    def test_a_tree_past_the_path_cap_has_no_layout(self):
+        from cordon_scanner.engine.pipeline.accumulator import Accumulator
+
+        acc = Accumulator(reuse_keys=True)
+        acc._campaign("demo.tar.gz!demo-1.0.0/Cargo.toml")
+        for n in range(Accumulator.MAX_CAMPAIGN_PATHS + 1):
+            acc._campaign(f"demo.tar.gz!demo-1.0.0/src/f{n}.rs")
+        assert acc.campaign()["layout"] is None
+
+    def test_a_worker_facet_of_the_wrong_shape_is_refused(self):
+        from cordon_scanner.engine.isolation.facts import DigestShapes
+
+        assert DigestShapes.campaign_facet(["deps", "a" * 16])
+        assert not DigestShapes.campaign_facet(["layout", "a" * 16])
+        assert not DigestShapes.campaign_facet(["deps", "not-hex"])

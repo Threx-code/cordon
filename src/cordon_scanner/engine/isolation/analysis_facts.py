@@ -135,6 +135,29 @@ class CapabilityNames:
             WorkerFacts.add("net.domain", digest)
 
 
+class CampaignFacts:
+    """The worker's side of a campaign fingerprint: the root manifest's facets, read with its ecosystem's parser here,
+    so the parent never parses it."""
+
+    @staticmethod
+    def produce(unit: Any, ctx: ScanContext) -> None:
+        from cordon_scanner.engine.isolation.facts import WorkerFacts
+        from cordon_scanner.intel.registry import CampaignFingerprint
+
+        if not getattr(ctx.config, "reuse_keys", False) or unit.content.truncated:
+            return
+        ecosystem = CampaignFingerprint.root_manifest(unit.path)
+        if ecosystem is None:
+            return
+        try:
+            facets = CampaignFingerprint.content_facets(ecosystem, unit.content)
+        except Exception:  # noqa: BLE001  # S2: one parser's failure costs this manifest's facets, never the scan
+            return
+        for facet in ("manifest", "deps"):
+            if facets.get(facet):
+                WorkerFacts.add("campaign.facet", [facet, facets[facet]])
+
+
 class ParentAnalysis:
     """The parent's side: a file's facts as the steps read them."""
 

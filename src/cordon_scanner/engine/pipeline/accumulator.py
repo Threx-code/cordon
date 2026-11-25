@@ -73,8 +73,10 @@ class Accumulator:
     reuse_complete: bool = True
     campaign_paths: list[str] = field(default_factory=list)
     """Every member path of the package, for its campaign fingerprint's layout (`reuse_keys`); bounded."""
-    campaign_manifest: tuple[str, Any] | None = None
-    """`(ecosystem, content)` of the package's root manifest, for its campaign fingerprint (`reuse_keys`)."""
+    campaign_paths_complete: bool = True
+    """False once a package has more members than `MAX_CAMPAIGN_PATHS`: its layout facet is then not computed."""
+    campaign_manifest: tuple[str, str] | None = None
+    """`(ecosystem, path)` of the package's root manifest; its facets come from the worker that read it."""
     """False when a code file could not be hashed whole, or past `MAX_REUSE` keys: the keys are then a part, and say so."""
     tool_lists: list[list[dict[str, Any]]] = field(default_factory=list)
     """Each JSON file that declares a whole MCP tool list (`DeclaredTools`), for the facts export (`package.tool_list`)."""
@@ -274,7 +276,7 @@ class Accumulator:
                 self.binaries_complete = False
         if self.reuse_keys:
             self._reuse(path, content, opens)
-            self._campaign(path, content)
+            self._campaign(path)
         declared = DeclaredTools.of(path, content.raw) if not content.truncated else None
         if declared is not None:
             self.tool_lists.append(declared)
@@ -321,29 +323,44 @@ class Accumulator:
         for key in keys:
             self._keep(self.reuse_hooks, key.hex())
 
-    def _campaign(self, path: str, content: FileContent) -> None:
-        """What the package's campaign fingerprint is made of: its member paths and its root manifest."""
+    def _campaign(self, path: str) -> None:
+        """What the package's campaign fingerprint needs from the parent: member paths and which one is the root
+        manifest. Never the manifest's content: the worker that read it sends its facets (`campaign.facet`)."""
         from cordon_scanner.intel.registry import CampaignFingerprint
 
         _, bang, member = path.partition("!")
-        if bang and "!" not in member and len(self.campaign_paths) < self.MAX_CAMPAIGN_PATHS:
-            self.campaign_paths.append(member)
+        if bang and "!" not in member:
+            if len(self.campaign_paths) < self.MAX_CAMPAIGN_PATHS:
+                self.campaign_paths.append(member)
+            else:
+                self.campaign_paths_complete = False
         if self.campaign_manifest is None:
             ecosystem = CampaignFingerprint.root_manifest(path)
-            if ecosystem is not None and not content.truncated:
-                self.campaign_manifest = (ecosystem, content)
+            if ecosystem is not None:
+                self.campaign_manifest = (ecosystem, path)
 
     def campaign(self) -> dict[str, Any] | None:
         """The package's campaign fingerprint, in any ecosystem: `{ecosystem, manifest, layout, deps}`; None when the
-        scan was not asked for package keys or found no root manifest."""
+        scan was not asked for package keys or found no root manifest. The layout is None past `MAX_CAMPAIGN_PATHS`
+        members, never a facet of part of the tree that could not match a whole one."""
         from cordon_scanner.intel.registry import CampaignFingerprint
 
         if not self.reuse_keys or self.campaign_manifest is None:
             return None
-        ecosystem, content = self.campaign_manifest
+        ecosystem, path = self.campaign_manifest
+        facets: dict[str, Any] = {"manifest": None, "deps": None}
+        for fact in self.facts.get(path, {}).get("campaign.facet", ()):
+            facets[fact[0]] = fact[1]
+        layout = (
+            CampaignFingerprint.layout_of(ecosystem, self.campaign_paths)
+            if self.campaign_paths_complete
+            else None
+        )
         return {
             "ecosystem": ecosystem,
-            **CampaignFingerprint.of_manifest(ecosystem, content, self.campaign_paths),
+            "manifest": facets["manifest"],
+            "layout": layout,
+            "deps": facets["deps"],
         }
 
     def _keep(self, into: set[str], key: str) -> None:
