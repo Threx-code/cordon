@@ -32,7 +32,9 @@ class Chain:
         self.platform = Platform()
         self.policy_until = T0 + timedelta(days=90)
 
-    def root_delegation(self, *, with_decision_key: bool = False, issued_at: str | None = None) -> dict[str, Any]:
+    def root_delegation(
+        self, *, with_decision_key: bool = False, issued_at: str | None = None
+    ) -> dict[str, Any]:
         keys = [
             {
                 "keyid": Dsse.keyid(self.platform.policy_key.public),
@@ -54,7 +56,9 @@ class Chain:
         return Platform.sign("application/vnd.cordon.delegation+json", document, self.platform.root)
 
     @staticmethod
-    def entry(signer: Ed25519Signer, *, role: str = "decision.cloud", **changes: Any) -> dict[str, Any]:
+    def entry(
+        signer: Ed25519Signer, *, role: str = "decision.cloud", **changes: Any
+    ) -> dict[str, Any]:
         base = {
             "role": role,
             "version": 1,
@@ -65,7 +69,9 @@ class Chain:
         }
         return {**base, **changes}
 
-    def decision_delegation(self, *, signer: Ed25519Signer | None = None, sequence: int = 4, **changes: Any) -> dict[str, Any]:
+    def decision_delegation(
+        self, *, signer: Ed25519Signer | None = None, sequence: int = 4, **changes: Any
+    ) -> dict[str, Any]:
         document: dict[str, Any] = {
             "_type": DECISION_DELEGATION_SCHEMA,
             "tenant": TENANT,
@@ -79,7 +85,15 @@ class Chain:
         }
         return Platform.sign(DECISION_DELEGATION_TYPE, document, signer or self.platform.policy_key)
 
-    def verify(self, decision_delegation: object, *, root: dict[str, Any] | None = None, by: Ed25519Signer = DECIDER, at=NOW, min_sequence: int = 0) -> dict[str, Any]:
+    def verify(
+        self,
+        decision_delegation: object,
+        *,
+        root: dict[str, Any] | None = None,
+        by: Ed25519Signer = DECIDER,
+        at=NOW,
+        min_sequence: int = 0,
+    ) -> dict[str, Any]:
         envelope = Fixture.sign(Fixture.decision(), by)
         return DecisionEnvelope.verify(
             envelope,
@@ -92,13 +106,16 @@ class Chain:
         )
 
 
-@pytest.fixture
-def chain() -> Chain:
-    return Chain()
+class ChainTests:
+    @pytest.fixture
+    def chain(self) -> Chain:
+        return Chain()
 
 
-class TestAValidChain:
-    def test_a_decision_signed_by_the_key_the_policy_key_delegated_verifies(self, chain: Chain) -> None:
+class TestAValidChain(ChainTests):
+    def test_a_decision_signed_by_the_key_the_policy_key_delegated_verifies(
+        self, chain: Chain
+    ) -> None:
         assert chain.verify(chain.decision_delegation())["predicate"]["state"]
 
     def test_an_equal_sequence_is_the_same_document_and_is_accepted(self, chain: Chain) -> None:
@@ -108,18 +125,24 @@ class TestAValidChain:
         assert chain.verify(chain.decision_delegation(sequence=9), min_sequence=4)
 
 
-class TestWhatIsRefused:
+class TestWhatIsRefused(ChainTests):
     def test_a_decision_key_the_policy_key_did_not_delegate(self, chain: Chain) -> None:
         with pytest.raises(BundleError):
             chain.verify(chain.decision_delegation(), by=STRANGER)
 
-    def test_a_decision_delegation_signed_by_another_key_than_the_policy_key(self, chain: Chain) -> None:
+    def test_a_decision_delegation_signed_by_another_key_than_the_policy_key(
+        self, chain: Chain
+    ) -> None:
         with pytest.raises(BundleError):
             chain.verify(chain.decision_delegation(signer=STRANGER))
 
-    def test_a_decision_delegation_naming_a_policy_key_the_root_did_not_delegate(self, chain: Chain) -> None:
+    def test_a_decision_delegation_naming_a_policy_key_the_root_did_not_delegate(
+        self, chain: Chain
+    ) -> None:
         with pytest.raises(BundleError):
-            chain.verify(chain.decision_delegation(signer=STRANGER, policy_keyid=Dsse.keyid(STRANGER.public)))
+            chain.verify(
+                chain.decision_delegation(signer=STRANGER, policy_keyid=Dsse.keyid(STRANGER.public))
+            )
 
     def test_a_lower_sequence_replayed(self, chain: Chain) -> None:
         with pytest.raises(BundleError, match="older"):
@@ -131,7 +154,9 @@ class TestWhatIsRefused:
             chain.verify(chain.decision_delegation(sequence=sequence))
 
     def test_a_key_delegated_past_the_policy_keys_own_window(self, chain: Chain) -> None:
-        late = chain.entry(DECIDER, valid_until=(chain.policy_until + timedelta(days=1)).isoformat())
+        late = chain.entry(
+            DECIDER, valid_until=(chain.policy_until + timedelta(days=1)).isoformat()
+        )
         with pytest.raises(BundleError, match="past the policy key"):
             chain.verify(chain.decision_delegation(keys=[late]))
 
@@ -142,7 +167,9 @@ class TestWhatIsRefused:
             chain.verify(chain.decision_delegation(keys=[open_ended]))
 
     def test_a_key_that_ends_before_it_starts(self, chain: Chain) -> None:
-        backwards = chain.entry(DECIDER, not_before=T0.isoformat(), valid_until=(T0 - timedelta(days=1)).isoformat())
+        backwards = chain.entry(
+            DECIDER, not_before=T0.isoformat(), valid_until=(T0 - timedelta(days=1)).isoformat()
+        )
         with pytest.raises(BundleError):
             chain.verify(chain.decision_delegation(keys=[backwards]))
 
@@ -189,7 +216,11 @@ class TestWhatIsRefused:
 
     def test_one_issued_when_the_policy_key_was_not_valid(self, chain: Chain) -> None:
         with pytest.raises(BundleError, match="not valid when"):
-            chain.verify(chain.decision_delegation(issued_at=(chain.policy_until + timedelta(days=1)).isoformat()))
+            chain.verify(
+                chain.decision_delegation(
+                    issued_at=(chain.policy_until + timedelta(days=1)).isoformat()
+                )
+            )
 
     def test_no_decision_delegation_at_all(self, chain: Chain) -> None:
         with pytest.raises(BundleError):
@@ -202,8 +233,10 @@ class TestWhatIsRefused:
             chain.verify(envelope)
 
 
-class TestTheOneLinkPathIsUnchanged:
-    def test_a_root_that_names_a_decision_key_verifies_without_the_decision_delegation(self, chain: Chain) -> None:
+class TestTheOneLinkPathIsUnchanged(ChainTests):
+    def test_a_root_that_names_a_decision_key_verifies_without_the_decision_delegation(
+        self, chain: Chain
+    ) -> None:
         assert chain.verify(None, root=chain.root_delegation(with_decision_key=True))
 
     def test_and_does_not_read_a_decision_delegation_it_is_given(self, chain: Chain) -> None:
@@ -213,4 +246,6 @@ class TestTheOneLinkPathIsUnchanged:
     def test_root_names_decision_says_which_path(self, chain: Chain) -> None:
         root = chain.platform.root.public
         assert not DecisionDelegation.root_names_decision(root, chain.root_delegation(), TENANT)
-        assert DecisionDelegation.root_names_decision(root, chain.root_delegation(with_decision_key=True), TENANT)
+        assert DecisionDelegation.root_names_decision(
+            root, chain.root_delegation(with_decision_key=True), TENANT
+        )

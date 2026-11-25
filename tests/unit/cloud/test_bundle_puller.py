@@ -1,4 +1,4 @@
-"""Row BP-6-12: a point pulls its bundle from the bundle store with an ETag and a version pin.
+"""Row BP-6-12 (and, at the end, BP-15-15's scanner half: the decision delegation under a customer root): a point pulls its bundle from the bundle store with an ETag and a version pin.
 
 The fake store answers as the platform's `GET /v1/bundles/<scope>` does: `304` with no body when nothing is newer than `since`, otherwise
 the API's standard envelope with the chain since that version (or, when it no longer holds the chain, `restart: true` and the newest
@@ -16,12 +16,16 @@ from typing import Any
 
 import pytest
 
-from cordon_scanner.cloud.bundle_chain import BundleChain, BundleError, BundleRefused
+from cordon_scanner.cloud.agent.decision_delegation import (
+    DECISION_DELEGATION_SCHEMA,
+    DECISION_DELEGATION_TYPE,
+)
+from cordon_scanner.cloud.bundle_chain import BundleChain, BundleError, BundleRefused, Dsse
 from cordon_scanner.cloud.bundle_puller import BundlePuller
 from cordon_scanner.cloud.local_store import LocalStore
 from cordon_scanner.decide.decision.evidence import EvidenceSet
 from cordon_scanner.intel.provenance._ed25519_signer import Ed25519Signer
-from kits.bundle_kit import T0, Kit, Platform, Things
+from kits.bundle_kit import T0, TENANT, Kit, Platform, Things
 
 POINTS = ("cli", "agent_hook", "firewall", "ci_gate")
 URL = "https://bundles.example/v1/bundles/org:acme"
@@ -319,3 +323,222 @@ class TestWhatIsRefused:
         with pytest.raises(BundleRefused) as caught:
             site.puller.pull(site.runtime, T0 + timedelta(minutes=1))
         assert caught.value.name == BundleRefused.ROLLED_BACK
+
+
+DECIDER = Ed25519Signer(Kit.seed("puller-decider"))
+
+
+class Served:
+    """The platform's answers with the second link: a decision delegation per sequence, and the header on every answer."""
+
+    def __init__(self, platform: Platform, store: BundleStore) -> None:
+        self.platform, self.store, self.sequence, self.whole_calls = platform, store, 0, 0
+        self.header = True
+
+    def delegation(self, sequence: int, **changes: Any) -> dict[str, Any]:
+        document = {
+            "_type": DECISION_DELEGATION_SCHEMA,
+            "tenant": TENANT,
+            "issued_at": T0.isoformat(),
+            "sequence": sequence,
+            "root_keyid": Dsse.keyid(self.platform.root.public),
+            "root_issued_at": T0.isoformat(),
+            "policy_keyid": Dsse.keyid(self.platform.policy_key.public),
+            "keys": [
+                {
+                    "role": "decision.cloud",
+                    "version": 1,
+                    "keyid": Dsse.keyid(DECIDER.public),
+                    "public": DECIDER.public.hex(),
+                    "not_before": (T0 - timedelta(hours=1)).isoformat(),
+                    "valid_until": (T0 + timedelta(days=7)).isoformat(),
+                }
+            ],
+            **changes,
+        }
+        return Platform.sign(DECISION_DELEGATION_TYPE, document, self.platform.policy_key)
+
+    def fetch(self, url: str, headers: dict[str, str]) -> tuple[int, dict[str, str], bytes]:
+        if "since=" not in url:
+            self.whole_calls += 1
+            data = {"version": 1, "delegations": [self.delegation(self.sequence)]}
+            body = json.dumps({"status": True, "message": "ok", "data": data}).encode()
+            return 200, self.tag({}), body
+        status, answered, body = self.store.fetch(url, headers)
+        if status == 200:
+            document = json.loads(body)
+            document["data"]["delegations"] = (
+                [self.delegation(self.sequence)] if self.sequence else []
+            )
+            body = json.dumps(document).encode()
+        return status, self.tag(answered), body
+
+    def tag(self, answered: dict[str, str]) -> dict[str, str]:
+        return (
+            {**answered, "X-Decision-Delegation-Sequence": str(self.sequence)}
+            if self.header
+            else dict(answered)
+        )
+
+
+class Site:
+    def __init__(self, tmp_path: Path) -> None:
+        self.point = Point(tmp_path)
+        self.served = Served(self.point.platform, self.point.store)
+        self.local = self.point.local
+        self.puller = BundlePuller(
+            URL,
+            self.served.fetch,
+            self.local,
+            root_public=self.point.platform.root.public,
+            delegation=self.point.platform.delegation(),
+            tenant=TENANT,
+        )
+
+    def pull(self, minutes: int = 0) -> str:
+        return self.puller.pull(self.point.runtime, T0 + timedelta(minutes=minutes))
+
+
+class TestTheDelegationServedWithTheBundle:
+    def test_a_delegation_in_the_answer_is_verified_and_kept(self, tmp_path: Path) -> None:
+        site = Site(tmp_path)
+        site.served.sequence = 3
+        site.pull()
+        assert site.puller.held_sequence() == 3 and site.puller.decision_delegation() is not None
+
+    def test_the_kept_delegation_is_still_there_for_a_restarted_point(self, tmp_path: Path) -> None:
+        site = Site(tmp_path)
+        site.served.sequence = 3
+        site.pull()
+        again = BundlePuller(
+            URL,
+            site.served.fetch,
+            LocalStore(tmp_path),
+            root_public=site.point.platform.root.public,
+            delegation=site.point.platform.delegation(),
+            tenant=TENANT,
+        )
+        assert again.held_sequence() == 3
+
+    def test_an_answer_with_no_delegation_keeps_what_is_held(self, tmp_path: Path) -> None:
+        site = Site(tmp_path)
+        site.served.sequence = 3
+        site.pull()
+        site.served.sequence = 0
+        site.point.publish()
+        site.pull(1)
+        assert site.puller.held_sequence() == 3
+
+    def test_a_delegation_signed_by_another_key_is_refused_and_nothing_is_kept(
+        self, tmp_path: Path
+    ) -> None:
+        site = Site(tmp_path)
+        site.served.sequence = 3
+        stranger = Ed25519Signer(Kit.seed("puller-stranger"))
+        site.served.platform = Platform(policy_key=stranger, root=site.point.platform.root)
+        with pytest.raises(BundleError):
+            site.pull()
+        assert site.puller.held_sequence() == 0
+
+    def test_a_lower_sequence_replayed_is_refused_and_the_higher_stays(
+        self, tmp_path: Path
+    ) -> None:
+        site = Site(tmp_path)
+        site.served.sequence = 5
+        site.pull()
+        site.served.sequence = 4
+        site.point.publish()
+        with pytest.raises(BundleError, match="older"):
+            site.pull(1)
+        assert site.puller.held_sequence() == 5
+
+    def test_a_key_past_the_policy_keys_window_is_refused(self, tmp_path: Path) -> None:
+        site = Site(tmp_path)
+        site.served.sequence = 3
+        short = Platform.sign(
+            "application/vnd.cordon.delegation+json",
+            {
+                "_type": "cordon.delegation/v1",
+                "tenant": TENANT,
+                "issued_at": T0.isoformat(),
+                "keys": [
+                    {
+                        "keyid": Dsse.keyid(site.point.platform.policy_key.public),
+                        "public": site.point.platform.policy_key.public.hex(),
+                        "role": "policy",
+                        "not_before": (T0 - timedelta(days=1)).isoformat(),
+                        "valid_until": (T0 + timedelta(days=1)).isoformat(),
+                        "version": 1,
+                    }
+                ],
+            },
+            site.point.platform.root,
+        )
+        puller = BundlePuller(
+            URL,
+            site.served.fetch,
+            site.local,
+            root_public=site.point.platform.root.public,
+            delegation=short,
+            tenant=TENANT,
+        )
+        with pytest.raises(BundleError, match="past the policy key"):
+            puller.pull(site.point.runtime, T0)
+        assert puller.held_sequence() == 0
+
+
+class TestTheHeaderOnAnUnchangedBundle:
+    def test_a_304_with_a_higher_sequence_fetches_the_whole_bundle_and_keeps_the_delegation(
+        self, tmp_path: Path
+    ) -> None:
+        site = Site(tmp_path)
+        site.served.sequence = 1
+        site.pull()
+        assert site.served.whole_calls == 0
+        site.served.sequence = 2
+        assert site.pull(1) == "unchanged"
+        assert site.served.whole_calls == 1 and site.puller.held_sequence() == 2
+
+    def test_a_304_with_an_equal_sequence_does_not_fetch(self, tmp_path: Path) -> None:
+        site = Site(tmp_path)
+        site.served.sequence = 2
+        site.pull()
+        assert site.pull(1) == "unchanged"
+        assert site.served.whole_calls == 0
+
+    def test_a_304_with_a_lower_sequence_does_not_fetch(self, tmp_path: Path) -> None:
+        site = Site(tmp_path)
+        site.served.sequence = 2
+        site.pull()
+        site.served.sequence = 1
+        assert site.pull(1) == "unchanged"
+        assert site.served.whole_calls == 0
+
+    def test_a_header_that_is_not_a_number_is_ignored(self, tmp_path: Path) -> None:
+        site = Site(tmp_path)
+        site.pull()
+        site.served.tag = lambda answered: {**answered, "X-Decision-Delegation-Sequence": "9; drop"}  # type: ignore[method-assign]
+        assert site.pull(1) == "unchanged" and site.served.whole_calls == 0
+
+    def test_a_header_with_a_forged_delegation_behind_it_keeps_what_is_held(
+        self, tmp_path: Path
+    ) -> None:
+        site = Site(tmp_path)
+        site.served.sequence = 1
+        site.pull()
+        site.served.sequence = 9
+        site.served.delegation = lambda sequence, **c: Platform.sign(  # type: ignore[method-assign]
+            DECISION_DELEGATION_TYPE,
+            {"_type": DECISION_DELEGATION_SCHEMA, "sequence": sequence},
+            Ed25519Signer(Kit.seed("forger")),
+        )
+        with pytest.raises(BundleError):
+            site.pull(1)
+        assert site.puller.held_sequence() == 1
+
+    def test_a_puller_given_no_root_never_fetches_for_the_header(self, tmp_path: Path) -> None:
+        site = Site(tmp_path)
+        plain = BundlePuller(URL, site.served.fetch, site.local)
+        site.served.sequence = 7
+        plain.pull(site.point.runtime, T0)
+        assert site.served.whole_calls == 0 and plain.held_sequence() == 0

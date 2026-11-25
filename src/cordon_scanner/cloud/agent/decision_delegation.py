@@ -55,15 +55,21 @@ class DecisionDelegation:
         policy = {
             str(k["keyid"]): k
             for k in root_document["keys"]
-            if isinstance(k, dict) and k.get("role") in POLICY_ROLES and isinstance(k.get("keyid"), str)
+            if isinstance(k, dict)
+            and k.get("role") in POLICY_ROLES
+            and isinstance(k.get("keyid"), str)
         }
         named = BundleChain.unverified_payload_document(envelope).get("policy_keyid")
         if not isinstance(named, str) or named not in policy:
-            raise BundleError("the decision delegation is not signed by a policy key the root delegated")
+            raise BundleError(
+                "the decision delegation is not signed by a policy key the root delegated"
+            )
         try:
             policy_public = bytes.fromhex(str(policy[named]["public"]))
         except (KeyError, ValueError) as problem:
-            raise BundleError("the root delegation holds a policy key that cannot be read") from problem
+            raise BundleError(
+                "the root delegation holds a policy key that cannot be read"
+            ) from problem
         body = Dsse.verify(envelope, {named: policy_public}, payload_type=DECISION_DELEGATION_TYPE)
         document = BundleChain._json(body, "the decision delegation")
         if document.get("_type") != DECISION_DELEGATION_SCHEMA or document.get("tenant") != tenant:
@@ -74,11 +80,17 @@ class DecisionDelegation:
         if not isinstance(bound, str) or bound != root_document.get("issued_at"):
             raise BundleError("this decision delegation is not bound to this root delegation")
         sequence = document.get("sequence")
-        if not isinstance(sequence, int) or isinstance(sequence, bool) or sequence < max(min_sequence, 0):
+        if (
+            not isinstance(sequence, int)
+            or isinstance(sequence, bool)
+            or sequence < max(min_sequence, 0)
+        ):
             raise BundleError("this decision delegation is older than the one already held")
         issued = cls._time(document.get("issued_at"), "when it was issued")
         if not BundleChain._valid_at(policy[named], issued):
-            raise BundleError("the policy key was not valid when this decision delegation was issued")
+            raise BundleError(
+                "the policy key was not valid when this decision delegation was issued"
+            )
         entries = document.get("keys")
         if not isinstance(entries, list):
             raise BundleError("the decision delegation lists no keys")
@@ -89,7 +101,9 @@ class DecisionDelegation:
         return document
 
     @classmethod
-    def keys(cls, document: dict[str, Any], now: datetime, roles: tuple[str, ...]) -> dict[str, bytes]:
+    def keys(
+        cls, document: dict[str, Any], now: datetime, roles: tuple[str, ...]
+    ) -> dict[str, bytes]:
         """The keys of `roles` the accepted decision delegation names that are valid at `now`, by key id."""
         return {
             str(entry["keyid"]): bytes.fromhex(str(entry["public"]))
@@ -111,7 +125,9 @@ class DecisionDelegation:
         if end <= start:
             raise BundleError("the decision delegation holds a key that ends before it starts")
         if limit is not None and end > limit:
-            raise BundleError("the decision delegation delegates a key past the policy key's own window")
+            raise BundleError(
+                "the decision delegation delegates a key past the policy key's own window"
+            )
 
     @staticmethod
     def _time(value: object, what: str) -> datetime:
@@ -124,4 +140,9 @@ class DecisionDelegation:
         return moment
 
 
-__all__ = ["DECISION_DELEGATION_SCHEMA", "DECISION_DELEGATION_TYPE", "DECISION_ROLES", "DecisionDelegation"]
+__all__ = [
+    "DECISION_DELEGATION_SCHEMA",
+    "DECISION_DELEGATION_TYPE",
+    "DECISION_ROLES",
+    "DecisionDelegation",
+]

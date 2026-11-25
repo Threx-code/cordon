@@ -120,6 +120,7 @@ class LocalStore:
         "feed-serial",
         "pin",
         "rug-pull",
+        "decision-delegation",
     )
 
     def __init__(self, root: Path, *, max_cache: int = 4096, max_pending: int = 10_000) -> None:
