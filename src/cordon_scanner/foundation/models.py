@@ -600,6 +600,17 @@ class Finding:
         return "suspected, machine-made" if self.rule_id.startswith("LEARNED.") else None
 
     @property
+    def assurance_hint(self) -> str | None:
+        """What to do with a machine-made finding, said the same way in every format: how to hold it and how to report
+        it. None for any other finding."""
+        if not self.assurance:
+            return None
+        return (
+            f"To hold it: cordon-scanner suppress add {self.rule_id} <path> --justification <why>. "
+            "To report it as a false positive: the Report action on this finding in the Cordon console."
+        )
+
+    @property
     def is_suppressed(self) -> bool:
         return self.suppressed is not None
 
@@ -640,6 +651,7 @@ class Finding:
         }
         if self.assurance:
             out["assurance"] = self.assurance
+            out["assurance_hint"] = self.assurance_hint
         if self.references:
             out["references"] = list(self.references)
         if self.related:

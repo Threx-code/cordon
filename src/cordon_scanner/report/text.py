@@ -365,6 +365,8 @@ class TextReporter(BaseReporter):
                 f" · detector {f.detector}", f" · {f.assurance} · detector {f.detector}"
             )
         yield self._line(meta, color)
+        if f.assurance_hint:
+            yield self._line(f"  {DIM}{f.assurance_hint}{RESET}", color)
 
         if f.is_suppressed and f.suppressed:
             yield self._line(
@@ -543,6 +545,12 @@ class TextReporter(BaseReporter):
                 f"and the fix for each finding.{RESET}",
                 color,
             )
+            learned = next((f for f in result.findings if f.assurance_hint), None)
+            if learned is not None:
+                # Said once too: what to do with a machine-made finding, as every other surface says it.
+                yield self._line(
+                    f"{DIM}Machine-made findings. {learned.assurance_hint}{RESET}", color
+                )
 
     # -- Helpers ---------------------------------------------------------
 

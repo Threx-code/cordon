@@ -85,6 +85,7 @@ class MarkdownReporter(BaseReporter):
         ).encode()
         if f.assurance:
             yield f"_{Escape.markdown(f.assurance.capitalize())}._\n\n".encode()
+            yield f"{Escape.markdown(f.assurance_hint or '')}\n\n".encode()
         yield f"{Escape.markdown(f.message)}\n\n".encode()
 
         if f.explanation.escalations:

@@ -283,6 +283,7 @@ class SarifReporter(BaseReporter):
 
         if f.assurance:
             entry["properties"]["assurance"] = f.assurance
+            entry["properties"]["assuranceHint"] = f.assurance_hint
 
         claim = Claims.of_finding(f)
         if claim is not None:
