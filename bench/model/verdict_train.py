@@ -864,6 +864,11 @@ class VerdictTrain:
                 ),
             }
         }
+        crossing = split_records["families_on_both_halves"]["count"]
+        if crossing and not a.families_one_side:
+            print(
+                f"{crossing} malicious families have units on both halves under --split {a.split}"
+            )
         if a.families_one_side and split_records["families_on_both_halves"]["count"]:
             raise SystemExit(
                 f"{split_records['families_on_both_halves']['count']} malicious families have units on both halves under "
