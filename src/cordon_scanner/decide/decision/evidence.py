@@ -90,6 +90,20 @@ class Context(JsonRecord):
             if getattr(self, name) is not None:
                 Checks.whole("Context", name, getattr(self, name))
 
+    def context_key(self) -> str:
+        """The sha256 of the canonical (point, environment, scope path, relation): what a cache keys a context by. The actor, the
+        online state and the ages are not in it; they move a decision and its `inputs_digest`, not the place it was asked in."""
+        return ArtifactDigests.of_bytes(
+            ArtifactDigests.canonical_json(
+                {
+                    "point": self.point,
+                    "environment": self.environment,
+                    "scope_path": list(self.scope_path),
+                    "relation": self.relation,
+                }
+            )
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class FindingFact(JsonRecord):
