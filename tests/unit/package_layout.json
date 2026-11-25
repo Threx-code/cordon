@@ -1192,6 +1192,7 @@
   "test_mixed_script_dependency.py": "detect/supply",
   "test_package_names.py": "intel/ports",
   "test_dependency_review.py": "intel/registries",
+  "test_pre_merge_gate.py": "intel/registries",
   "test_detectors.py": "analysis/shared",
   "test_device.py": "cloud",
   "test_device_attestation.py": "cloud",

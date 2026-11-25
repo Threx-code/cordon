@@ -86,8 +86,22 @@ class PackageChange:
             or any(s in self.BLOCKING for _, s, _ in self.release)
         )
 
+    def reasons(self) -> list[tuple[str, str]]:
+        """`(reason code, why)` for each thing that makes this change blocking, in the codes `decide()` gives: known
+        malware R100, a known high or critical vulnerability R404, a changed release's malicious behaviour R400 or
+        other blocking behaviour R401."""
+        out = [("R100", f"known malware {m}") for m in self.malicious]
+        out += [("R404", f"{i} ({s})") for i, s in self.vulnerable if s in self.BLOCKING]
+        out += [
+            ("R400" if rule.startswith("MALWARE.") else "R401", f"{rule} ({s}): {m}")
+            for rule, s, m in self.release
+            if s in self.BLOCKING
+        ]
+        return out
+
     def as_dict(self) -> dict[str, Any]:
         return {
+            "reasons": [{"code": c, "why": w} for c, w in self.reasons()],
             "kind": self.kind,
             "ecosystem": self.ecosystem,
             "name": self.name,
@@ -151,6 +165,17 @@ class GraphDiff:
         )
 
     @staticmethod
+    def pinned_at(dependency: Dependency) -> str | None:
+        """What a dependency is pinned at: its version, else the ref it is declared at (an action's `@v4` or commit, an
+        image's tag), so repinning an action or an image is a change the review sees."""
+        if dependency.version:
+            return dependency.version
+        if dependency.declared_spec:
+            return dependency.declared_spec
+        tail = dependency.purl.rpartition("@")[2] if "@" in dependency.purl else ""
+        return tail or None
+
+    @staticmethod
     def diff(old: tuple[Dependency, ...], new: tuple[Dependency, ...]) -> list[PackageChange]:
         from cordon_scanner.ecosystems.registry import EcosystemRegistry
         from cordon_scanner.intel.advisories.versions import Versions
@@ -158,7 +183,8 @@ class GraphDiff:
         def index(graph: tuple[Dependency, ...]) -> dict[tuple[str, str], tuple[set[str], bool]]:
             out: dict[tuple[str, str], tuple[set[str], bool]] = {}
             for dependency in graph:
-                if not dependency.version or dependency.local:
+                version = GraphDiff.pinned_at(dependency)
+                if not version or dependency.local:
                     continue
                 ecosystem = EcosystemRegistry.get(dependency.ecosystem)
                 name = (
@@ -167,7 +193,7 @@ class GraphDiff:
                     else dependency.name.lower()
                 )
                 versions, direct = out.get((dependency.ecosystem, name), (set(), False))
-                versions.add(dependency.version)
+                versions.add(version)
                 out[(dependency.ecosystem, name)] = (versions, direct or dependency.direct)
             return out
 
@@ -364,6 +390,45 @@ class ReviewReport:
         return "\n".join(lines)
 
 
+class GithubAnnotations:
+    """The review as GitHub Actions workflow commands: one `::error` annotation per reason a change blocks, titled
+    with its reason code, so a pull request's check fails naming why; a `::notice` when nothing blocks."""
+
+    @staticmethod
+    def data(text: str) -> str:
+        return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+    @staticmethod
+    def prop(text: str) -> str:
+        return GithubAnnotations.data(text).replace(":", "%3A").replace(",", "%2C")
+
+    @classmethod
+    def render(cls, changes: list[PackageChange], base: str) -> str:
+        from cordon_scanner.contracts.reason_codes import ReasonCodes
+
+        lines = []
+        for change in changes:
+            version = (
+                f"{change.old} -> {change.new}"
+                if change.old and change.new
+                else (change.new or change.old or "")
+            )
+            for code, why in change.reasons():
+                title = f"{code} {ReasonCodes.lookup(code).title}"
+                lines.append(
+                    f"::error title={cls.prop(title)}::"
+                    + cls.data(f"{change.kind} {change.ecosystem}:{change.name} {version}: {why}")
+                )
+        if not lines:
+            lines.append(
+                "::notice title="
+                + cls.prop("Dependency review")
+                + "::"
+                + cls.data(f"{len(changes)} dependency change(s) since {base}; nothing blocks")
+            )
+        return "\n".join(lines)
+
+
 class ReviewCommand:
     @staticmethod
     def add_parser(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
@@ -379,13 +444,24 @@ class ReviewCommand:
             metavar="REF",
             help="the revision to compare with, e.g. origin/main",
         )
-        review.add_argument("--format", choices=("text", "markdown", "json"), default="text")
+        review.add_argument(
+            "--format",
+            choices=("text", "markdown", "json", "github"),
+            default="text",
+            help="github: one ::error annotation per blocking reason, titled with its reason code",
+        )
         review.add_argument(
             "--online",
             action="store_true",
             help="fetch each changed package's old and new releases from its registry, verify, scan and compare them",
         )
         review.add_argument("--quiet", action="store_true", help="no progress on stderr")
+        review.add_argument(
+            "--annotations",
+            metavar="FILE",
+            help="also write the review as GitHub annotations (one ::error per blocking reason, titled with its "
+            "reason code) to FILE, from the same pass",
+        )
 
     @staticmethod
     def run(args: argparse.Namespace) -> int:
@@ -406,9 +482,22 @@ class ReviewCommand:
             )
         elif args.format == "markdown":
             print(ReviewReport.markdown(changes, args.base))
+        elif args.format == "github":
+            print(GithubAnnotations.render(changes, args.base))
         else:
             print(ReviewReport.text(changes, args.base))
+        if getattr(args, "annotations", None):
+            Path(args.annotations).write_text(
+                GithubAnnotations.render(changes, args.base) + "\n", encoding="utf-8"
+            )
         return int(ExitCode.FINDINGS if any(c.blocking for c in changes) else ExitCode.CLEAN)
 
 
-__all__ = ["ChangeReview", "GraphDiff", "PackageChange", "ReviewCommand", "ReviewReport"]
+__all__ = [
+    "ChangeReview",
+    "GithubAnnotations",
+    "GraphDiff",
+    "PackageChange",
+    "ReviewCommand",
+    "ReviewReport",
+]
