@@ -7,10 +7,15 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+from cordon_scanner.intel.registries.record_sources.ansible import AnsibleSource
 from cordon_scanner.intel.registries.record_sources.base import RecordSource
 from cordon_scanner.intel.registries.record_sources.cargo import CargoSource
+from cordon_scanner.intel.registries.record_sources.cocoapods import CocoapodsSource
+from cordon_scanner.intel.registries.record_sources.composer import ComposerSource
+from cordon_scanner.intel.registries.record_sources.conda import CondaSource
 from cordon_scanner.intel.registries.record_sources.hex import HexSource
 from cordon_scanner.intel.registries.record_sources.npm import NpmSource
+from cordon_scanner.intel.registries.record_sources.nuget import NugetSource
 from cordon_scanner.intel.registries.record_sources.pub import PubSource
 from cordon_scanner.intel.registries.record_sources.pypi import PypiSource
 from cordon_scanner.intel.registries.record_sources.rubygems import RubygemsSource
@@ -24,6 +29,11 @@ class RecordSources:
         RubygemsSource(),
         HexSource(),
         PubSource(),
+        ComposerSource(),
+        CocoapodsSource(),
+        AnsibleSource(),
+        CondaSource(),
+        NugetSource(),
     )
 
     @classmethod

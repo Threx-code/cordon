@@ -1,0 +1,173 @@
+{
+ "data": [
+  {
+   "created_at": "2026-11-09T19:50:45.269132Z",
+   "href": "/api/content/published/v3/plugin/ansible/content/published/collections/index/community/general/versions/14.0.1/",
+   "marks": [],
+   "requires_ansible": ">=2.19.0",
+   "updated_at": "2026-11-09T19:50:45.456021Z",
+   "version": "14.0.1"
+  },
+  {
+   "created_at": "2026-11-02T20:34:37.847000Z",
+   "href": "/api/content/published/v3/plugin/ansible/content/published/collections/index/community/general/versions/14.0.0/",
+   "marks": [],
+   "requires_ansible": ">=2.19.0",
+   "updated_at": "2026-11-02T20:34:38.038071Z",
+   "version": "14.0.0"
+  },
+  {
+   "created_at": "2026-11-02T20:11:57.608212Z",
+   "href": "/api/content/published/v3/plugin/ansible/content/published/collections/index/community/general/versions/13.5.1/",
+   "marks": [],
+   "requires_ansible": ">=2.18.0",
+   "updated_at": "2026-11-02T20:11:57.835673Z",
+   "version": "13.5.1"
+  },
+  {
+   "created_at": "2026-11-02T20:04:51.983663Z",
+   "href": "/api/content/published/v3/plugin/ansible/content/published/collections/index/community/general/versions/12.6.7/",
+   "marks": [],
+   "requires_ansible": ">=2.17.0",
+   "updated_at": "2026-11-02T20:04:52.211354Z",
+   "version": "12.6.7"
+  },
+  {
+   "created_at": "2026-11-02T19:51:23.204455Z",
+   "href": "/api/content/published/v3/plugin/ansible/content/published/collections/index/community/general/versions/11.4.10/",
+   "marks": [],
+   "requires_ansible": ">=2.16.0",
+   "updated_at": "2026-11-02T19:51:23.443624Z",
+   "version": "11.4.10"
+  },
+  {
+   "created_at": "2026-10-05T17:30:02.457618Z",
+   "href": "/api/content/published/v3/plugin/ansible/content/published/collections/index/community/general/versions/13.5.0/",
+   "marks": [],
+   "requires_ansible": ">=2.18.0",
+   "updated_at": "2026-10-05T17:30:02.767529Z",
+   "version": "13.5.0"
+  },
+  {
+   "created_at": "2026-10-05T17:21:51.266993Z",
+   "href": "/api/content/published/v3/plugin/ansible/content/published/collections/index/community/general/versions/12.6.6/",
+   "marks": [],
+   "requires_ansible": ">=2.17.0",
+   "updated_at": "2026-10-05T17:21:51.503539Z",
+   "version": "12.6.6"
+  },
+  {
+   "created_at": "2026-09-07T20:10:28.542735Z",
+   "href": "/api/content/published/v3/plugin/ansible/content/published/collections/index/community/general/versions/13.4.0/",
+   "marks": [],
+   "requires_ansible": ">=2.18.0",
+   "updated_at": "2026-09-07T20:10:28.786807Z",
+   "version": "13.4.0"
+  },
+  {
+   "created_at": "2026-09-07T20:03:55.300530Z",
+   "href": "/api/content/published/v3/plugin/ansible/content/published/collections/index/community/general/versions/12.6.5/",
+   "marks": [],
+   "requires_ansible": ">=2.17.0",
+   "updated_at": "2026-09-07T20:03:55.547000Z",
+   "version": "12.6.5"
+  },
+  {
+   "created_at": "2026-08-10T19:03:31.960225Z",
+   "href": "/api/content/published/v3/plugin/ansible/content/published/collections/index/community/general/versions/13.3.0/",
+   "marks": [],
+   "requires_ansible": ">=2.18.0",
+   "updated_at": "2026-08-10T19:03:32.173874Z",
+   "version": "13.3.0"
+  },
+  {
+   "created_at": "2026-08-10T18:22:32.454167Z",
+   "href": "/api/content/published/v3/plugin/ansible/content/published/collections/index/community/general/versions/12.6.4/",
+   "marks": [],
+   "requires_ansible": ">=2.17.0",
+   "updated_at": "2026-08-10T18:22:32.704280Z",
+   "version": "12.6.4"
+  },
+  {
+   "created_at": "2026-07-13T20:08:50.245470Z",
+   "href": "/api/content/published/v3/plugin/ansible/content/published/collections/index/community/general/versions/13.2.0/",
+   "marks": [],
+   "requires_ansible": ">=2.18.0",
+   "updated_at": "2026-07-13T20:08:50.438643Z",
+   "version": "13.2.0"
+  },
+  {
+   "created_at": "2026-07-13T20:02:41.121886Z",
+   "href": "/api/content/published/v3/plugin/ansible/content/published/collections/index/community/general/versions/12.6.3/",
+   "marks": [],
+   "requires_ansible": ">=2.17.0",
+   "updated_at": "2026-07-13T20:02:41.386693Z",
+   "version": "12.6.3"
+  },
+  {
+   "created_at": "2026-06-16T16:52:20.776338Z",
+   "href": "/api/content/published/v3/plugin/ansible/content/published/collections/index/community/general/versions/13.1.0/",
+   "marks": [],
+   "requires_ansible": ">=2.18.0",
+   "updated_at": "2026-06-16T16:52:20.999211Z",
+   "version": "13.1.0"
+  },
+  {
+   "created_at": "2026-06-14T20:13:59.069160Z",
+   "href": "/api/content/published/v3/plugin/ansible/content/published/collections/index/community/general/versions/12.6.2/",
+   "marks": [],
+   "requires_ansible": ">=2.17.0",
+   "updated_at": "2026-06-14T20:13:59.320786Z",
+   "version": "12.6.2"
+  },
+  {
+   "created_at": "2026-06-14T10:00:38.811932Z",
+   "href": "/api/content/published/v3/plugin/ansible/content/published/collections/index/community/general/versions/11.4.9/",
+   "marks": [],
+   "requires_ansible": ">=2.16.0",
+   "updated_at": "2026-06-14T10:00:39.030084Z",
+   "version": "11.4.9"
+  },
+  {
+   "created_at": "2026-05-25T19:41:05.532883Z",
+   "href": "/api/content/published/v3/plugin/ansible/content/published/collections/index/community/general/versions/13.0.1/",
+   "marks": [],
+   "requires_ansible": ">=2.18.0",
+   "updated_at": "2026-05-25T19:41:05.777261Z",
+   "version": "13.0.1"
+  },
+  {
+   "created_at": "2026-05-20T05:25:29.187736Z",
+   "href": "/api/content/published/v3/plugin/ansible/content/published/collections/index/community/general/versions/13.0.0/",
+   "marks": [],
+   "requires_ansible": ">=2.18.0",
+   "updated_at": "2026-05-20T05:25:29.669945Z",
+   "version": "13.0.0"
+  },
+  {
+   "created_at": "2026-05-17T11:55:12.571822Z",
+   "href": "/api/content/published/v3/plugin/ansible/content/published/collections/index/community/general/versions/12.6.1/",
+   "marks": [],
+   "requires_ansible": ">=2.17.0",
+   "updated_at": "2026-05-17T11:55:12.813181Z",
+   "version": "12.6.1"
+  },
+  {
+   "created_at": "2026-05-17T11:34:49.375534Z",
+   "href": "/api/content/published/v3/plugin/ansible/content/published/collections/index/community/general/versions/11.4.8/",
+   "marks": [],
+   "requires_ansible": ">=2.16.0",
+   "updated_at": "2026-05-17T11:34:49.607824Z",
+   "version": "11.4.8"
+  }
+ ],
+ "links": {
+  "first": "/api/v3/plugin/ansible/content/published/collections/index/community/general/versions/?limit=20&offset=0",
+  "last": "/api/v3/plugin/ansible/content/published/collections/index/community/general/versions/?limit=20&offset=228",
+  "next": "/api/v3/plugin/ansible/content/published/collections/index/community/general/versions/?limit=20&offset=20",
+  "previous": null
+ },
+ "meta": {
+  "count": 248
+ }
+}

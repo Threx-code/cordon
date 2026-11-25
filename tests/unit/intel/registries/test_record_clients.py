@@ -203,6 +203,247 @@ class TestPub:
         assert record is not None and record.publisher == ""
 
 
+class TestComposer:
+    FILES = ("composer.json",)
+    NAME = "psr/log"
+
+    def test_the_minified_list_is_made_whole_before_it_is_read(self) -> None:
+        expanded = RecordSources.of("composer").expand(
+            Fixtures.load("composer.json")["packages"][self.NAME]
+        )  # type: ignore[union-attr]
+        assert len(expanded) == 12 and all(
+            e["version"] and e["time"] and e["name"] == self.NAME for e in expanded
+        )
+
+    def test_the_newest_release_its_history_and_what_a_publisher_is_here(self) -> None:
+        record = Fixtures.record("composer", self.NAME, "3.0.2", self.FILES)
+        assert record is not None
+        assert (record.published, record.prior_versions, record.previous_version) == (
+            "2024-09-11T13:17:53",
+            11,
+            "3.0.1",
+        )
+        assert (
+            record.created.startswith("2012-12-21")
+            and record.publisher_kind == "none"
+            and record.publisher == ""
+        )
+
+    def test_an_abandoned_package_is_withdrawn_in_the_registrys_word_and_the_flag_is_inherited_down_the_list(
+        self,
+    ) -> None:
+        def abandon(documents: dict[str, Any]) -> None:
+            next(iter(documents.values()))["packages"][self.NAME][0]["abandoned"] = True
+
+        newest = Fixtures.record("composer", self.NAME, "3.0.2", self.FILES, abandon)
+        oldest = Fixtures.record("composer", self.NAME, "1.0.0", self.FILES, abandon)
+        assert newest is not None and newest.withdrawn == "abandoned"
+        assert oldest is not None and oldest.withdrawn == "abandoned"
+
+    def test_a_key_a_later_entry_unsets_is_gone_from_it(self) -> None:
+        def abandon_then_forgive(documents: dict[str, Any]) -> None:
+            entries = next(iter(documents.values()))["packages"][self.NAME]
+            entries[0]["abandoned"] = True
+            entries[1]["abandoned"] = "__unset"
+
+        forgiven = Fixtures.record("composer", self.NAME, "3.0.1", self.FILES, abandon_then_forgive)
+        assert forgiven is not None and forgiven.withdrawn == ""
+
+    @pytest.mark.parametrize(
+        "name", ["Psr/Log", "psr", "psr/log/extra", "../../x/y", "psr/log?x", ""]
+    )
+    def test_a_name_that_is_not_vendor_slash_package_asks_for_nothing(self, name: str) -> None:
+        assert RecordSources.of("composer").documents(name, "1.0.0") == ()  # type: ignore[union-attr]
+
+
+class TestCocoapods:
+    FILES = ("cocoapods.json",)
+
+    def test_the_newest_release_and_the_trunk_time_format(self) -> None:
+        record = Fixtures.record("cocoapods", "Alamofire", "5.9.1", self.FILES)
+        assert record is not None
+        assert record.published == "2024-03-31T01:24:57" and record.prior_versions == 91
+        assert record.publisher_kind == "namespace" and record.created.startswith("2015-01-09")
+
+    def test_the_owners_are_named_and_no_address_is_kept(self) -> None:
+        record = Fixtures.record("cocoapods", "Alamofire", "5.9.1", self.FILES)
+        assert (
+            record is not None
+            and "Christian Noon" in record.owners
+            and record.maintainers == len(record.owners)
+        )
+        assert not any("@" in owner for owner in record.owners)
+
+    def test_a_version_the_pod_does_not_have(self) -> None:
+        assert Fixtures.record("cocoapods", "Alamofire", "99.0.0", self.FILES) is None
+
+    @pytest.mark.parametrize("name", ["", "../x", "a/b", "a b", ".hidden"])
+    def test_a_name_that_is_not_a_pod_name_asks_for_nothing(self, name: str) -> None:
+        assert RecordSources.of("cocoapods").documents(name, "1.0.0") == ()  # type: ignore[union-attr]
+
+
+class TestAnsible:
+    NAME = "community.general"
+    FILES = ("ansible.json", None)
+
+    def test_the_newest_release_on_the_first_page(self) -> None:
+        record = Fixtures.record("ansible", self.NAME, "14.0.1", self.FILES)
+        assert record is not None
+        assert (record.published, record.prior_versions, record.previous_version) == (
+            "2026-11-09T19:50:45",
+            19,
+            "14.0.0",
+        )
+        assert record.publisher == "community" and record.publisher_kind == "namespace"
+
+    def test_a_deprecated_collection_says_so(self) -> None:
+        def deprecate(documents: dict[str, Any]) -> None:
+            documents[list(documents)[1]] = {"deprecated": True}
+
+        record = Fixtures.record(
+            "ansible", self.NAME, "14.0.1", (*self.FILES[:1], "ansible.json"), deprecate
+        )
+        assert record is not None and record.withdrawn == "deprecated"
+
+    def test_the_next_page_is_asked_for_and_only_on_this_registrys_own_path(self) -> None:
+        source = RecordSources.of("ansible")
+        assert source is not None
+        first = next(iter(source.documents(self.NAME, "14.0.1"))).url
+        found = {first: Fixtures.load("ansible.json")}
+        asked = [d.url for d in source.followed(self.NAME, "14.0.1", found)]
+        assert asked == ["https://galaxy.ansible.com" + found[first]["links"]["next"]]
+
+        found[first]["links"]["next"] = "https://evil.example.invalid/api/v3/x/versions/?offset=20"
+        assert source.followed(self.NAME, "14.0.1", found) == ()
+
+    def test_the_fetch_follows_the_pages_until_there_are_no_more_and_never_loops(
+        self, monkeypatch
+    ) -> None:
+        from cordon_scanner.intel.registries import registry_client
+        from cordon_scanner.intel.registries.record_sources.base import RecordFetch
+
+        first = Fixtures.load("ansible.json")
+        second = {
+            "data": [{"version": "0.0.1", "created_at": "2020-01-01T00:00:00Z"}],
+            "links": {"next": first["links"]["next"]},
+        }
+        calls: list[str] = []
+
+        def fetch(url: str) -> Any:
+            calls.append(url)
+            return second if "offset=20" in url else first
+
+        monkeypatch.setattr(registry_client.RegistryClient, "_fetch", staticmethod(fetch))
+        source = RecordSources.of("ansible")
+        assert source is not None
+        documents = RecordFetch.documents(source, self.NAME, "14.0.1")
+        assert (
+            documents is not None and len(calls) == len(set(calls)) == 3
+        )  # first, collection, page 2; page 2 points to itself
+        record = source.record(self.NAME, "14.0.1", documents)
+        assert (
+            record is not None
+            and record.prior_versions == 20
+            and record.created.startswith("2020-01-01")
+        )
+
+    @pytest.mark.parametrize("name", ["general", "a.b.c", "Community.General", "../x.y", ""])
+    def test_a_name_that_is_not_namespace_dot_name_asks_for_nothing(self, name: str) -> None:
+        assert RecordSources.of("ansible").documents(name, "1.0.0") == ()  # type: ignore[union-attr]
+
+
+class TestConda:
+    FILES = ("conda.json",)
+
+    def test_a_version_is_as_old_as_its_earliest_file(self) -> None:
+        record = Fixtures.record("conda", "zlib", "1.3.2", self.FILES)
+        assert record is not None
+        assert (record.published, record.prior_versions, record.previous_version) == (
+            "2026-03-21T" + record.published[11:],
+            6,
+            "1.3.1",
+        )
+        assert (
+            record.publisher == "conda-forge"
+            and record.publisher_kind == "namespace"
+            and record.manifest_known
+        )
+
+    def test_an_older_release_does_not_borrow_the_newest_ones_manifest(self) -> None:
+        record = Fixtures.record("conda", "zlib", "1.3.1", self.FILES)
+        assert record is not None and not record.manifest_known
+
+    def test_the_channel_may_be_named(self) -> None:
+        source = RecordSources.of("conda")
+        assert source is not None
+        assert (
+            source.documents("zlib", "1.3.2")[0].url
+            == source.documents("conda-forge/zlib", "1.3.2")[0].url
+        )
+        assert source.documents("anaconda/zlib", "1.3.2")[0].url.endswith("/package/anaconda/zlib")
+
+    @pytest.mark.parametrize("name", ["", "../zlib", "a/b/c", "Zlib", "z lib", "a/../b"])
+    def test_a_name_that_is_not_a_package_asks_for_nothing(self, name: str) -> None:
+        assert RecordSources.of("conda").documents(name, "1") == ()  # type: ignore[union-attr]
+
+
+class TestNuget:
+    FILES = ("nuget_index.json",)
+    NAME = "Newtonsoft.Json"
+
+    def test_the_first_release_and_the_next(self) -> None:
+        first = Fixtures.record("nuget", self.NAME, "3.5.8", self.FILES)
+        second = Fixtures.record("nuget", self.NAME, "4.0.1", self.FILES)
+        assert (
+            first is not None
+            and first.prior_versions == 0
+            and first.published.startswith("2011-01-08")
+        )
+        assert second is not None and (second.prior_versions, second.previous_version) == (
+            1,
+            "3.5.8",
+        )
+        assert second.publisher_kind == "none" and second.has_author
+
+    def test_the_history_runs_across_the_pages_of_the_index(self) -> None:
+        record = Fixtures.record("nuget", self.NAME, "12.0.1", self.FILES)
+        assert record is not None and record.prior_versions == 46
+
+    def test_an_unlisted_release_says_so_in_the_registrys_word(self) -> None:
+        def unlist(documents: dict[str, Any]) -> None:
+            index = next(iter(documents.values()))
+            index["items"][0]["items"][1]["catalogEntry"]["listed"] = False
+
+        record = Fixtures.record("nuget", self.NAME, "4.0.1", self.FILES, unlist)
+        assert record is not None and record.withdrawn == "unlisted"
+
+    def test_the_sentinel_date_of_an_unlisted_package_is_not_a_date(self) -> None:
+        def sentinel(documents: dict[str, Any]) -> None:
+            index = next(iter(documents.values()))
+            index["items"][0]["items"][2]["catalogEntry"]["published"] = "1900-01-01T00:00:00+00:00"
+
+        before = Fixtures.record("nuget", self.NAME, "4.0.1", self.FILES, sentinel)
+        assert before is not None and before.prior_versions == 1
+        assert Fixtures.record("nuget", self.NAME, "4.0.2", self.FILES, sentinel) is None
+
+    def test_a_page_that_is_not_inline_is_a_document_of_this_package_only(self) -> None:
+        source = RecordSources.of("nuget")
+        assert source is not None
+        base = "https://api.nuget.org/v3/registration5-gz-semver2/newtonsoft.json/"
+        index = {
+            "items": [
+                {"@id": base + "page/1.0.0/2.0.0.json", "count": 3},
+                {"@id": "https://evil.example.invalid/p.json", "count": 1},
+            ]
+        }
+        asked = source.followed(self.NAME, "1.0.0", {base + "index.json": index})
+        assert [d.url for d in asked] == [base + "page/1.0.0/2.0.0.json"]
+
+    @pytest.mark.parametrize("name", ["", "../x", "a/b", "a b", ".x", "x" * 101])
+    def test_a_name_that_is_not_a_package_id_asks_for_nothing(self, name: str) -> None:
+        assert RecordSources.of("nuget").documents(name, "1.0.0") == ()  # type: ignore[union-attr]
+
+
 class TestEveryRecordIsSerialisable:
     @pytest.mark.parametrize(
         ("ecosystem", "name", "version", "files"),
@@ -211,6 +452,10 @@ class TestEveryRecordIsSerialisable:
             ("rubygems", "abbrev", "0.1.2", TestRubygems.FILES),
             ("hex", "plug_crypto", "1.1.2", TestHex.FILES),
             ("pub", "equatable", "0.1.2", TestPub.FILES),
+            ("composer", "psr/log", "3.0.2", TestComposer.FILES),
+            ("cocoapods", "Alamofire", "5.9.1", TestCocoapods.FILES),
+            ("conda", "zlib", "1.3.2", TestConda.FILES),
+            ("nuget", "Newtonsoft.Json", "4.0.1", TestNuget.FILES),
         ],
     )
     def test_a_record_survives_the_store(self, tmp_path, ecosystem, name, version, files) -> None:

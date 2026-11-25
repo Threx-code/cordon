@@ -162,13 +162,17 @@ class TestTheFetch:
             RecordFetch.documents(Greedy(), "pkg", "1.0.0")
 
 
+#: A valid name where an ecosystem's own rule asks for more than a word.
+NAMES = {"composer": "vendor/example", "ansible": "community.example"}
+
+
 class TestTheTable:
     def test_the_table_and_the_constant_name_the_same_ecosystems(self) -> None:
         assert RecordSources.ecosystems() == ECOSYSTEMS
 
     def test_every_source_asks_https_documents_and_says_what_its_publisher_is(self) -> None:
         for source in RecordSources.SOURCES:
-            documents = source.documents("example", "1.0.0")
+            documents = source.documents(NAMES.get(source.ecosystem, "example"), "1.0.0")
             assert documents and all(d.url.startswith("https://") for d in documents), (
                 source.ecosystem
             )
