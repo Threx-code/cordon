@@ -70,6 +70,13 @@ class RecordSource(ABC):
     def documents(self, name: str, version: str) -> tuple[Document, ...]:
         """The documents the record of `name` at `version` is read from."""
 
+    def followed(
+        self, name: str, version: str, documents: Mapping[str, Any]
+    ) -> tuple[Document, ...]:
+        """Documents the first ones point to (the pages of a registration index, the per-version answers of a proxy), asked for once
+        the first round is read; none by default. They are fetched the same way, and passed to `record` beside the first ones."""
+        return ()
+
     @abstractmethod
     def record(
         self, name: str, version: str, documents: Mapping[str, Any]
@@ -127,20 +134,33 @@ class RecordFetch:
     """Fetching a source's documents: https only, bounded, no redirect, and the registry client's own readers."""
 
     MAX_DOCUMENTS: ClassVar[int] = 8
+    MAX_FOLLOWED: ClassVar[int] = 64
 
     @classmethod
     def documents(
         cls, source: RecordSource, name: str, version: str, *, token: str | None = None
     ) -> dict[str, Any] | None:
         """The documents by URL, or None when a required one is missing (the registry does not hold the name)."""
-        from cordon_scanner.intel.registries.registry_client import RegistryClient
-        from cordon_scanner.intel.registries.registry_http import RegistryHttp
-        from cordon_scanner.intel.registries.registry_request import PackageNotFound
-
         wanted = source.documents(name, version)
         if len(wanted) > cls.MAX_DOCUMENTS:
             raise ValueError(f"a record is read from at most {cls.MAX_DOCUMENTS} documents")
         found: dict[str, Any] = {}
+        if not cls._fetch_into(wanted, found, token):
+            return None
+        more = source.followed(name, version, found)
+        if len(more) > cls.MAX_FOLLOWED:
+            raise ValueError(f"a record follows at most {cls.MAX_FOLLOWED} documents")
+        if more and not cls._fetch_into(more, found, token):
+            return None
+        return found
+
+    @staticmethod
+    def _fetch_into(wanted: tuple[Document, ...], found: dict[str, Any], token: str | None) -> bool:
+        """Fetch each document into `found`; False when a required one is missing."""
+        from cordon_scanner.intel.registries.registry_client import RegistryClient
+        from cordon_scanner.intel.registries.registry_http import RegistryHttp
+        from cordon_scanner.intel.registries.registry_request import PackageNotFound
+
         for document in wanted:
             if document.needs_token and not token:
                 found[document.url] = None
@@ -153,6 +173,6 @@ class RecordFetch:
                 )
             except PackageNotFound:
                 if document.required:
-                    return None
+                    return False
                 found[document.url] = None
-        return found
+        return True

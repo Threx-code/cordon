@@ -106,6 +106,7 @@ class IntelCommand:
         from cordon_scanner.foundation.content import FileContent
         from cordon_scanner.intel.malware import feed
         from cordon_scanner.intel.registries.registry_client import RegistryError
+        from cordon_scanner.intel.registries.record_sources.acquire import RecordAcquire
         from cordon_scanner.intel.registries.registry_record import RegistryRecord
         from cordon_scanner.intel.registries.release_history import ReleaseHistory
         from cordon_scanner.sources.archive import ArchiveReader
@@ -131,7 +132,7 @@ class IntelCommand:
             if identity is not None and identity[0] in RegistryRecord.ECOSYSTEMS_READ:
                 # The registry's record of this release, for the second review's publisher facts.
                 try:
-                    RegistryRecord.acquire(*identity)
+                    RecordAcquire.acquire(*identity)
                 except RegistryError as exc:
                     results.append(
                         {"target": target, "release": "@".join(identity[1:]), "error": str(exc)}

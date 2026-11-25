@@ -329,25 +329,5 @@ class RegistryRecord:
         AtomicFile.write(path, json.dumps(self.to_dict(), sort_keys=True))
         return path
 
-    # -- acquiring (network; `intel acquire` only) --------------------------------------
-
-    @classmethod
-    def acquire(
-        cls, ecosystem: str, name: str, version: str, *, token: str | None = None
-    ) -> RegistryRecord | None:
-        """Fetch the name's registry documents and keep the record as of `version`. Network. Every ecosystem is read through
-        its `RecordSource` (`record_sources/`): the same fetch, the same builder, the same store."""
-        from cordon_scanner.intel.registries.record_sources.base import RecordFetch
-        from cordon_scanner.intel.registries.record_sources.table import RecordSources
-
-        source = RecordSources.of(ecosystem)
-        if source is None:
-            return None
-        documents = RecordFetch.documents(source, name, version, token=token)
-        record = source.record(name, version, documents) if documents is not None else None
-        if record is not None:
-            record.save()
-        return record
-
 
 __all__ = ["ECOSYSTEMS", "INSTALL_HOOKS", "STORE_VERSION", "RegistryRecord"]

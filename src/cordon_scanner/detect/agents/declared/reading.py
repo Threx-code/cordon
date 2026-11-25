@@ -28,21 +28,48 @@ class DeclaredCapabilities:
     MAX_BYTES: ClassVar[int] = 1 << 20
     MAX_FILES: ClassVar[int] = 400
     PROGRAMS: ClassVar[dict[str, frozenset[str]]] = {
-        SHELL: frozenset({"sh", "bash", "zsh", "dash", "fish", "cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh"}),
+        SHELL: frozenset(
+            {
+                "sh",
+                "bash",
+                "zsh",
+                "dash",
+                "fish",
+                "cmd",
+                "cmd.exe",
+                "powershell",
+                "powershell.exe",
+                "pwsh",
+            }
+        ),
     }
-    FILESYSTEM_SERVERS: ClassVar[re.Pattern[str]] = re.compile(r"(?i)server-filesystem|mcp-filesystem|filesystem-mcp")
+    FILESYSTEM_SERVERS: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?i)server-filesystem|mcp-filesystem|filesystem-mcp"
+    )
     PATH_ARGUMENT: ClassVar[re.Pattern[str]] = re.compile(r"^(?:/|~/|\.\./|[A-Za-z]:[\\/])")
     CODE: ClassVar[dict[str, dict[str, re.Pattern[str]]]] = {
         "python": {
-            NETWORK: re.compile(r"\b(?:requests|httpx|aiohttp|urllib\.request|http\.client|websockets)\b|\bsocket\.(?:socket|create_connection)\b"),
-            SHELL: re.compile(r"\bsubprocess\b|\bos\.(?:system|popen|exec[lv]p?e?)\b|\bpty\.spawn\b"),
-            FILESYSTEM: re.compile(r"\bopen\s*\(|\bpathlib\b|\bshutil\.|\bos\.(?:listdir|remove|unlink|walk|rename|makedirs|scandir)\b"),
+            NETWORK: re.compile(
+                r"\b(?:requests|httpx|aiohttp|urllib\.request|http\.client|websockets)\b|\bsocket\.(?:socket|create_connection)\b"
+            ),
+            SHELL: re.compile(
+                r"\bsubprocess\b|\bos\.(?:system|popen|exec[lv]p?e?)\b|\bpty\.spawn\b"
+            ),
+            FILESYSTEM: re.compile(
+                r"\bopen\s*\(|\bpathlib\b|\bshutil\.|\bos\.(?:listdir|remove|unlink|walk|rename|makedirs|scandir)\b"
+            ),
             ENVIRONMENT: re.compile(r"\bos\.(?:environ|getenv)\b|\bdotenv\b"),
         },
         "javascript": {
-            NETWORK: re.compile(r"\bfetch\s*\(|\baxios\b|\bnode-fetch\b|\bXMLHttpRequest\b|\bWebSocket\b|\brequire\s*\(\s*['\"](?:node:)?https?['\"]|\bfrom\s+['\"](?:node:)?https?['\"]|\bnet\.(?:connect|createConnection)\b"),
-            SHELL: re.compile(r"\bchild_process\b|\bexecSync\b|\bspawnSync\b|\bexecFile\b|\bexeca\b"),
-            FILESYSTEM: re.compile(r"\bfs\.\w+|\brequire\s*\(\s*['\"](?:node:)?fs(?:/promises)?['\"]|\bfrom\s+['\"](?:node:)?fs(?:/promises)?['\"]|\bDeno\.(?:readFile|writeFile|readTextFile|writeTextFile)\b"),
+            NETWORK: re.compile(
+                r"\bfetch\s*\(|\baxios\b|\bnode-fetch\b|\bXMLHttpRequest\b|\bWebSocket\b|\brequire\s*\(\s*['\"](?:node:)?https?['\"]|\bfrom\s+['\"](?:node:)?https?['\"]|\bnet\.(?:connect|createConnection)\b"
+            ),
+            SHELL: re.compile(
+                r"\bchild_process\b|\bexecSync\b|\bspawnSync\b|\bexecFile\b|\bexeca\b"
+            ),
+            FILESYSTEM: re.compile(
+                r"\bfs\.\w+|\brequire\s*\(\s*['\"](?:node:)?fs(?:/promises)?['\"]|\bfrom\s+['\"](?:node:)?fs(?:/promises)?['\"]|\bDeno\.(?:readFile|writeFile|readTextFile|writeTextFile)\b"
+            ),
             ENVIRONMENT: re.compile(r"\bprocess\.env\b|\bDeno\.env\b"),
         },
     }
@@ -82,7 +109,7 @@ class DeclaredCapabilities:
             name = path.rsplit("/", 1)[-1]
             if name == "SKILL.md":
                 found |= cls.of_skill(text)
-            elif name.endswith(".json") or name.endswith((".toml", ".yaml", ".yml")):
+            elif name.endswith((".json", ".toml", ".yaml", ".yml")):
                 found |= cls.of_config(path, text)
             found |= cls.of_code(path, text)
         return frozenset(found)
@@ -98,18 +125,31 @@ class DeclaredCapabilities:
     @classmethod
     def of_server(cls, server: Mapping[str, Any]) -> frozenset[str]:
         found: set[str] = set()
-        if any(isinstance(server.get(key), str) and server[key].strip() for key in ("url", "serverUrl", "httpUrl")):
+        if any(
+            isinstance(server.get(key), str) and server[key].strip()
+            for key in ("url", "serverUrl", "httpUrl")
+        ):
             found.add(NETWORK)
         command = server.get("command")
-        args = [a for a in server.get("args", []) if isinstance(a, str)] if isinstance(server.get("args"), list) else []
-        program = command.replace("\\", "/").rsplit("/", 1)[-1].lower() if isinstance(command, str) else ""
+        args = (
+            [a for a in server.get("args", []) if isinstance(a, str)]
+            if isinstance(server.get("args"), list)
+            else []
+        )
+        program = (
+            command.replace("\\", "/").rsplit("/", 1)[-1].lower()
+            if isinstance(command, str)
+            else ""
+        )
         if program in cls.PROGRAMS[SHELL]:
             found.add(SHELL)
         env = server.get("env")
         if isinstance(env, Mapping) and env:
             found.add(ENVIRONMENT)
         words = [program, *args]
-        if any(cls.FILESYSTEM_SERVERS.search(w) for w in words) or any(cls.PATH_ARGUMENT.match(a) for a in args):
+        if any(cls.FILESYSTEM_SERVERS.search(w) for w in words) or any(
+            cls.PATH_ARGUMENT.match(a) for a in args
+        ):
             found.add(FILESYSTEM)
         return frozenset(found)
 
@@ -120,7 +160,11 @@ class DeclaredCapabilities:
         language = cls.SUFFIXES.get(suffix)
         if language is None:
             return frozenset()
-        return frozenset(name for name, pattern in cls.CODE[language].items() if pattern.search(text[: cls.MAX_BYTES]))
+        return frozenset(
+            name
+            for name, pattern in cls.CODE[language].items()
+            if pattern.search(text[: cls.MAX_BYTES])
+        )
 
     @classmethod
     def of_skill(cls, text: str) -> frozenset[str]:

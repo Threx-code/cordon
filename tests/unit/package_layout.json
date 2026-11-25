@@ -793,6 +793,7 @@
   "intel/registries/registry_client": "intel/registries/registry_client",
   "intel/registries/registry_image": "intel/registries/registry_image",
   "intel/registries/registry_record": "intel/registries/registry_record",
+  "intel/registries/record_sources/acquire": "intel/registries/record_sources/acquire",
   "intel/registries/record_sources/base": "intel/registries/record_sources/base",
   "intel/registries/record_sources/cargo": "intel/registries/record_sources/cargo",
   "intel/registries/record_sources/hex": "intel/registries/record_sources/hex",
