@@ -426,9 +426,13 @@ class TestTenantsShareTheAnalysisAndNeverTheDecision:
     """BP-22-8, code part: the decision's key includes the policy's sha, so no decision is shared across tenants; the analysis of a public digest is
     kept under a key with neither a policy nor a tenant in it, so it is."""
 
-    SUSPICIOUS = FindingFact(rule_id="SUSPECT.X.001", severity="high", confidence="high", category="suspicious")
+    SUSPICIOUS = FindingFact(
+        rule_id="SUSPECT.X.001", severity="high", confidence="high", category="suspicious"
+    )
 
-    def tenant(self, root: Path, rules: list[dict[str, Any]] | None) -> tuple[CordonRuntime, SpyStore]:
+    def tenant(
+        self, root: Path, rules: list[dict[str, Any]] | None
+    ) -> tuple[CordonRuntime, SpyStore]:
         calls = Calls()
         calls.scan_answer = ScanEvidence(findings=(self.SUSPICIOUS,))
         platform, store = Platform(), SpyStore(root)
@@ -436,7 +440,9 @@ class TestTenantsShareTheAnalysisAndNeverTheDecision:
         expires = T0 + timedelta(days=2)
         policy = Kit.compiled(1, expires, on_incomplete=LEVELS, rules=rules)
         local.accept([platform.publish(policy, issued=T0, expires=expires)], T0)
-        return CordonRuntime(local, resolvers={"ci_action": Calls.resolver}, sources=calls.sources()), store
+        return CordonRuntime(
+            local, resolvers={"ci_action": Calls.resolver}, sources=calls.sources()
+        ), store
 
     def test_two_policies_give_two_keys_for_the_same_question(self, tmp_path: Path) -> None:
         lenient, _ = self.tenant(tmp_path / "a", None)
