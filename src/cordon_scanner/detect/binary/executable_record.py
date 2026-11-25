@@ -155,6 +155,8 @@ class ExecutableRecord:
         ranges: list[tuple[int, int]] = []
         for i in range(min(shnum, cls.MAX_SECTIONS)):
             base = shoff + i * shentsize
+            if base + shentsize > len(data):
+                break
             kind = struct.unpack_from(order + "I", data, base + 4)[0]
             offset, size = struct.unpack_from(
                 order + ("QQ" if wide else "II"), data, base + (24 if wide else 16)
@@ -187,6 +189,8 @@ class ExecutableRecord:
         ranges: list[tuple[int, int]] = []
         table = optional + optional_size
         for i in range(min(count, cls.MAX_SECTIONS)):
+            if table + i * 40 + 24 > len(data):
+                break
             size, pointer = struct.unpack_from("<II", data, table + i * 40 + 16)
             if size and pointer + size <= len(data):
                 ranges.append((pointer, size))
@@ -220,9 +224,9 @@ class ExecutableRecord:
         names: list[str] = []
         ranges: list[tuple[int, int]] = []
         signed = False
-        for cpu, offset, size in cls._fat(data):
+        for _cpu, offset, size in cls._fat(data):
             arch, found, sig = cls._macho(data[offset : offset + size], 0)
-            names.append(arch if arch != "unknown" else cls.MACHO_CPUS.get(cpu, "other"))
+            names.append(arch)
             ranges.extend((offset + start, length) for start, length in found)
             signed = signed or sig
         return "+".join(sorted(set(names))), ranges[: cls.MAX_SECTIONS], signed
@@ -236,6 +240,8 @@ class ExecutableRecord:
         ranges: list[tuple[int, int]] = []
         signed = False
         for _ in range(min(count, 256)):
+            if cursor + 8 > len(data):
+                break
             kind, size = struct.unpack_from(order + "II", data, cursor)
             if size < 8:
                 break
