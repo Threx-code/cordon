@@ -31,8 +31,7 @@ from cordon_scanner.foundation.models import (
     RedactionMode,
     Severity,
 )
-from cordon_scanner.intel.malware.reuse_index import ReuseKeys
-from cordon_scanner.intel.registry import ReuseIndex
+from cordon_scanner.intel.registry import ReuseIndex, ReuseKeys
 
 if TYPE_CHECKING:
     from cordon_scanner.detect.base import ScanContext

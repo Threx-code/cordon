@@ -235,6 +235,11 @@ class Accumulator:
     MAX_BINARIES: ClassVar[int] = 4096
     MAX_REUSE: ClassVar[int] = 4096
 
+    @classmethod
+    def for_config(cls, config: Any) -> Accumulator:
+        """A scan's accumulator under `config`: its finding cap, and reuse keys when it asks for them."""
+        return cls(finding_cap=config.limits.max_findings, reuse_keys=config.reuse_keys)
+
     def scanned(
         self, path: str, content: FileContent | None = None, opens: str | None = None
     ) -> None:
@@ -273,7 +278,7 @@ class Accumulator:
         the whole file, from what is held, its spill, or its file on disk (`opens`)."""
         from cordon_scanner.analysis.shared.languages import LanguageRegistry
         from cordon_scanner.foundation.formats.scanned_json import ScannedJson
-        from cordon_scanner.intel.malware.reuse_index import ReuseIndex, ReuseKeys
+        from cordon_scanner.intel.registry import ReuseIndex, ReuseKeys
 
         keys: list[bytes] = []
         if ReuseKeys.is_code(path, content.is_binary, LanguageRegistry.of_file(path, content)):

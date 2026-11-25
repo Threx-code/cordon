@@ -10,7 +10,6 @@ import subprocess
 import time
 
 import pytest
-from tests.unit.intel.registries.test_dependency_review import ReviewHelpers
 
 from cordon_scanner.cli.commands.review import (
     ChangeReview,
@@ -19,6 +18,8 @@ from cordon_scanner.cli.commands.review import (
     PackageChange,
     ReviewCommand,
 )
+from support import ROOT
+from unit.intel.registries.test_dependency_review import ReviewHelpers
 
 
 class Gate:
@@ -154,7 +155,6 @@ class TestThePullRequest:
     def test_the_markdown_pass_also_writes_the_annotations_and_the_action_prints_them(
         self, tmp_path, capsys
     ) -> None:
-        from pathlib import Path
 
         root = Gate.repository(tmp_path / "repo", {"ms": "2.0.0"}, {"ms": "2.1.3"})
         written = tmp_path / "out.annotations"
@@ -168,9 +168,7 @@ class TestThePullRequest:
         )
         assert ReviewCommand.run(args) == 0
         assert written.read_text(encoding="utf-8").startswith("::notice ")
-        action = (Path(__file__).resolve().parents[4] / "action" / "action.yml").read_text(
-            encoding="utf-8"
-        )
+        action = (ROOT / "action" / "action.yml").read_text(encoding="utf-8")
         assert 'rm -f "$notes"' in action and '--annotations "$notes"' in action, "removed first"
         assert '2> "$RUNNER_TEMP/cordon-review.err"' in action, "stderr never reaches the runner"
         assert 'if [ "$code" -le 1 ]' in action, "only a finished review is printed"

@@ -236,9 +236,7 @@ class Engine:
         from cordon_scanner.images.host import HostFilesystem
 
         started = time.monotonic()
-        acc = Accumulator(
-            finding_cap=self.config.limits.max_findings, reuse_keys=self.config.reuse_keys
-        )
+        acc = Accumulator.for_config(self.config)
         intel = self._intel_status(acc)
         if not root.is_dir():
             raise SourceError(f"--host needs a directory to read as a filesystem root: {root}")
@@ -294,9 +292,7 @@ class Engine:
 
     def _scan(self, target: str | Path) -> ScanResult:
         started = time.monotonic()
-        acc = Accumulator(
-            finding_cap=self.config.limits.max_findings, reuse_keys=self.config.reuse_keys
-        )
+        acc = Accumulator.for_config(self.config)
 
         root = ScanStages.resolve_target(target, acc)
         intel = self._intel_status(acc)

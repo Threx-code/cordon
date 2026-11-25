@@ -1,4 +1,4 @@
-"""A published npm package that is one campaign with releases already condemned (review 98 C3).
+"""A published package that is one campaign with releases already condemned, in any ecosystem.
 
 A campaign republishes one payload under many names and versions. Its variants share what a
 renaming does not touch -- the manifest's shape, the file tree, the dependency list -- and
@@ -18,7 +18,7 @@ reference set. The release itself, by name and version, is not its own sibling.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, Unit
 from cordon_scanner.detect.catalogue import DeclaredRule
@@ -45,10 +45,7 @@ MAX_MANIFEST = 1 << 20
 
 
 class CampaignSiblingDetector(BaseDetector):
-    """Reports a published npm package whose campaign fingerprint matches a condemned release's."""
-
-    APPLIES_TO: ClassVar[frozenset[str]] = frozenset({"npm"})
-    """The distributions whose campaigns the shipped index holds."""
+    """Reports a published package, in any ecosystem, whose campaign fingerprint matches a condemned release's."""
 
     id = "campaign-sibling"
     version = "0.1.0"
@@ -88,40 +85,73 @@ class CampaignSiblingDetector(BaseDetector):
         return (self._finding(unit, ctx, *found),)
 
     @staticmethod
+    def root_manifest(path: str) -> str | None:
+        """The ecosystem whose package this archive member is the manifest of: a manifest file the ecosystem's own
+        parser reads, at the package's root (at most one directory in) or where its archive keeps it."""
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+        _, bang, member = path.rpartition("!")
+        if not bang or member.count("/") > 1:
+            return None
+        ecosystem = EcosystemRegistry.manifest_ecosystem(member)
+        if ecosystem in EcosystemRegistry.PACKAGE_JSON_FINGERPRINTS:
+            # As the shipped index was built: the package.json one directory in, never a deno.json.
+            return (
+                ecosystem if member.count("/") == 1 and member.endswith("/package.json") else None
+            )
+        return ecosystem
+
+    @staticmethod
     def siblings_of(
         unit: FileUnit, ctx: ScanContext
     ) -> tuple[dict[str, str | None], list[dict[str, Any]]] | None:
-        """For an npm package's manifest: its facets and the condemned releases sharing two of
-        them, itself excluded; None for any other file. The `package` rule module reads the same
-        answer (`modules.scanner_facts`)."""
-        if ctx.distribution not in CampaignSiblingDetector.APPLIES_TO:
-            return None
+        """For a package's root manifest, in any ecosystem: its facets and the condemned releases sharing two of
+        them, itself excluded; None for any other file. The `package` rule module reads the same answer
+        (`modules.scanner_facts`)."""
         content = unit.content
-        archive, bang, member = content.path.rpartition("!")
-        if not bang or member.count("/") != 1 or not member.endswith("/package.json"):
+        ecosystem = CampaignSiblingDetector.root_manifest(content.path)
+        if ecosystem is None:
             return None
         if content.truncated or len(content.raw) > MAX_MANIFEST:
             return None
-        try:
-            manifest = ScannedJson.loads(content.text)
-        except ValueError:
-            return None
-        if not isinstance(manifest, dict):
-            return None
+        archive = content.path.rpartition("!")[0]
         prefix = archive + "!"
         paths = [
             p[len(prefix) :]
             for p in ctx.tree_paths
             if p.startswith(prefix) and "!" not in p[len(prefix) :]
         ]
-        facets = CampaignFingerprint.of(manifest, paths)
-        own = (str(manifest.get("name", "")), str(manifest.get("version", "")))
+        facets = CampaignFingerprint.of_manifest(ecosystem, content, paths)
+        own = CampaignSiblingDetector.identity(ecosystem, content)
         siblings = [
             r
             for r in CampaignIndex.shipped().siblings(facets)
             if (str(r.get("name", "")), str(r.get("version", ""))) != own
         ]
         return facets, siblings
+
+    @staticmethod
+    def identity(ecosystem: str, content: Any) -> tuple[str, str]:
+        """The package's own name and version, as its manifest states them: a release is never its own sibling."""
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+        if ecosystem in EcosystemRegistry.PACKAGE_JSON_FINGERPRINTS:
+            try:
+                manifest = ScannedJson.loads(content.text)
+            except ValueError:
+                return "", ""
+            if isinstance(manifest, dict):
+                return str(manifest.get("name", "")), str(manifest.get("version", ""))
+            return "", ""
+        adapter = EcosystemRegistry.get(ecosystem)
+        try:
+            parsed = adapter.parse_manifest(content) if adapter is not None else None
+        except (ValueError, RecursionError):
+            # S2: an unreadable manifest names no package, so no sibling is set aside as itself; nothing is dropped.
+            parsed = None
+        return (
+            (str(parsed.name or ""), str(parsed.version or "")) if parsed is not None else ("", "")
+        )
 
     @staticmethod
     def shared(facets: dict[str, str | None], sibling: dict[str, Any]) -> list[str]:

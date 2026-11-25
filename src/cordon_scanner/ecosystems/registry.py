@@ -204,6 +204,9 @@ class EcosystemRegistry:
     #: through which an agent skill may be distributed. pip, Maven and the rest install neither
     #: where it would run.
     BUNDLED_SCRIPTS: ClassVar[frozenset[str]] = frozenset({"npm"})
+    #: The ecosystems whose campaign fingerprints were first built from package.json (the shipped index holds them):
+    #: their facets keep exactly that form, so condemned releases already in the index still match.
+    PACKAGE_JSON_FINGERPRINTS: ClassVar[frozenset[str]] = frozenset({"npm"})
 
     @staticmethod
     def runs_bundled_scripts(ecosystem: str) -> bool:
