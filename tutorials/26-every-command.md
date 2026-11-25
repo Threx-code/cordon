@@ -292,11 +292,16 @@ What a dependency update adds, compared with a git revision.
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ target                    repository directory (default: .)                │
 │ --base REF                the revision to compare with, e.g. origin/main   │
-│ --format {text,markdown,json}                                              │
+│ --format {text,markdown,json,github}                                       │
+│                           github: one ::error annotation per blocking      │
+│                           reason, titled with its reason code              │
 │ --online                  fetch each changed package's old and new         │
 │                           releases from its registry, verify, scan and     │
 │                           compare them                                     │
 │ --quiet                   no progress on stderr                            │
+│ --annotations FILE        also write the review as GitHub annotations (one │
+│                           ::error per blocking reason, titled with its     │
+│                           reason code) to FILE, from the same pass         │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
