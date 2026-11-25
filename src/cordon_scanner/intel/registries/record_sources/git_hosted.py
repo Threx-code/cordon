@@ -39,6 +39,30 @@ if TYPE_CHECKING:
     from cordon_scanner.intel.registries.registry_record import RegistryRecord
 
 
+class Safe:
+    """A name and a version are the scanned package's own text and become part of a URL path: each source states the
+    names its registry allows, and anything else (a `..` or empty segment, a `%`, `?`, `#`, a leading `/`, a control
+    character) asks for no document, so no request can reach another repository or another route of the host."""
+
+    #: `owner/repo`, as a git host allows them; an action may add a folder inside its repository.
+    REPOSITORY: ClassVar[re.Pattern[str]] = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
+    #: A version that goes into a URL: a tag, a commit or a release as hosts name them.
+    VERSION: ClassVar[re.Pattern[str]] = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.+~-]{0,127}")
+    MAX: ClassVar[int] = 214
+
+    @classmethod
+    def ok(cls, source: Any, name: str, version: str) -> bool:
+        if not name or len(name) > cls.MAX or len(version) > 256:
+            return False
+        if any(part in (".", "..", "") for part in name.split("/")):
+            return False
+        if not source.NAME.fullmatch(name):
+            return False
+        return not source.VERSION_IN_URL or (
+            bool(cls.VERSION.fullmatch(version)) and ".." not in version
+        )
+
+
 class GitHub:
     """The documents a git host serves, and reading them."""
 
@@ -170,6 +194,9 @@ class History:
 class GitRegistrySource(RecordSource):
     """A registry kept in a git repository: the release list from one of its files, the dates from its history."""
 
+    NAME: ClassVar[re.Pattern[str]]
+    VERSION_IN_URL: ClassVar[bool] = False
+
     publisher_kind: ClassVar[PublisherKind] = "committer"
     repo: ClassVar[str]
     ref: ClassVar[str] = "master"
@@ -184,6 +211,8 @@ class GitRegistrySource(RecordSource):
         return self.path(name)
 
     def documents(self, name: str, version: str) -> tuple[Document, ...]:
+        if not Safe.ok(self, name, version):
+            return ()
         return (self.listing(name), *GitHub.history(self.repo, self.history_path(name)))
 
     def versions(self, name: str, listing: Any) -> tuple[list[str], dict[str, str], dict[str, Any]]:
@@ -196,6 +225,8 @@ class GitRegistrySource(RecordSource):
     def record(
         self, name: str, version: str, documents: Mapping[str, Any]
     ) -> RegistryRecord | None:
+        if not Safe.ok(self, name, version):
+            return None
         listing = documents.get(self.listing(name).url)
         if listing is None:
             return None
@@ -210,6 +241,8 @@ class GitRegistrySource(RecordSource):
 
 class BazelSource(GitRegistrySource):
     """The Bazel Central Registry: `modules/<name>/metadata.json` (versions, yanked versions, maintainers)."""
+
+    NAME: ClassVar[re.Pattern[str]] = re.compile(r"[a-z][a-z0-9._-]*")
 
     ecosystem: ClassVar[str] = "bazel"
     repo: ClassVar[str] = "bazelbuild/bazel-central-registry"
@@ -251,6 +284,8 @@ class BazelSource(GitRegistrySource):
 class JuliaSource(GitRegistrySource):
     """Julia's General registry: `<L>/<Name>/Versions.toml` (each release, and whether it is yanked), `Package.toml`."""
 
+    NAME: ClassVar[re.Pattern[str]] = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
+
     ecosystem: ClassVar[str] = "julia"
     repo: ClassVar[str] = "JuliaRegistries/General"
     SECTION: ClassVar[re.Pattern[str]] = re.compile(r'^\["([^"]+)"\]\s*$')
@@ -278,6 +313,8 @@ class JuliaSource(GitRegistrySource):
 
 class VcpkgSource(GitRegistrySource):
     """vcpkg's registry: `versions/<l>-/<name>.json`, newest first; a port revision is `<version>#<n>`."""
+
+    NAME: ClassVar[re.Pattern[str]] = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 
     ecosystem: ClassVar[str] = "vcpkg"
     repo: ClassVar[str] = "microsoft/vcpkg"
@@ -311,6 +348,8 @@ class VcpkgSource(GitRegistrySource):
     def record(
         self, name: str, version: str, documents: Mapping[str, Any]
     ) -> RegistryRecord | None:
+        if not Safe.ok(self, name, version):
+            return None
         listing = documents.get(self.listing(name).url)
         if listing is None:
             return None
@@ -331,6 +370,8 @@ class VcpkgSource(GitRegistrySource):
 
 class OpamSource(GitRegistrySource):
     """opam-repository: `packages/<name>/<name>.<version>/` directories, listed by the host's contents answer."""
+
+    NAME: ClassVar[re.Pattern[str]] = re.compile(r"[A-Za-z0-9][A-Za-z0-9_+-]*")
 
     ecosystem: ClassVar[str] = "opam"
     repo: ClassVar[str] = "ocaml/opam-repository"
@@ -364,6 +405,9 @@ class ConanSource(GitRegistrySource):
     index drops them; the centre's own answer (`/v2/conans/<name>/<version>/_/_/revisions`) dates a version's first
     revision exactly."""
 
+    NAME: ClassVar[re.Pattern[str]] = re.compile(r"[a-z0-9_][a-z0-9_+.-]*")
+    VERSION_IN_URL: ClassVar[bool] = True
+
     ecosystem: ClassVar[str] = "conan"
     repo: ClassVar[str] = "conan-io/conan-center-index"
     CENTER: ClassVar[str] = "https://center2.conan.io/v2/conans"
@@ -387,6 +431,8 @@ class ConanSource(GitRegistrySource):
         return Document(f"{self.CENTER}/{quoted}/_/_/revisions", required=False)
 
     def documents(self, name: str, version: str) -> tuple[Document, ...]:
+        if not Safe.ok(self, name, version):
+            return ()
         return (
             self.listing(name),
             self.revisions(name, version),
@@ -410,6 +456,8 @@ class ConanSource(GitRegistrySource):
     def record(
         self, name: str, version: str, documents: Mapping[str, Any]
     ) -> RegistryRecord | None:
+        if not Safe.ok(self, name, version):
+            return None
         from cordon_scanner.intel.advisories.versions import Versions
 
         listing = documents.get(self.listing(name).url)
@@ -450,6 +498,8 @@ class HomebrewSource(GitRegistrySource):
     """Homebrew's core tap: the formula's answer (`formulae.brew.sh/api/formula/<name>.json`: the current version,
     deprecated or disabled); every earlier version is a commit of the formula's file (`<name> <version>`)."""
 
+    NAME: ClassVar[re.Pattern[str]] = re.compile(r"[a-z0-9][a-z0-9@+._-]*")
+
     ecosystem: ClassVar[str] = "homebrew"
     repo: ClassVar[str] = "Homebrew/homebrew-core"
     API: ClassVar[str] = "https://formulae.brew.sh/api/formula"
@@ -474,6 +524,8 @@ class HomebrewSource(GitRegistrySource):
     def record(
         self, name: str, version: str, documents: Mapping[str, Any]
     ) -> RegistryRecord | None:
+        if not Safe.ok(self, name, version):
+            return None
         listing = documents.get(self.listing(name).url)
         if listing is None:
             return None
@@ -497,6 +549,9 @@ class HomebrewSource(GitRegistrySource):
 class RepositorySource(RecordSource):
     """A package that is a repository (`owner/repo`): its releases, and the repository's own answer."""
 
+    NAME: ClassVar[re.Pattern[str]] = Safe.REPOSITORY
+    VERSION_IN_URL: ClassVar[bool] = True
+
     publisher_kind: ClassVar[PublisherKind] = "account"
     PAGES: ClassVar[int] = 3
 
@@ -504,6 +559,8 @@ class RepositorySource(RecordSource):
         return GitHub.api(f"repos/{GitHub.q(name)}")
 
     def documents(self, name: str, version: str) -> tuple[Document, ...]:
+        if not Safe.ok(self, name, version):
+            return ()
         return (
             self.repository(name),
             *(
@@ -532,6 +589,8 @@ class RepositorySource(RecordSource):
     def record(
         self, name: str, version: str, documents: Mapping[str, Any]
     ) -> RegistryRecord | None:
+        if not Safe.ok(self, name, version):
+            return None
         facts, created, archived = self.facts(documents.get(self.repository(name).url))
         releases: list[Release] = []
         for url, page in documents.items():
@@ -573,17 +632,25 @@ class RepositorySource(RecordSource):
 class ActionsSource(RepositorySource):
     """A GitHub Action, `owner/repo` (an action in a subfolder is its repository's): its releases."""
 
+    NAME: ClassVar[re.Pattern[str]] = re.compile(
+        r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*"
+    )
+
     ecosystem: ClassVar[str] = "actions"
 
     def repository(self, name: str) -> Document:
         return GitHub.api(f"repos/{GitHub.q('/'.join(name.split('/')[:2]))}")
 
     def documents(self, name: str, version: str) -> tuple[Document, ...]:
+        if not Safe.ok(self, name, version):
+            return ()
         return super().documents("/".join(name.split("/")[:2]), version)
 
     def record(
         self, name: str, version: str, documents: Mapping[str, Any]
     ) -> RegistryRecord | None:
+        if not Safe.ok(self, name, version):
+            return None
         record = super().record("/".join(name.split("/")[:2]), version, documents)
         return _Rename.name(record, name)
 
@@ -597,10 +664,15 @@ class SwiftSource(RepositorySource):
 class NixSource(RecordSource):
     """A Nix input pinned at a commit of `owner/repo`: the commit and the ones before it; the repository's answer."""
 
+    NAME: ClassVar[re.Pattern[str]] = Safe.REPOSITORY
+    VERSION_IN_URL: ClassVar[bool] = True
+
     ecosystem: ClassVar[str] = "nix"
     publisher_kind: ClassVar[PublisherKind] = "committer"
 
     def documents(self, name: str, version: str) -> tuple[Document, ...]:
+        if not Safe.ok(self, name, version):
+            return ()
         return (
             GitHub.api(f"repos/{GitHub.q(name)}"),
             GitHub.api(f"repos/{GitHub.q(name)}/commits?sha={GitHub.q(version)}&per_page=100"),
@@ -609,6 +681,8 @@ class NixSource(RecordSource):
     def record(
         self, name: str, version: str, documents: Mapping[str, Any]
     ) -> RegistryRecord | None:
+        if not Safe.ok(self, name, version):
+            return None
         facts, created, archived = RepositorySource.facts(
             documents.get(f"{GitHub.API}/repos/{GitHub.q(name)}")
         )

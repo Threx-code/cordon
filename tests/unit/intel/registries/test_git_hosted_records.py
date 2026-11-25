@@ -127,3 +127,52 @@ class TestDating:
             {"commit": 3}
         ]
         assert GitHub.commit_fact({"commit": 3}) == ("", None, "")
+
+
+class TestAHostileName:
+    """A name or a version is the scanned package's own text: one that could reach another repository or another route
+    of the host asks for nothing and gives no record."""
+
+    HOSTILE = (
+        "../../orgs/x",
+        "a/b/../../c/d",
+        "%2e%2e/x",
+        "/leading",
+        "a?b",
+        "a#b",
+        "a//b",
+        "a\nb",
+        "",
+    )
+
+    @pytest.mark.parametrize("ecosystem", sorted(EXPECTED))
+    @pytest.mark.parametrize("name", HOSTILE)
+    def test_a_hostile_name_asks_for_nothing(self, ecosystem: str, name: str) -> None:
+        source = RecordSources.of(ecosystem)
+        assert source is not None
+        assert source.documents(name, "1.0.0") == ()
+        assert source.record(name, "1.0.0", DOCUMENTS) is None
+
+    @pytest.mark.parametrize("ecosystem", ["actions", "swift", "nix", "conan"])
+    @pytest.mark.parametrize("version", ["../../x", "1.0?x", "1.0#x", "/1.0", "%2e%2e", "a/b"])
+    def test_a_hostile_version_that_goes_into_a_url_asks_for_nothing(
+        self, ecosystem: str, version: str
+    ) -> None:
+        name, *_ = EXPECTED[ecosystem]
+        source = RecordSources.of(ecosystem)
+        assert source is not None
+        assert source.documents(name, version) == ()
+
+    @pytest.mark.parametrize("ecosystem", sorted(EXPECTED))
+    def test_every_document_stays_on_its_host(self, ecosystem: str) -> None:
+        name, version, *_ = EXPECTED[ecosystem]
+        source = RecordSources.of(ecosystem)
+        assert source is not None
+        hosts = {
+            "raw.githubusercontent.com",
+            "api.github.com",
+            "formulae.brew.sh",
+            "center2.conan.io",
+        }
+        for document in source.documents(name, version):
+            assert document.url.split("/")[2] in hosts and ".." not in document.url
