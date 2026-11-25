@@ -27,6 +27,12 @@ RECORD = ROOT / "tests" / "unit" / "ecosystems" / "coverage" / "narrow_sites.jso
 
 class Recorded:
     @staticmethod
+    def reasons() -> dict[str, str]:
+        """Sites narrow by nature, each with its written reason (the only way off the record besides widening)."""
+        rows = json.loads(RECORD.read_text(encoding="utf-8"))
+        return {row["site"]: row["reason"] for row in rows if "reason" in row}
+
+    @staticmethod
     def entries() -> dict[str, frozenset[str]]:
         rows = json.loads(RECORD.read_text(encoding="utf-8"))
         keys = [row["site"] for row in rows]
@@ -66,6 +72,10 @@ class TestTheRecordOnlyShrinks:
     def test_the_record_names_real_ecosystems(self) -> None:
         for key, ids in Recorded.entries().items():
             assert ids and ids <= ALL, key
+
+    def test_a_site_narrow_by_nature_has_a_written_reason_that_says_something(self) -> None:
+        for key, why in Recorded.reasons().items():
+            assert len(why) >= 60 and why.endswith("."), key
 
 
 class TestTheScannerOfTheSource:

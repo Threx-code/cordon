@@ -37,7 +37,7 @@ from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.detect.supply.registries.evidence import RegistryEvidence
 from cordon_scanner.detect.supply.registries.findings import NETWORK_CAVEAT
 from cordon_scanner.foundation import references
-from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
+from cordon_scanner.foundation.dependencies import PROVENANCE_ECOSYSTEMS, EcosystemFactsProvider
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -66,12 +66,10 @@ UNVERIFIED_RULE = "POLICY.PROVENANCE.UNVERIFIED.001"
 UNCHECKED_RULE = "OPERATIONAL.PROVENANCE.NOT_CHECKED.001"
 UNSIGNED_IMAGE_RULE = "POLICY.CONTAINER.UNSIGNED_IMAGE.001"
 
-#: Ecosystems whose attestation format this can fetch and convert. Others carry
-#: no publish-time attestation to verify yet, so the detector stays silent for
-#: them rather than reporting an absence that means nothing.
-SUPPORTED_ECOSYSTEMS = frozenset(
-    {"npm", "pypi", "maven", "gradle", "rubygems", "image", "homebrew", "bazel", "helm", "ansible"}
-)
+#: Ecosystems whose attestation format this can fetch and convert: the set the inventory reports provenance for
+#: (`foundation.dependencies.PROVENANCE_ECOSYSTEMS`), one definition. Others carry no publish-time attestation to
+#: verify yet, so the detector stays silent for them rather than reporting an absence that means nothing.
+SUPPORTED_ECOSYSTEMS = PROVENANCE_ECOSYSTEMS
 
 _GITHUB_OWNER_REPO = re.compile(r"github\.com[:/]+([^/]+)/([^/#?]+)", re.IGNORECASE)
 """The owner and name in a GitHub URL. Read through `ProvenanceDetector._github_owner_repo`, which gives
