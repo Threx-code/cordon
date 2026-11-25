@@ -56,7 +56,8 @@ class Reason:
     WALL = "wall"  # the wall-clock backstop: a unit that hangs without burning CPU
     DIED = "died"  # any other end: killed (the out-of-memory killer's SIGKILL), crashed
     FAILED = "failed"  # the unit raised: its exception's type and message follow, after ": "
-    UNAVAILABLE = "unavailable"  # no worker could start here, so the unit never ran; why follows, after ": "
+    # no worker could start here, so the unit never ran; why follows, after ": "
+    UNAVAILABLE = "unavailable"
 
 
 @dataclass(frozen=True, slots=True)
@@ -587,11 +588,20 @@ class Supervisor:
     #: The most a start backstop is scaled by: a worker started again, when others were starting beside it, waits this many times
     #: the backstop at most (a loaded machine starts them slowly; a machine that cannot start them at all is still found out).
     START_SCALE_MAX: ClassVar[int] = 4
+    #: How many times one worker slot is replaced when its worker never became ready; after that the slot is dropped.
+    MAX_START_ATTEMPTS: ClassVar[int] = 2
 
     def _start(self, scale: int = 1, attempt: int = 0) -> Worker:
         backstop = Worker.START_BACKSTOP * max(1, min(scale, self.START_SCALE_MAX))
         return Worker(
-            self.context, self.setup, self.work, self.bounds, self.template, self._stacks, backstop, attempt
+            self.context,
+            self.setup,
+            self.work,
+            self.bounds,
+            self.template,
+            self._stacks,
+            backstop,
+            attempt,
         )
 
     def run_or_lose(self, units: Iterable[Unit]) -> Outcome:
@@ -657,10 +667,20 @@ class Supervisor:
                             raise IsolationUnavailable(
                                 Worker.never_ready(worker, ended=alive) + where
                             )
-                        # Once more, its backstop scaled by the workers starting beside it.
-                        pool.append(self._start(1 + sum(1 for other in pool if not other.ready), worker.attempt + 1))
+                        # Once more, its backstop scaled by the workers starting beside it; a slot
+                        # replaced MAX_START_ATTEMPTS times is given up, and the pool shrinks.
+                        if worker.attempt < self.MAX_START_ATTEMPTS:
+                            starting = 1 + sum(1 for other in pool if not other.ready)
+                            pool.append(self._start(starting, worker.attempt + 1))
                     elif queue:
                         pool.append(self._start())
+            # A pool that shrank to nothing with units left: each is reported lost, never left
+            # unstarted with no finding.
+            for unit in queue:
+                self.outcome.failed[unit.index] = (
+                    f"{Reason.UNAVAILABLE}: every worker slot ended before it was ready"
+                )
+            queue.clear()
         finally:
             self._stop(pool)
 
