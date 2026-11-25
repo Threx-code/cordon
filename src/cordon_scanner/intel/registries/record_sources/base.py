@@ -25,16 +25,25 @@ own word for it: `yanked`, `retracted`, `deprecated`, `unlisted`, `archived`, or
 
 from __future__ import annotations
 
+import json
+import re
+import urllib.parse
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
+from cordon_scanner.intel.registries.registry_request import RegistryError
+
 if TYPE_CHECKING:
     from cordon_scanner.intel.registries.registry_record import RegistryRecord
 
 PublisherKind = Literal["account", "namespace", "committer", "none"]
+RATE_LIMITED = re.compile(r"\bHTTP (?:403|429)\b")
+"""What the registry reader says of a refusal for rate."""
+GIT_HOST_API = "api.github.com"
+"""The one host a user-supplied token is sent to."""
 
 
 @dataclass(frozen=True)
@@ -130,6 +139,10 @@ class RecordBuilder:
         )
 
 
+class RateLimited(RegistryError):
+    """A required document was refused for rate. A `RegistryError` to its callers (`intel acquire` names it and goes on)."""
+
+
 class RecordFetch:
     """Fetching a source's documents: https only, bounded, no redirect, and the registry client's own readers."""
 
@@ -166,13 +179,40 @@ class RecordFetch:
                 found[document.url] = None
                 continue
             try:
-                found[document.url] = (
-                    RegistryClient._fetch(document.url)
-                    if document.kind == "json"
-                    else RegistryHttp.text(document.url)
-                )
+                if token and urllib.parse.urlsplit(document.url).hostname == GIT_HOST_API:
+                    # The user's own token goes to the host's API and to no other host, and only as the Authorization header.
+                    body = RegistryHttp.get(
+                        document.url,
+                        accept="application/vnd.github+json",
+                        headers={
+                            "Authorization": f"Bearer {token}",
+                            "X-GitHub-Api-Version": "2022-11-28",
+                        },
+                    )
+                    found[document.url] = (
+                        json.loads(body)
+                        if document.kind == "json"
+                        else body.decode("utf-8", "replace")
+                    )
+                else:
+                    found[document.url] = (
+                        RegistryClient._fetch(document.url)
+                        if document.kind == "json"
+                        else RegistryHttp.text(document.url)
+                    )
             except PackageNotFound:
                 if document.required:
                     return False
+                found[document.url] = None
+            except RegistryError as exc:
+                if not RATE_LIMITED.search(str(exc)):
+                    raise
+                # A host that limits requests per address (the git host's API, 60 an hour without a token): a page past the first
+                # that is refused is missing and the record is made of the pages fetched; a document the record cannot do without
+                # is a refusal the caller names, never a record made of less.
+                if document.required:
+                    raise RateLimited(
+                        f"rate limited by {urllib.parse.urlsplit(document.url).hostname}: set CORDON_GITHUB_TOKEN"
+                    ) from exc
                 found[document.url] = None
         return True

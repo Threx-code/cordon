@@ -10,11 +10,16 @@ import json
 import math
 import struct
 from collections import Counter
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from test_binary_imports import Build
 
 from cordon_scanner.detect.binary.executable_record import ExecutableRecord
+from cordon_scanner.engine.isolation.analysis_facts import ExecutableFacts
+from cordon_scanner.engine.isolation.facts import ExecutableShapes, Facts, WorkerFacts
+from cordon_scanner.engine.pipeline.accumulator import Accumulator
 
 URL_FIXTURE = b"fetch https://c2.example.net/a https://c2.example.net/b http://other.example.org/x 10.1.2.3 \x00"
 
@@ -879,3 +884,118 @@ class TestLastBoundaries:
             ]
             is False
         )
+
+
+# S20: the parent never parses a native binary; the worker sends the record as a fact.
+ELF = Build.elf(["connect", "system"], ["libc.so.6"])
+
+
+class Unit:
+    @staticmethod
+    def of(path: str, raw: bytes, truncated: bool = False) -> Any:
+        return SimpleNamespace(path=path, content=SimpleNamespace(raw=raw, truncated=truncated))
+
+
+class TestTheWorkerSendsTheRecord:
+    def facts(self, unit: Any) -> dict[str, list[Any]]:
+        WorkerFacts.begin()
+        ExecutableFacts.produce(unit)
+        accepted, why = Facts.accept(WorkerFacts.end(), 0)
+        assert accepted is not None, why
+        return accepted
+
+    def test_a_native_file_gives_one_fact_the_parent_accepts_that_is_the_record(self) -> None:
+        facts = self.facts(Unit.of("lib/x.so", ELF))
+        assert list(facts) == ["executable.record"]
+        assert json.loads(facts["executable.record"][0]) == ExecutableRecord.of(ELF)
+
+    def test_a_truncated_file_says_why_it_was_not_read_whole(self) -> None:
+        record = json.loads(
+            self.facts(Unit.of("lib/x.so", ELF, truncated=True))["executable.record"][0]
+        )
+        assert record["read_whole"] is False and record["unread_reason"] == "truncated"
+
+    def test_a_file_that_is_not_native_gives_no_fact(self) -> None:
+        assert self.facts(Unit.of("README.md", b"# hello\n")) == {}
+
+    def test_a_native_looking_file_that_is_not_an_executable_gives_no_fact(self) -> None:
+        assert self.facts(Unit.of("tool.exe", b"MZ but not a program")) == {}
+
+
+class TestTheParentAcceptsOnlyARecordShapedFact:
+    def good(self) -> dict[str, Any]:
+        return json.loads(json.dumps(ExecutableRecord.of(ELF)))
+
+    def test_the_record_is_accepted(self) -> None:
+        assert ExecutableShapes.record(json.dumps(self.good()))
+
+    @pytest.mark.parametrize(
+        "change",
+        [
+            {"sha256": "z" * 64},
+            {"sha256": "ab"},
+            {"format": "script"},
+            {"size": -1},
+            {"size": "big"},
+            {"read_whole": "yes"},
+        ],
+    )
+    def test_a_record_of_the_wrong_shape_is_refused(self, change: dict[str, Any]) -> None:
+        assert not ExecutableShapes.record(json.dumps({**self.good(), **change}))
+
+    def test_a_record_with_an_extra_or_missing_key_is_refused(self) -> None:
+        extra = {**self.good(), "payload": "x"}
+        missing = {k: v for k, v in self.good().items() if k != "packer"}
+        assert not ExecutableShapes.record(json.dumps(extra)) and not ExecutableShapes.record(
+            json.dumps(missing)
+        )
+
+    def test_a_record_that_is_not_text_or_not_json_or_too_big_or_too_deep(self) -> None:
+        assert not ExecutableShapes.record({"sha256": "a" * 64})
+        assert not ExecutableShapes.record("not json")
+        assert not ExecutableShapes.record(json.dumps({**self.good(), "imports": "x" * 40_000}))
+        deep: Any = {"a": 1}
+        for _ in range(12):
+            deep = {"a": deep}
+        assert not ExecutableShapes.record(json.dumps({**self.good(), "imports": deep}))
+
+
+class TestTheParentReadsNoExecutable:
+    def test_scanning_a_native_file_in_the_parent_never_calls_the_record_reader(
+        self, monkeypatch
+    ) -> None:
+        def refused(*args: Any, **kwargs: Any) -> Any:
+            raise AssertionError("the parent parsed an executable")
+
+        monkeypatch.setattr(ExecutableRecord, "of", staticmethod(refused))
+        accumulator = Accumulator()
+        content = SimpleNamespace(
+            raw=ELF,
+            is_binary=True,
+            truncated=False,
+            sha256=hashlib.sha256(ELF).hexdigest(),
+            whole_sha256=None,
+            streamed=None,
+            size=len(ELF),
+            path="lib/x.so",
+        )
+        accumulator.scanned("lib/x.so", content)
+        assert accumulator.native_paths == {"lib/x.so": hashlib.sha256(ELF).hexdigest()}
+        assert accumulator.executable_records() == ()
+
+    def test_the_record_comes_back_from_the_facts_by_the_files_digest(self) -> None:
+        accumulator = Accumulator()
+        digest = hashlib.sha256(ELF).hexdigest()
+        accumulator.native_paths["lib/x.so"] = digest
+        accumulator.facts["lib/x.so"] = {
+            "executable.record": [json.dumps(ExecutableRecord.of(ELF))]
+        }
+        assert accumulator.executable_records() == (ExecutableRecord.of(ELF),)
+
+    def test_two_paths_of_one_file_give_one_record_and_the_cap_holds(self) -> None:
+        accumulator = Accumulator()
+        digest = hashlib.sha256(ELF).hexdigest()
+        for path in ("a/x.so", "b/x.so"):
+            accumulator.native_paths[path] = digest
+            accumulator.facts[path] = {"executable.record": [json.dumps(ExecutableRecord.of(ELF))]}
+        assert len(accumulator.executable_records()) == 1

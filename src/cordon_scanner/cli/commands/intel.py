@@ -4,6 +4,7 @@ history a later offline scan compares a package with."""
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -105,8 +106,8 @@ class IntelCommand:
         from cordon_scanner.engine.release_archives import ReleaseArchives
         from cordon_scanner.foundation.content import FileContent
         from cordon_scanner.intel.malware import feed
-        from cordon_scanner.intel.registries.registry_client import RegistryError
         from cordon_scanner.intel.registries.record_sources.acquire import RecordAcquire
+        from cordon_scanner.intel.registries.registry_client import RegistryError
         from cordon_scanner.intel.registries.registry_record import RegistryRecord
         from cordon_scanner.intel.registries.release_history import ReleaseHistory
         from cordon_scanner.sources.archive import ArchiveReader
@@ -115,6 +116,8 @@ class IntelCommand:
             raise ConfigError("CORDON_OFFLINE is set, so release history will not be fetched")
         results: list[dict[str, object]] = []
         failed = False
+        # The user's own token for the git host's API, read once and passed on: never printed, never put in a result.
+        token = os.environ.get("CORDON_GITHUB_TOKEN") or None
         for target in args.targets:
             path = Path(target)
             try:
@@ -132,7 +135,7 @@ class IntelCommand:
             if identity is not None and identity[0] in RegistryRecord.ECOSYSTEMS_READ:
                 # The registry's record of this release, for the second review's publisher facts.
                 try:
-                    RecordAcquire.acquire(*identity)
+                    RecordAcquire.acquire(*identity, token=token)
                 except RegistryError as exc:
                     results.append(
                         {"target": target, "release": "@".join(identity[1:]), "error": str(exc)}

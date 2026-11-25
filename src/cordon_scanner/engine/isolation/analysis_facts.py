@@ -34,6 +34,32 @@ if TYPE_CHECKING:
 PROFILE_BYTES = 1_000_000
 
 
+class ExecutableFacts:
+    """A native file's executable record (SI-T9), read in the worker from its own bytes and sent as a fact: the parent never parses a
+    binary. One canonical JSON string; `ExecutableShapes.record` checks what the parent accepts."""
+
+    @staticmethod
+    def produce(unit: Any) -> None:
+        import json
+
+        from cordon_scanner.detect.registry import ExecutableRecord
+        from cordon_scanner.engine.isolation.facts import WorkerFacts
+        from cordon_scanner.foundation.files.native import NativeFile
+
+        content = unit.content
+        if not NativeFile.is_native(unit.path, content.raw[:8]):
+            return
+        record = ExecutableRecord.of(
+            content.raw,
+            whole=not content.truncated,
+            reason="truncated" if content.truncated else None,
+        )
+        if record is not None:
+            WorkerFacts.add(
+                "executable.record", json.dumps(record, sort_keys=True, separators=(",", ":"))
+            )
+
+
 class WorkerAnalysis:
     """The worker's side: the facts for one unit, into `WorkerFacts`."""
 

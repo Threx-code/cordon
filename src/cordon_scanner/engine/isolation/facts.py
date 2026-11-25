@@ -264,6 +264,51 @@ class DigestShapes:
         )
 
 
+class ExecutableShapes:
+    """An executable's record (`ExecutableRecord`, read in the worker), crossing as one canonical JSON string: its keys are exactly
+    the record's, its digest and format are what they say, and it is small and shallow."""
+
+    KEYS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "sha256",
+            "size",
+            "format",
+            "architecture",
+            "imports",
+            "strings",
+            "packer",
+            "entropy",
+            "signature",
+            "read_whole",
+            "unread_reason",
+        }
+    )
+    MAX_CHARS: ClassVar[int] = 32_768
+    MAX_NESTING: ClassVar[int] = 6
+
+    @staticmethod
+    def record(value: Any) -> bool:
+        if not isinstance(value, str) or len(value) > ExecutableShapes.MAX_CHARS:
+            return False
+        if Facts.depth(value) > ExecutableShapes.MAX_NESTING:
+            return False
+        try:
+            decoded = json.loads(value)
+        except (ValueError, RecursionError):
+            return False
+        return (
+            isinstance(decoded, dict)
+            and set(decoded) == ExecutableShapes.KEYS
+            and isinstance(decoded["sha256"], str)
+            and len(decoded["sha256"]) == 64
+            and all(c in "0123456789abcdef" for c in decoded["sha256"])
+            and decoded["format"] in ("elf", "pe", "macho")
+            and isinstance(decoded["size"], int)
+            and decoded["size"] >= 0
+            and isinstance(decoded["read_whole"], bool)
+        )
+
+
 class Facts:
     """The parent's side of the channel: what it accepts from a worker, and nothing else."""
 
@@ -277,6 +322,7 @@ class Facts:
         "cap.all": Shapes.capability,
         "net.host": DigestShapes.digest,
         "net.domain": DigestShapes.digest,
+        "executable.record": ExecutableShapes.record,
         "cap.error": Shapes.marker,
         "cap.download": Shapes.marker,
         "intent.effect": Shapes.intent_effect,

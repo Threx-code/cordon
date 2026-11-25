@@ -254,8 +254,13 @@ class RegistryRecord:
         published = self._when(self.published)
         created = self._when(self.created)
         age_days = (published - created).total_seconds() / 86400 if published and created else 0.0
+        # Only where `publisher` names who published the release: a git-hosted registry's committer is whoever merged it (often a
+        # bot), and a change of committer says nothing about a change of publisher.
         new_publisher = bool(
-            self.publisher and self.prior_publishers and self.publisher not in self.prior_publishers
+            self.publisher_kind in ("", "account", "namespace")
+            and self.publisher
+            and self.prior_publishers
+            and self.publisher not in self.prior_publishers
         )
         return {
             "reg_known": 1.0,
