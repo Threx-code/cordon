@@ -15,7 +15,7 @@ policy key's own end. The keys the document delegates are then used only inside 
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, ClassVar, Final
 
 from cordon_scanner.cloud.bundle_chain import POLICY_ROLES, BundleChain, BundleError, Dsse
@@ -33,6 +33,8 @@ DECISION_ROLES: Final = (
 
 class DecisionDelegation:
     PUBLIC: ClassVar[re.Pattern[str]] = re.compile(r"[0-9a-f]{64}")
+    #: The longest a delegated decision key may live (the platform's own bound: a workload key is enrolled for a year at most).
+    MAX_WINDOW: ClassVar[timedelta] = timedelta(days=366)
 
     @classmethod
     def root_names_decision(cls, root_public: bytes, delegation: object, tenant: str) -> bool:
@@ -124,6 +126,10 @@ class DecisionDelegation:
         end = cls._time(entry.get("valid_until"), "a key's end")
         if end <= start:
             raise BundleError("the decision delegation holds a key that ends before it starts")
+        if end - start > cls.MAX_WINDOW:
+            raise BundleError(
+                "the decision delegation delegates a key for longer than any decision key lives"
+            )
         if limit is not None and end > limit:
             raise BundleError(
                 "the decision delegation delegates a key past the policy key's own window"

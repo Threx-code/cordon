@@ -173,6 +173,11 @@ class TestWhatIsRefused(ChainTests):
         with pytest.raises(BundleError):
             chain.verify(chain.decision_delegation(keys=[backwards]))
 
+    def test_a_key_delegated_for_longer_than_any_decision_key_lives(self, chain: Chain) -> None:
+        long = chain.entry(DECIDER, valid_until=(T0 + timedelta(days=400)).isoformat())
+        with pytest.raises(BundleError, match="longer than"):
+            chain.verify(chain.decision_delegation(keys=[long]))
+
     def test_a_key_used_after_its_own_window(self, chain: Chain) -> None:
         with pytest.raises(BundleError):
             chain.verify(chain.decision_delegation(), at=T0 + timedelta(days=7, minutes=1))
