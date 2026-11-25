@@ -184,9 +184,8 @@ class Versions:
         for i in range(max(len(left), len(right))):
             x = left[i] if i < len(left) else ""
             y = right[i] if i < len(right) else ""
-            if (
-                i % 2
-            ):  # digits: by value, without int() (a run of thousands of digits is valid text)
+            # Digits: by value, without int() (a run of thousands of digits is valid text).
+            if i % 2:
                 nx, ny = x.lstrip("0"), y.lstrip("0")
                 if (len(nx), nx) != (len(ny), ny):
                     return -1 if (len(nx), nx) < (len(ny), ny) else 1
