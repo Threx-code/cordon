@@ -29,6 +29,7 @@ from cordon_scanner.cloud.local_store import LocalStore
 from cordon_scanner.decide.decision.evidence import EvidenceSet
 from cordon_scanner.intel.provenance._ed25519_signer import Ed25519Signer
 from kits.bundle_kit import T0, TENANT, Kit, Platform, Things
+from support import ROOT
 
 POINTS = ("cli", "agent_hook", "firewall", "ci_gate")
 URL = "https://bundles.example/v1/bundles/org:acme"
@@ -563,7 +564,7 @@ class TestThePlatformsRecordedAnswerUnderACustomerRoot:
     data). The puller and the verifier take exactly that body: the bundle through the root's delegation, the decision delegation the policy key signed,
     and the sequence header."""
 
-    FIXTURE = Path(__file__).with_name("bundle_answer_under_a_customer_root.json")
+    FIXTURE = ROOT / "tests" / "unit" / "cloud" / "bundle_answer_under_a_customer_root.json"
 
     @classmethod
     def recorded(cls) -> dict[str, Any]:

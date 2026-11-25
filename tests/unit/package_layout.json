@@ -1248,6 +1248,7 @@
   "test_install_specs.py": "ecosystems/specs",
   "test_vendored_copies.py": "ecosystems/vendored",
   "test_ecosystem_matrix.py": "ecosystems",
+  "test_ecosystem_literals_cover_all.py": "ecosystems/coverage",
   "test_ecosystems.py": "ecosystems",
   "test_ed25519.py": "intel/provenance",
   "test_signature_vectors.py": "intel/provenance",
