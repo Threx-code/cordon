@@ -1340,6 +1340,7 @@
   "test_role_normaliser.py": "analysis/javascript",
   "test_jsonc.py": "foundation/formats",
   "test_js_flow.py": "analysis/javascript",
+  "test_js_fold_fixtures.py": "analysis/javascript",
   "test_unparsed_running_source.py": "analysis/javascript",
   "test_non_code_values.py": "analysis/javascript",
   "test_request_origins.py": "analysis/javascript",
