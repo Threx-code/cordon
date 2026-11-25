@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -40,6 +41,18 @@ class Workloads:
         time.sleep(600)
 
     @staticmethod
+    def setup_that_is_slow() -> None:
+        time.sleep(3.5)
+
+    @staticmethod
+    def setup_that_starts_once(marker: str) -> None:
+        """The first worker to get here becomes ready; every later one hangs."""
+        try:
+            os.close(os.open(marker, os.O_CREAT | os.O_EXCL))
+        except FileExistsError:
+            time.sleep(600)
+
+    @staticmethod
     def wait_for(path: Path, pattern: str | None = None) -> None:
         """Until `path` exists (or holds a file matching `pattern`), bounded: a broken handshake
         ends in the assertion that follows, never in a hang."""
@@ -53,6 +66,8 @@ class Workloads:
         kind, arg = item
         if kind == "echo":
             return arg
+        if kind == "die":  # the worker ends without an answer
+            os._exit(9)
         if kind == "hog":  # past the address-space limit
             return len(bytearray(int(arg)))  # type: ignore[call-overload]
         if kind == "spin":  # CPU, forever
@@ -93,11 +108,13 @@ class Workloads:
 
 class Harness:
     @staticmethod
-    def supervisor(bounds: Bounds, workers: int = 2, setup: str = "setup") -> Supervisor:
+    def supervisor(
+        bounds: Bounds, workers: int = 2, setup: str = "setup", args: tuple[str, ...] = ()
+    ) -> Supervisor:
         module = Workloads.__module__
         return Supervisor(
             multiprocessing.get_context("spawn"),
-            (f"{module}:Workloads.{setup}", ()),
+            (f"{module}:Workloads.{setup}", args),
             f"{module}:Workloads.run",
             bounds,
             workers,
@@ -452,3 +469,103 @@ class TestStartStacks:
         assert 'File "cordon_scanner/engine/x.py"' in out
         assert 'File "foo/bar.py"' in out
         assert "someone" not in out and "/home/u" not in out and "notes.txt" in out
+
+
+class TestStartingUnderLoad:
+    """SI-U8: workers that take longer than the start backstop to become ready, because many start at once on a loaded machine, are waited for
+    longer the second time; and a scan whose workers cannot start at all is reported lost (incomplete), never a crash."""
+
+    def test_workers_slow_to_start_are_waited_for_longer_the_second_time(self, monkeypatch) -> None:
+        monkeypatch.setattr(Worker, "START_BACKSTOP", 2.5)
+        outcome = Harness.supervisor(Bounds(), workers=3, setup="setup_that_is_slow").run(
+            [Unit(k, ("echo", k), 1) for k in range(3)]
+        )
+        assert sorted(outcome.results) == [0, 1, 2] and outcome.failed == {}
+
+    def test_the_scaled_backstop_is_bounded(self) -> None:
+        supervisor = Harness.supervisor(Bounds(), workers=1)
+        scaled, plain = supervisor._start(99), supervisor._start(1)
+        try:
+            assert scaled.backstop == Worker.START_BACKSTOP * Supervisor.START_SCALE_MAX
+            assert plain.backstop == Worker.START_BACKSTOP
+        finally:
+            scaled.end()
+            plain.end()
+
+    def test_run_still_raises_when_no_worker_can_start(self, monkeypatch) -> None:
+        monkeypatch.setattr(Worker, "START_BACKSTOP", 2.0)
+        with pytest.raises(IsolationUnavailable):
+            Harness.supervisor(Bounds(), workers=1, setup="setup_that_hangs").run(
+                [Unit(0, ("echo", 1), 1)]
+            )
+
+    def test_run_or_lose_reports_every_unit_lost_and_says_why(self, monkeypatch) -> None:
+        monkeypatch.setattr(Worker, "START_BACKSTOP", 2.0)
+        outcome = Harness.supervisor(Bounds(), workers=2, setup="setup_that_hangs").run_or_lose(
+            [Unit(k, ("echo", k), 1) for k in range(5)]
+        )
+        assert sorted(outcome.failed) == [0, 1, 2, 3, 4] and outcome.results == {}
+        assert all(
+            reason.startswith("unavailable: no worker could start")
+            for reason in outcome.failed.values()
+        )
+        assert "setup_that_hangs" in outcome.isolation["start"]
+
+    def test_run_or_lose_leaves_a_run_that_started_alone(self) -> None:
+        outcome = Harness.supervisor(Bounds(), workers=2).run_or_lose([Unit(0, ("echo", 1), 1)])
+        assert outcome.results and outcome.failed == {}
+
+    def test_many_runs_starting_together_under_a_short_backstop_each_end_with_a_report(
+        self, monkeypatch
+    ) -> None:
+        import threading
+
+        monkeypatch.setattr(Worker, "START_BACKSTOP", 2.0)
+        outcomes: list[Any] = []
+
+        def one() -> None:
+            outcomes.append(
+                Harness.supervisor(Bounds(), workers=1, setup="setup_that_hangs").run_or_lose(
+                    [Unit(0, ("echo", 1), 1)]
+                )
+            )
+
+        threads = [threading.Thread(target=one) for _ in range(4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(60)
+        assert len(outcomes) == 4 and all(0 in outcome.failed for outcome in outcomes)
+
+    def test_a_slot_whose_workers_never_become_ready_is_replaced_twice_then_dropped(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        monkeypatch.setattr(Worker, "START_BACKSTOP", 2.0)
+        starts: list[int] = []
+        real = Supervisor._start
+
+        def counted(self, scale=1, attempt=0):
+            starts.append(attempt)
+            return real(self, scale, attempt)
+
+        monkeypatch.setattr(Supervisor, "_start", counted)
+        supervisor = Harness.supervisor(
+            Bounds(), workers=2, setup="setup_that_starts_once", args=(str(tmp_path / "first"),)
+        )
+        outcome = supervisor.run([Unit(0, ("sleep", 9), 1), Unit(1, ("echo", 1), 1)])
+        assert outcome.results == {0: "woke", 1: 1} and outcome.failed == {}
+        # the two first starts, then the slot that never became ready replaced at attempts 1 and 2, and no more
+        assert sorted(starts) == [0, 0, 1, 2]
+
+    def test_a_pool_that_shrinks_to_nothing_reports_each_unit_left_as_lost(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        monkeypatch.setattr(Worker, "START_BACKSTOP", 2.0)
+        supervisor = Harness.supervisor(
+            Bounds(), workers=2, setup="setup_that_starts_once", args=(str(tmp_path / "first"),)
+        )
+        units = [Unit(0, ("die", 0), 1), Unit(1, ("echo", 1), 1), Unit(2, ("echo", 2), 1)]
+        outcome = supervisor.run_or_lose(units)
+        assert outcome.results == {} and outcome.unstarted == []
+        assert sorted(outcome.failed) == [0, 1, 2]
+        assert all("every worker slot ended" in outcome.failed[k] for k in (1, 2))

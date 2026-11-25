@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -120,3 +122,53 @@ class TestTheDigestAndThePackageUrl:
         whole = VendoredCopies.of(files)[0].to_dict()
         cut = VendoredCopies.of(files, partial=frozenset({"v"}))[0].to_dict()
         assert "state" not in whole and "partial" not in whole and cut["partial"] is True
+
+
+class TestTheTreeDigestOfARelease:
+    FILES: ClassVar[dict[str, bytes]] = {
+        "package.json": b'{"name":"left-pad","version":"1.3.0"}',
+        "index.js": b"module.exports = pad;\n",
+        "lib/util.js": b"exports.x = 1;\n",
+    }
+
+    def test_it_equals_the_digest_of_a_copy_at_any_depth(self) -> None:
+        copy = {f"vendor/deep/left-pad/{path}": data for path, data in self.FILES.items()}
+        assert VendoredCopies.tree_digest(self.FILES) == VendoredCopies.digest(
+            copy, "vendor/deep/left-pad"
+        )
+        (found,) = VendoredCopies.of(
+            copy, {"pkg:npm/left-pad@1.3.0": VendoredCopies.tree_digest(self.FILES)}
+        )
+        assert found.state == "identical"
+
+    def test_the_vector_for_the_backend(self) -> None:
+        """Invented files and their digest: the analyser's implementation must give exactly this."""
+        assert VendoredCopies.tree_digest(self.FILES) == self.EXPECTED
+
+    EXPECTED = "sha256:bd9f78f159c401070d661556e649a8fae099c7c89132d25cd1b71a4dfbbd115a"
+
+    def test_it_is_the_reference_digest_every_registry_release_carries(self) -> None:
+        from cordon_scanner.contracts.digests import ArtifactDigests
+
+        modes = {"index.js": "755"}
+        entries = [(p, modes.get(p, "644"), d) for p, d in self.FILES.items()]
+        assert VendoredCopies.tree_digest(self.FILES, modes) == ArtifactDigests.of_tree(entries)
+        assert VendoredCopies.tree_digest(self.FILES, modes) != VendoredCopies.tree_digest(
+            self.FILES
+        )
+
+    @pytest.mark.skipif(
+        sys.platform == "win32", reason="a Windows file has no execute bit to record"
+    )
+    def test_an_executable_file_on_disk_is_recorded_with_the_execute_mode(
+        self, tmp_path: Path
+    ) -> None:
+        base = tmp_path / "vendor" / "left-pad"
+        base.mkdir(parents=True)
+        (base / "package.json").write_text(self.FILES["package.json"].decode(), encoding="utf-8")
+        run = base / "run.sh"
+        run.write_text("#!/bin/sh\n", encoding="utf-8")
+        run.chmod(0o755)
+        (found,) = VendoredCopies.of_directory(tmp_path)
+        files = {"package.json": self.FILES["package.json"], "run.sh": b"#!/bin/sh\n"}
+        assert found.digest == VendoredCopies.tree_digest(files, {"run.sh": "755"})

@@ -59,7 +59,7 @@ result that was never checked.
 | `pypi` | `pyproject.toml`, `setup.py`, `setup.cfg`, `requirements*.txt`, `requirements/*.txt`, `requirements*.in`, `requirements/*.in`, `Pipfile` | `poetry.lock`, `Pipfile.lock`, `pdm.lock`, `uv.lock`, `requirements*.txt`, `requirements/*.txt` | yes | yes | yes | yes | 12,487 |
 | `rubygems` | `Gemfile`, `gems.rb`, `*.gemspec`, `.ruby-version` | `Gemfile.lock`, `gems.locked` | yes | yes | yes | yes | 2,847 |
 | `swift` | `Package.swift` | `Package.resolved` | yes | yes | -- | -- | 62 |
-| `terraform` | `*.tf`, `*.tf.json` | `.terraform.lock.hcl` | upstream | yes | yes | -- | 58 |
+| `terraform` | `*.tf`, `*.tf.json` | `.terraform.lock.hcl` | upstream | yes | yes | yes | 58 |
 | `vcpkg` | `vcpkg.json`, `vcpkg-configuration.json`, `vcpkg-lock.json` | `vcpkg-lock.json` | NVD, upstream | yes | yes | -- | 39 |
 
 ## What is not here

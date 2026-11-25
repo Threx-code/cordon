@@ -96,7 +96,13 @@ class JsEval:
 
     @staticmethod
     def _run(
-        text: str, pos: int, n: int, templates: bool, depth: int, memo: dict[tuple[int, int], int]
+        text: str,
+        pos: int,
+        n: int,
+        templates: bool,
+        depth: int,
+        memo: dict[int, tuple[int, int]],
+        out: list[Tok] | None = None,
     ) -> list[Tok]:
         """Tokens by a linear scan: no pattern runs over a string's body, so no input can make the
         tokenizer backtrack.
@@ -105,8 +111,11 @@ class JsEval:
         `` `a${x}b` `` reads `( "a" + ( x ) + "b" )`, so its text stays a string and only what is
         inside `${}` is read as code. Without it, the whole literal is read as code (the
         evaluator's view). Templates nested deeper than `MAX_TEMPLATE_DEPTH` are read that way
-        too, so no nesting can exhaust the stack."""
-        out: list[Tok] = []
+        too, so no nesting can exhaust the stack.
+
+        With `out`, the tokens are appended to it (a template's interpolation is read straight into
+        the list that holds the template, not into one of its own to be copied up a level)."""
+        out = [] if out is None else out
         while pos < n:
             c = text[pos]
             if c.isspace():
@@ -169,7 +178,7 @@ class JsEval:
         templates: bool,
         depth: int,
         n: int,
-        memo: dict[tuple[int, int], int],
+        memo: dict[int, tuple[int, int]],
     ) -> int:
         """Read the string or template literal opening at `pos` into `out`; the position after it."""
         c = text[pos]
@@ -257,84 +266,110 @@ class JsEval:
 
     @staticmethod
     def _template(
-        text: str, pos: int, out: list[Tok], depth: int, n: int, memo: dict[tuple[int, int], int]
+        text: str, pos: int, out: list[Tok], depth: int, n: int, memo: dict[int, tuple[int, int]]
     ) -> int:
         """Tokens of the interpolated template opening at `pos` (see `tokens`), appended to `out`;
         one past its closing backtick, or -1 (nothing appended) if it does not close."""
         j, start = pos + 1, pos + 1
-        got: list[Tok] = [Tok("punct", "(", pos, pos + 1)]
+        mark = len(out)
+        out.append(Tok("punct", "(", pos, pos + 1))
         while j < n:
             c = text[j]
             if c == "\\":
                 j += 2
                 continue
             if c == "`" or text.startswith("${", j):
-                if j > start:
-                    if len(got) > 1:
-                        got.append(Tok("punct", "+", start, start))
-                    got.append(Tok("str", JsEval._unquote("`" + text[start:j] + "`"), start, j))
-                if c == "`":
-                    got.append(Tok("punct", ")", j, j + 1))
-                    out.extend(got)
-                    return j + 1
-                close = JsEval._interpolation_end(text, j + 2, depth, n, memo)
-                if close < 0:
+                close = -1 if c == "`" else JsEval._interpolation_end(text, j + 2, depth, n, memo)
+                if c != "`" and close < 0:
+                    del out[mark:]
                     return -1
-                if len(got) > 1:
-                    got.append(Tok("punct", "+", j, j))
-                got.append(Tok("punct", "(", j, j + 2))
-                got.extend(JsEval._run(text, j + 2, close, True, depth + 1, memo))
-                got.append(Tok("punct", ")", close, close + 1))
+                if j > start:
+                    if len(out) - mark > 1:
+                        out.append(Tok("punct", "+", start, start))
+                    out.append(Tok("str", JsEval._unquote("`" + text[start:j] + "`"), start, j))
+                if c == "`":
+                    out.append(Tok("punct", ")", j, j + 1))
+                    return j + 1
+                if len(out) - mark > 1:
+                    out.append(Tok("punct", "+", j, j))
+                out.append(Tok("punct", "(", j, j + 2))
+                JsEval._run(text, j + 2, close, True, depth + 1, memo, out)
+                out.append(Tok("punct", ")", close, close + 1))
                 j = start = close + 1
                 continue
             j += 1
+        del out[mark:]
         return -1
 
     @staticmethod
     def _interpolation_end(
-        text: str, pos: int, depth: int, n: int, memo: dict[tuple[int, int], int]
+        text: str, pos: int, depth: int, n: int, memo: dict[int, tuple[int, int]]
     ) -> int:
         """The `}` closing the `${` whose body starts at `pos`, past strings and nested templates
-        inside it; -1 if there is none."""
-        held = memo.get((pos, depth))
-        if held is not None:
-            return held
-        found = JsEval._interpolation_scan(text, pos, depth, n, memo)
-        memo[(pos, depth)] = found
-        return found
+        inside it; -1 if there is none, or if the body nests templates so deep that, started at `depth`,
+        one would pass `MAX_TEMPLATE_DEPTH` (the same answer a nested read at each depth gave).
+
+        One pass over the whole nesting, whatever its depth: `memo` holds, for every body found,
+        where it closes and how many template levels it holds inside, so a body read again (the
+        tokenizer reads an over-deep template as code, backtick by backtick) costs a lookup."""
+        held = memo.get(pos)
+        if held is None:
+            JsEval._interpolation_scan(text, pos, n, memo)
+            held = memo[pos]
+        end, height = held
+        return end if end >= 0 and depth + height <= MAX_TEMPLATE_DEPTH else -1
 
     @staticmethod
-    def _interpolation_scan(
-        text: str, pos: int, depth: int, n: int, memo: dict[tuple[int, int], int]
-    ) -> int:
-        """`_interpolation_end` without the memo."""
-        braces, j = 0, pos
-        while j < n:
-            c = text[j]
-            if c in "\"'`":
-                k = j + 1
-                while k < n and text[k] != c and (c == "`" or text[k] != "\n"):
+    def _interpolation_scan(text: str, pos: int, n: int, memo: dict[int, tuple[int, int]]) -> None:
+        """Fill `memo` for the body at `pos` and every body nested in it: (closing `}` or -1, template
+        levels inside). An explicit stack of bodies stands in for the recursion, so no nesting can
+        exhaust the interpreter's stack and each character is read once. A frame is
+        [start, cursor, braces, height, string cursor or -1, quote]."""
+        stack: list[list[Any]] = [[pos, pos, 0, 0, -1, ""]]
+        while stack:
+            frame = stack[-1]
+            start, j, braces, height, k, quote = frame
+            if k >= 0:  # inside a quoted string of this body
+                nested = False
+                while k < n and text[k] != quote and (quote == "`" or text[k] != "\n"):
                     if text[k] == "\\":
                         k += 2
-                    elif c == "`" and text.startswith("${", k):
-                        if depth >= MAX_TEMPLATE_DEPTH:
-                            return -1
-                        inner = JsEval._interpolation_end(text, k + 2, depth + 1, n, memo)
-                        if inner < 0:
-                            return -1
-                        k = inner + 1
+                    elif quote == "`" and text.startswith("${", k):
+                        frame[4] = k + 2
+                        stack.append([k + 2, k + 2, 0, 0, -1, ""])
+                        nested = True
+                        break
                     else:
                         k += 1
-                j = k + 1
+                if nested:
+                    continue
+                frame[1], frame[4] = k + 1, -1
                 continue
-            if c == "{":
-                braces += 1
-            elif c == "}":
-                if braces == 0:
-                    return j
-                braces -= 1
-            j += 1
-        return -1
+            found = -1
+            while j < n:
+                c = text[j]
+                if c in "\"'`":
+                    frame[1], frame[2], frame[4], frame[5] = j, braces, j + 1, c
+                    break
+                if c == "{":
+                    braces += 1
+                elif c == "}":
+                    if braces == 0:
+                        found = j
+                        break
+                    braces -= 1
+                j += 1
+            else:  # the text ended inside this body: it, and every body around it, never closes
+                for open_frame in stack:
+                    memo[open_frame[0]] = (-1, 0)
+                return
+            if found < 0:
+                continue  # a string opened: read it on the next turn
+            memo[start] = (found, height)
+            stack.pop()
+            if stack:
+                stack[-1][4] = found + 1
+                stack[-1][3] = max(stack[-1][3], height + 1)
 
     @staticmethod
     def _unquote(raw: str) -> str:

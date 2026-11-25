@@ -119,6 +119,8 @@ class LocalStore:
         "breaker",
         "feed-serial",
         "pin",
+        "rug-pull",
+        "decision-delegation",
     )
 
     def __init__(self, root: Path, *, max_cache: int = 4096, max_pending: int = 10_000) -> None:
@@ -288,6 +290,10 @@ class LocalStore:
             self._path_of(item).unlink(missing_ok=True)
             sent += 1
         return Drained(sent, len(self._outbox()))
+
+    def discard(self, item: Pending) -> None:
+        """Remove one waiting upload: a newer one replaces it."""
+        self._path_of(item).unlink(missing_ok=True)
 
     def refused(self) -> int:
         """How many uploads were refused because the outbox was full."""

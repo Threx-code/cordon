@@ -13,6 +13,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Mapping
 from typing import Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
@@ -31,7 +32,9 @@ class RegistryHttp:
     """HTTP and OCI requests to package registries, bounded and checked."""
 
     @staticmethod
-    def get(url: str, *, accept: str = "application/json") -> bytes:
+    def get(
+        url: str, *, accept: str = "application/json", headers: Mapping[str, str] | None = None
+    ) -> bytes:
         """One bounded, redirect-free, credential-free answer, decompressed when the server sent
         gzip (NuGet's registration pages always are), with the decompressed size bounded too."""
         parsed = urllib.parse.urlsplit(url)
@@ -39,7 +42,12 @@ class RegistryHttp:
             raise RegistryError(f"refusing a non-HTTPS registry URL: {parsed.scheme}")
         request = urllib.request.Request(  # noqa: S310 (scheme checked above)
             url,
-            headers={"User-Agent": base.USER_AGENT, "Accept": accept, "Accept-Encoding": "gzip"},
+            headers={
+                "User-Agent": base.USER_AGENT,
+                "Accept": accept,
+                "Accept-Encoding": "gzip",
+                **(headers or {}),
+            },
             method="GET",
         )
         opener = urllib.request.build_opener(NoRedirects)

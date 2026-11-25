@@ -60,6 +60,10 @@ ROLES: dict[str, tuple[str, str]] = {
     "BazelProvenance": ("cordon_scanner.intel.provenance.bazel_provenance", "BazelProvenance"),
     "GitHubRepository": ("cordon_scanner.intel.provenance.github_repository", "GitHubRepository"),
     "HelmProvenance": ("cordon_scanner.intel.provenance.helm_provenance", "HelmProvenance"),
+    "TerraformProvenance": (
+        "cordon_scanner.intel.provenance.terraform_provenance",
+        "TerraformProvenance",
+    ),
     "HomebrewProvenance": (
         "cordon_scanner.intel.provenance.homebrew_provenance",
         "HomebrewProvenance",
@@ -132,6 +136,7 @@ if TYPE_CHECKING:
         PackageFactsQueries,
         PopularNames,
         PrivateRegistryQueries,
+        ProviderProvenance,
         PublishedManifestQueries,
         RangeMatching,
         RegistryRecords,
@@ -169,6 +174,9 @@ if TYPE_CHECKING:
         homebrew_provenance as _intel_provenance_homebrew_provenance,
     )
     from cordon_scanner.intel.provenance import openpgp as _intel_provenance_openpgp
+    from cordon_scanner.intel.provenance import (
+        terraform_provenance as _intel_provenance_terraform_provenance,
+    )
     from cordon_scanner.intel.registries import installers as _intel_registries_installers
     from cordon_scanner.intel.registries import more_registries as _intel_registries_more_registries
     from cordon_scanner.intel.registries import names as _intel_registries_names
@@ -220,6 +228,9 @@ if TYPE_CHECKING:
     BazelProvenance: ModuleProvenance = _intel_provenance_bazel_provenance.BazelProvenance
     GitHubRepository: RepositoryHeads = _intel_provenance_github_repository.GitHubRepository
     HelmProvenance: ChartProvenance = _intel_provenance_helm_provenance.HelmProvenance
+    TerraformProvenance: ProviderProvenance = (
+        _intel_provenance_terraform_provenance.TerraformProvenance
+    )
     HomebrewProvenance: BottleProvenance = _intel_provenance_homebrew_provenance.HomebrewProvenance
     IntelDataFile: DataFiles = _intel_store_datafile.IntelDataFile
     KNOWN_INSTALLERS: tuple[tuple[str, str], ...] = _intel_registries_installers.KNOWN_INSTALLERS
@@ -323,6 +334,7 @@ __all__ = [
     "RemovedPackageNames",
     "RuleLinks",
     "SigstoreVerification",
+    "TerraformProvenance",
     "UpstreamAdvisories",
     "VersionRanges",
     "Versions",

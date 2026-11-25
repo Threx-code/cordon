@@ -248,6 +248,7 @@ class ScanFacts:
                 "files_omitted": omitted,
                 "binaries": ScanFacts.binaries(result),
                 "binaries_truncated": ScanFacts.binaries_truncated(result),
+                "executables": ScanFacts.executables(result),
                 "tool_list": ScanFacts.tool_list(result),
             },
             "files": files,
@@ -322,6 +323,11 @@ class ScanFacts:
         """The SHA-256 of each native executable or library the scan read, sorted and at most `MAX_BINARIES`; None when the
         scan did not collect them."""
         return None if result.binaries is None else sorted(result.binaries)[:MAX_BINARIES]
+
+    @staticmethod
+    def executables(result: ScanResult) -> list[dict[str, Any]] | None:
+        """The record of each native executable the scan read (`ExecutableRecord`), at most `MAX_BINARIES`; None when the scan did not collect them."""
+        return None if result.executables is None else list(result.executables[:MAX_BINARIES])
 
     @staticmethod
     def binaries_truncated(result: ScanResult) -> bool:

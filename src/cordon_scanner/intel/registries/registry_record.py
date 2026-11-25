@@ -85,6 +85,10 @@ class RegistryRecord:
     for an older release they are unknown, not absent."""
     owners: tuple[str, ...] = field(default_factory=tuple)
     """PyPI project roles (owners and maintainers) where the JSON API lists them."""
+    withdrawn: str = ""
+    """The registry's own word for this release being withdrawn (`yanked`, `retracted`, `deprecated`, `unlisted`, `archived`), or ""."""
+    publisher_kind: str = ""
+    """What `publisher` is: `account`, `namespace`, `committer` (a git-hosted registry), `none`; "" for a record stored before this field."""
 
     ECOSYSTEMS_READ: ClassVar[frozenset[str]] = ECOSYSTEMS
 
@@ -328,21 +332,19 @@ class RegistryRecord:
     # -- acquiring (network; `intel acquire` only) --------------------------------------
 
     @classmethod
-    def acquire(cls, ecosystem: str, name: str, version: str) -> RegistryRecord | None:
-        """Fetch the name's registry document and keep the record as of `version`. Network."""
-        from cordon_scanner.intel.registries.registry_client import REGISTRY_HOSTS, RegistryClient
+    def acquire(
+        cls, ecosystem: str, name: str, version: str, *, token: str | None = None
+    ) -> RegistryRecord | None:
+        """Fetch the name's registry documents and keep the record as of `version`. Network. Every ecosystem is read through
+        its `RecordSource` (`record_sources/`): the same fetch, the same builder, the same store."""
+        from cordon_scanner.intel.registries.record_sources.base import RecordFetch
+        from cordon_scanner.intel.registries.record_sources.table import RecordSources
 
-        if ecosystem == "npm":
-            document = RegistryClient._fetch(
-                f"{REGISTRY_HOSTS['npm']}/{urllib.parse.quote(name, safe='@')}"
-            )
-            record = cls.from_npm(document, version) if isinstance(document, dict) else None
-        elif ecosystem == "pypi":
-            quoted = urllib.parse.quote(name, safe="")
-            document = RegistryClient._fetch(f"{REGISTRY_HOSTS['pypi']}/pypi/{quoted}/json")
-            record = cls.from_pypi(document, version) if isinstance(document, dict) else None
-        else:
+        source = RecordSources.of(ecosystem)
+        if source is None:
             return None
+        documents = RecordFetch.documents(source, name, version, token=token)
+        record = source.record(name, version, documents) if documents is not None else None
         if record is not None:
             record.save()
         return record

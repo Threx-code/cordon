@@ -38,6 +38,7 @@ import threading
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from importlib.metadata import entry_points
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final, Protocol
 
 from cordon_scanner.foundation.models import Hook, Scope
@@ -77,8 +78,43 @@ _COMMIT: Final = re.compile(
 )
 _USERINFO: Final = re.compile(r"(?<=://)[^/@\s]{1,512}@")
 
-#: Ecosystems whose registries publish verifiable build provenance Cordon checks (`--online`).
-PROVENANCE_ECOSYSTEMS: Final = frozenset({"npm", "pypi"})
+#: Ecosystems whose registries publish verifiable build provenance Cordon checks (`--online`). The provenance detector reads this same
+#: set (`detect/supply/provenance.py`), so what the inventory calls supported is what is verified.
+PROVENANCE_ECOSYSTEMS: Final = frozenset(
+    {
+        "npm",
+        "pypi",
+        "maven",
+        "gradle",
+        "rubygems",
+        "image",
+        "homebrew",
+        "bazel",
+        "helm",
+        "ansible",
+        "terraform",
+    }
+)
+#: Registries whose own documentation, read on 2026-11-25, states no build-provenance attestation or signature a client can fetch and verify
+#: for a released package. Each reason names what was read; a registry that begins to publish one moves out of this table into
+#: `PROVENANCE_ECOSYSTEMS`. (A registry that publishes something not yet verified here is NOT in this table: it is an owed feature.)
+PROVENANCE_NOT_PUBLISHED: Final = MappingProxyType(
+    {
+        "cargo": "No verifiable per-release signature was found in the crates.io development update of 2026-01-21 (blog.rust-lang.org/2026/01/21/crates-io-development-update), which covers trusted publishing as publisher authentication only; the crates.io trusted-publishing docs page rendered no content (checked 2026-11-25).",
+        "composer": "No verifiable per-release signature was found on the Packagist supply-chain post of 2026-05-27 (blog.packagist.com/an-update-on-composer-packagist-supply-chain-security) or in Composer's config docs; the post and a 2026-11-12 teaser describe signed immutable artifacts as planned, not shipped (checked 2026-11-25).",
+        "cocoapods": "No verifiable per-release signature was found on guides.cocoapods.org/making/getting-setup-with-trunk.html or the CocoaPods/Specs README on GitHub (neither page is dated; checked 2026-11-25).",
+        "pub": "No verifiable per-release signature was found on dart.dev/tools/pub/automated-publishing (last updated 2026-11-18): it links a pub.dev audit-log entry to the publishing run, which is not a signature a client verifies (checked 2026-11-25).",
+        "cran": "No verifiable per-release signature was found on cran.r-project.org/web/packages/policies.html (undated) or in the first 100,000 characters of the R Installation and Administration manual (R 4.6.2, 2026-10-29); the rest of that manual was not read (checked 2026-11-25).",
+        "conan": "ConanCenter ships no package signatures; Conan's signing plugin is experimental and signs only where a user configures it (docs.conan.io, package signing).",
+        "vcpkg": "No verifiable per-release signature was found on learn.microsoft.com/en-us/vcpkg/maintainers/registries (updated 2025-12-15) or /vcpkg/concepts/asset-caching (updated 2025-03-31): versions are git tree hashes and assets carry a SHA512, which are hashes, not signatures (checked 2026-11-25).",
+        "julia": "No verifiable per-release signature was found on pkgdocs.julialang.org/dev/protocol/ or /dev/registries/ (built 2026-11-23): resources are content-addressed by hash, which is not a signature (checked 2026-11-25).",
+        "hex": "Hex signs its registry index with one fixed key and publishes no per-release signature or attestation (hex.pm public keys page).",
+        "opam": "The default opam-repository is unsigned; the signed-metadata scheme (conex) is a separate beta, not the default (discuss.ocaml.org).",
+        "conda": "anaconda.org and conda-forge publish no attestations: conda-content-trust is out of support and Sigstore attestations (CEP 27) exist only on prefix.dev.",
+        "nix": "A Nix dependency here is a pinned source revision (a flake input with its narHash): cache.nixos.org signs built store paths in its narinfo files, which a flake.lock does not name, so there is nothing to look up (nix manual, binary cache; checked 2026-11-25).",
+        "swift": "Swift packages resolve from git repositories; no public default package registry publishes signatures (SE-0292 registries may sign, none is the default).",
+    }
+)
 #: Where a dependency was found installed rather than declared: an image's packages.
 INSTALLED_MARKERS: Final = frozenset({"installed-in-image"})
 ECOSYSTEM_IDS: Final = frozenset(
@@ -628,6 +664,7 @@ class CheckLog:
 __all__ = [
     "ECOSYSTEM_IDS",
     "PROVENANCE_ECOSYSTEMS",
+    "PROVENANCE_NOT_PUBLISHED",
     "CheckLog",
     "DependencyIdentity",
     "DependencyResolution",

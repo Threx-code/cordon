@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import * as os from "node:os";
 import * as vscode from "vscode";
+import { askDecision } from "./decide";
 import { containedPath, parseReport, Severity, toDiagnostics } from "./findings";
 import { registerMcpServer } from "./mcp";
 
@@ -101,6 +102,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.workspace.onDidGrantWorkspaceTrust(() => void scan()),
     vscode.commands.registerCommand("cordon.showMcpConfig", () => showMcpConfig(output)),
+    vscode.commands.registerCommand("cordon.decide", () => decideFromFile(output)),
   );
 
   void installed().then((version) => {
@@ -147,6 +149,26 @@ async function offerInstall(): Promise<void> {
     await vscode.env.clipboard.writeText(INSTALL_COMMAND);
   } else if (choice === "Open guide") {
     await vscode.env.openExternal(vscode.Uri.parse(GUIDE));
+  }
+}
+
+/** Asks the scanner's decision function, from the IDE point, about a question file the person picks. */
+async function decideFromFile(output: vscode.OutputChannel): Promise<void> {
+  if (!vscode.workspace.isTrusted) {
+    return;
+  }
+  const picked = await vscode.window.showOpenDialog({ canSelectMany: false, filters: { JSON: ["json"] } });
+  if (!picked || picked.length === 0) {
+    return;
+  }
+  try {
+    const bytes = await vscode.workspace.fs.readFile(picked[0]);
+    const question: object = JSON.parse(Buffer.from(bytes).toString("utf8"));
+    const decision = await askDecision(executable(), question);
+    output.appendLine(`decision ${decision.state} ${decision.reasonCodes.join(" ")} ${decision.summary}`);
+    void vscode.window.showInformationMessage(`Cordon: ${decision.state} (${decision.reasonCodes.join(", ")})`);
+  } catch (error) {
+    output.appendLine(`could not ask for a decision: ${String(error)}`);
   }
 }
 

@@ -53,4 +53,20 @@ object Scanner {
         if (out.exitCode != 0) throw ScannerException(out.stderr.trim().ifEmpty { "could not print the configuration" })
         return out.stdout.lines().filterNot { it.startsWith("#") }.joinToString("\n").trim()
     }
+
+    /** Ask the scanner's decision function from the IDE point: the question (policy, artifact, evidence,
+     * clock, context) goes to its standard input as JSON, the decision comes back on standard output. */
+    fun decide(executable: String, question: String, point: String = "ide"): Decision {
+        val line = command(executable, *DecisionParser.args(point).toTypedArray())
+        val process = line.createProcess()
+        // A scanner that exits without reading the question closes the pipe: its exit code says why.
+        try {
+            process.outputStream.use { it.write(question.toByteArray(StandardCharsets.UTF_8)) }
+        } catch (_: java.io.IOException) {
+        }
+        val out = CapturingProcessHandler(process, StandardCharsets.UTF_8, line.commandLineString).runProcess(SHORT_TIMEOUT_MS)
+        if (out.isTimeout) throw ScannerException("the decision passed its deadline")
+        if (out.exitCode != 0) throw ScannerException(out.stderr.trim().ifEmpty { "cordon-scanner exited with ${out.exitCode}" })
+        return DecisionParser.parse(out.stdout)
+    }
 }

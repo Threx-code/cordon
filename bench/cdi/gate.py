@@ -37,6 +37,7 @@ import hashlib
 import json
 import math
 import sys
+from collections.abc import Collection
 from pathlib import Path
 from typing import Any
 
@@ -337,6 +338,28 @@ class Gate:
         """The bytes a signature covers: sorted keys, no whitespace, the signature itself left out."""
         body = {k: v for k, v in document.items() if k != "signature"}
         return json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+    @staticmethod
+    def trusted_decision(decision: dict[str, Any], trusted_publics: Collection[str]) -> bool:
+        """Whether the decision carries a valid signature by one of the keys the caller trusts (hex public keys).
+
+        The generation role holds a key of its own; only decisions signed by the separate gate key are trusted, so the
+        role that makes candidates cannot publish a gate decision."""
+        from cordon_scanner.intel.provenance import _ed25519
+
+        signature = decision.get("signature")
+        if not isinstance(signature, dict) or signature.get("public") not in trusted_publics:
+            return False
+        try:
+            return bool(
+                _ed25519.Ed25519.verify(
+                    bytes.fromhex(signature["public"]),
+                    Gate.canonical(decision),
+                    bytes.fromhex(signature["sig"]),
+                )
+            )
+        except (KeyError, ValueError, TypeError):
+            return False
 
     @staticmethod
     def sign(decision: dict[str, Any], seed_hex: str) -> dict[str, Any]:

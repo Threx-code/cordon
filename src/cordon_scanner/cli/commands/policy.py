@@ -80,13 +80,12 @@ class PolicyCommand:
         cls, args: argparse.Namespace, fetch: object = None, now: datetime | None = None
     ) -> int:
         from cordon_scanner.cloud.agent.collection_status import STORE_FOLDER
+        from cordon_scanner.cloud.agent.device_runtime import DeviceRuntime
         from cordon_scanner.cloud.auth import CloudAuth
         from cordon_scanner.cloud.bundle_chain import BundleError, BundleRefused
         from cordon_scanner.cloud.bundle_puller import BundlePuller
         from cordon_scanner.cloud.local_runtime import LocalRuntime
         from cordon_scanner.cloud.local_store import LocalStore
-        from cordon_scanner.decide.decision.compiler import PolicyCompiler
-        from cordon_scanner.decide.decision.policy_source import PolicySource
 
         if getattr(args, "policy_command", None) != "pull":
             print(f"{PROGRAM}: policy needs pull", file=sys.stderr)
@@ -108,27 +107,22 @@ class PolicyCommand:
                 file=sys.stderr,
             )
             return int(ExitCode.CONFIG_ERROR)
-        strict = PolicyCompiler.compile(
-            PolicySource.from_json(
-                {
-                    "policy_schema": 2,
-                    "id": "cordon/strict-baseline",
-                    "version": 1,
-                    "scope": [args.tenant],
-                    "rules": [],
-                    "defaults": {"default": "block", "on_incomplete": {"*": "block"}},
-                }
-            )
-        )
         runtime = LocalRuntime(
             root_public=root,
             delegation=delegation,
             tenant=args.tenant,
-            baseline=strict,
+            baseline=DeviceRuntime.baseline(args.tenant),
             store=store,
         )
         runtime.resume(now or datetime.now(UTC))
-        puller = BundlePuller(args.url, fetch or cls.fetch, store)  # type: ignore[arg-type]
+        puller = BundlePuller(
+            args.url,
+            fetch or cls.fetch,  # type: ignore[arg-type]
+            store,
+            root_public=root,
+            delegation=delegation,
+            tenant=args.tenant,
+        )
         try:
             state = puller.pull(runtime, now or datetime.now(UTC))
         except BundleRefused as exc:
@@ -137,7 +131,21 @@ class PolicyCommand:
         except BundleError as exc:
             print(f"{PROGRAM}: bundle not taken: {exc}; the bundle held is kept")
             return int(ExitCode.CONFIG_ERROR)
-        if state in ("new", "unchanged") and (pinned is None or pinned.data != root):
-            store.put_blob("pin", "root", root, (now or datetime.now(UTC)).isoformat())
-        print(f"policy bundle: {state}")
+        if state in ("new", "unchanged"):
+            issued = (now or datetime.now(UTC)).isoformat()
+            store.put_blob("pin", "root", root, issued)
+            store.put_blob(
+                "pin", "delegation", json.dumps(delegation, sort_keys=True).encode(), issued
+            )
+            store.put_blob("pin", "tenant", args.tenant.encode("utf-8"), issued)
+        refused = puller.refusal()
+        if refused:
+            print(
+                f"{PROGRAM}: decision delegation refused: {refused}; the one held is kept",
+                file=sys.stderr,
+            )
+        print(
+            f"policy bundle: {state}"
+            + (f"; decision delegation refused: {refused}" if refused else "")
+        )
         return int(ExitCode.CLEAN) if state != "unreachable" else int(ExitCode.SCANNER_ERROR)

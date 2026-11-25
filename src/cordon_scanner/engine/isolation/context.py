@@ -19,7 +19,8 @@ comes back as one JSON document the parent checks before it believes any of it:
 
 A worker that dies, hangs, overruns, raises or answers with a refused document leaves the scan with
 only what the walk gives (`tree_paths`), and a blocking gap at the scan's scope: incomplete scans
-block. The parent never runs a step in-process. `IsolationUnavailable` is never caught.
+block. The parent never runs a step in-process. When no worker can start at all (`IsolationUnavailable`), the step is reported lost
+(`Supervisor.run_or_lose`), not run here: the scan ends incomplete and blocks.
 """
 
 from __future__ import annotations
@@ -314,10 +315,7 @@ class ContextRun:
                 FileUnit(content=content, language=language, project=project, opens=opens)
             )
         self.walked = len(self.units)
-        self.acc = Accumulator(
-            finding_cap=self.engine.config.limits.max_findings,
-            reuse_keys=self.engine.config.reuse_keys,
-        )
+        self.acc = Accumulator.for_config(self.engine.config)
         self.dependencies: tuple[Dependency, ...] = ()
         self.ingested: tuple[Dependency, ...] = ()
         self.inventory_hooks: Any = None
@@ -870,7 +868,7 @@ class ContextStage:
         )  # fmt: skip
         supervisor.template = template
         size = sum(len(unit.content.raw) for unit in units)
-        outcome = supervisor.run([Unit(0, item, size)])
+        outcome = supervisor.run_or_lose([Unit(0, item, size)])
         if 0 in outcome.results:
             answer = outcome.results[0]
             if isinstance(answer, str):

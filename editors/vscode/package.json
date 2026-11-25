@@ -26,7 +26,8 @@
     "commands": [
       { "command": "cordon.scanWorkspace", "title": "Cordon: Scan workspace" },
       { "command": "cordon.clear", "title": "Cordon: Clear findings" },
-      { "command": "cordon.showMcpConfig", "title": "Cordon: Show MCP configuration" }
+      { "command": "cordon.showMcpConfig", "title": "Cordon: Show MCP configuration" },
+      { "command": "cordon.decide", "title": "Cordon: Ask for a decision (question file)" }
     ],
     "mcpServerDefinitionProviders": [
       { "id": "cordon.mcpServers", "label": "Cordon" }

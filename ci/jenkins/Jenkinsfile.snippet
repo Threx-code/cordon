@@ -19,9 +19,16 @@ pipeline {
                     // The exit code is captured rather than allowed to abort,
                     // so reports are always published. A failed stage with no
                     // report tells nobody anything.
+                    // CORDON_MODE is "scan" unless the pipeline sets it to "decide": decide runs
+                    // `cordon-scanner decide --lock --point ci_gate` over the JSON question in
+                    // CORDON_DECIDE_QUESTION (compiled policy, locked artifacts, their evidence, the time).
+                    def decide = (env.CORDON_MODE ?: 'scan') == 'decide'
                     def code = sh(
                         returnStatus: true,
-                        script: '''
+                        script: decide ? '''
+                            cordon-scanner decide --lock --point ci_gate \
+                                < "$CORDON_DECIDE_QUESTION" > cordon-decision.json
+                        ''' : '''
                             cordon-scanner scan /scan \
                                 --severity low \
                                 --fail-on high \

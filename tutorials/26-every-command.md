@@ -381,6 +381,8 @@ Inspect and validate rule packs.
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ rules list                    list every loaded rule                       │
 │ rules test                    run every rule's declared samples            │
+│ rules learned                 the learned detectors of the installed       │
+│                               bundle, read offline                         │
 │ rules diff                    compare rule packs and report removal or     │
 │                               weakening                                    │
 │ rules show                    show one rule in full                        │
@@ -960,6 +962,8 @@ Run mix, scanning every package before anything is installed.
 - `intel`: the signed threat-intel feed
 - `bundle`: offline bundle, air-gapped use
 - `policy`: the signed policy bundle
+- `decide`: ask for a decision (JSON)
+- `pr-comment`: the PR comment for decisions
 
 ## advisories
 
@@ -1097,6 +1101,37 @@ The tenant's signed policy bundle.
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## decide
+
+Ask the decision function: JSON in, a decision out.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ --point {cli,ide,agent_hook,firewall,ci_gate,deploy_admission,inventory_sweep} │
+│                           where the question comes from                    │
+│ --lock                    decide every artifact of a lock at the build     │
+│                           gate                                             │
+│ --release                 decide a release on its provenance               │
+│ --admission               answer a Kubernetes AdmissionReview: every image │
+│                           of the workload is decided                       │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## pr-comment
+
+The pull-request comment for `decide --lock` output (stdin), with its REVIEW notification.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ --base BASE               the platform's https base URL the three links    │
+│                           use                                              │
+│ --owner OWNER             who a REVIEW result is for: a user or `org/team` │
+│ --pr PR                   the pull request, e.g. owner/repo#12             │
+│ --notification-out NOTIFICATION_OUT                                        │
+│                           write the REVIEW notification record here        │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
 ## AI agents
 
 - `mcp`: serve Cordon to AI agents (MCP)
@@ -1218,6 +1253,8 @@ This machine's AI agents and MCP servers, for an organisation's MDM (read-only, 
 │ agent mcp-approve             record the tools each remote MCP server in   │
 │                               the repository serves now (.cordon/mcp-      │
 │                               tools.json)                                  │
+│ agent hook                    an agent's pre-tool hook: PreToolUse JSON    │
+│                               in, allow or deny out                        │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 

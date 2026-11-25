@@ -84,7 +84,15 @@ class PackageFacts:
         self._paths = sorted(set(capabilities) | set(places))
         self._matched: dict[Term, list[str]] = {}
         hooks = (h.kind for h in (ctx.repository.hooks if ctx.repository is not None else ()))
-        self.package = FactTerms.of_package(package_rules, hooks)
+        self.package = FactTerms.of_package(package_rules, hooks) | self._target(ctx)
+
+    @staticmethod
+    def _target(ctx: ScanContext) -> set[Term]:
+        """The `target` term the scan can say of itself: an image, or a published package. A source tree and a plain archive
+        are not told apart here, so a rule naming them is not satisfied by a live scan (the facts record says them)."""
+        if ctx.image is not None:
+            return {("target", "image")}
+        return {("target", "package")} if ctx.package_distribution else set()
 
     def _files(self, term: Term) -> list[str]:
         """The files that satisfy a file term, in path order; worked out once per term asked."""

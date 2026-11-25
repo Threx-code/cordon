@@ -32,6 +32,7 @@ DEFAULTS: dict[str, Any] = {
     "exceptions": "none",
     "max_intel_age": "7d",
     "bundle_max_age": "72h",
+    "exception_max_age": "30d",
     "warn_until_measured": ["pypi"],
     "degrade": {"serve_last_allow_hours": 24},
 }
@@ -115,6 +116,7 @@ LOWERINGS: list[tuple[str, dict[str, Any], str]] = [
     ("exceptions from none to allow", {"exceptions": "allow"}, "default:exceptions"),
     ("a longer intel age", {"max_intel_age": "30d"}, "default:max_intel_age"),
     ("a longer bundle age", {"bundle_max_age": "200h"}, "default:bundle_max_age"),
+    ("a longer exception age", {"exception_max_age": "90d"}, "default:exception_max_age"),
     (
         "another ecosystem warn-only",
         {"warn_until_measured": ["pypi", "npm"]},
@@ -137,6 +139,7 @@ class TestATighteningNeedsNothing:
             {"unresolved": "block", "on_gaps": "block"},
             {"max_intel_age": "3d"},
             {"bundle_max_age": "24h"},
+            {"exception_max_age": "7d"},
             {"warn_until_measured": []},
             {"degrade": {"serve_last_allow_hours": 12}},
             {},

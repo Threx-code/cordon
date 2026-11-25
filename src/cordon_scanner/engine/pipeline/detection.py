@@ -203,8 +203,17 @@ class Detection:
 
         self.merge_worker_results(produced, units, results, acc, ctx, signature)
         acc.ledger_read.update(units[index].path for index, *_ in produced)
+        unavailable: list[int] = []
         for index, reason in sorted(lost.items()):
+            if reason.split(":", 1)[0] == "unavailable":
+                unavailable.append(index)
+                if len(unavailable) > self.NAMED_UNAVAILABLE:
+                    # Past the first ones, named in the ledger beside the one finding at the scan's scope.
+                    acc.ledger_unstarted.add(units[index].path)
+                    continue
             results.append(self.worker_lost(units[index], reason, acc))
+        if unavailable:
+            results.append(self.isolation_unavailable(unavailable, lost, where, acc))
         # Each file never started, by path, beside the one finding at the scan's scope (item 38).
         acc.ledger_unstarted.update(units[index].path for index in unstarted)
         if unstarted:
@@ -242,6 +251,34 @@ class Detection:
             )
         )
 
+    #: Files a scan in which no worker could start names one by one; the rest are counted in the one finding at the scan's scope.
+    NAMED_UNAVAILABLE: ClassVar[int] = 50
+
+    def isolation_unavailable(
+        self, lost_files: list[int], lost: dict[int, str], where: str, acc: Accumulator
+    ) -> Finding:
+        """No worker could start here: one finding at the scan's scope with the cause and the count, so a large scan is not 10,000
+        findings. It is a gap like any other and blocks."""
+        reason = lost[lost_files[0]]
+        cause = reason.split(": ", 1)[1] if ": " in reason else "no worker could start"
+        more = len(lost_files) - self.NAMED_UNAVAILABLE
+        named = (
+            f"the first {self.NAMED_UNAVAILABLE} are named, and {more} more"
+            if more > 0
+            else "each is named"
+        )
+        return acc.gap(
+            OperationalFinding.build(
+                path=where,
+                rule_id="OPERATIONAL.FILE.WORKER_ISOLATION",
+                message=(
+                    f"No worker could start here ({cause}): {len(lost_files)} file(s) were not "
+                    f"inspected; {named}."
+                ),
+                remediation="Run the scan where isolated workers can start, or report this.",
+            )
+        )
+
     @staticmethod
     def worker_lost(unit: FileUnit, reason: str, acc: Accumulator) -> Finding:
         """A file whose worker died, hung or raised (item 28): reported by name, the scan incomplete.
@@ -269,6 +306,7 @@ class Detection:
         "cpu": ("HUNG", "used up its CPU budget"),
         "wall": ("HUNG", "stopped answering"),
         "failed": ("FAILED", "raised an error"),
+        "unavailable": ("ISOLATION", "was never started: no worker could start here"),
     }
 
     def work_items(

@@ -69,6 +69,30 @@ inputs:
       hash-only regardless of this setting.
     required: false
     default: "masked"
+  mode:
+    description: >
+      scan (the default) or decide. In decide mode no scan runs: the question file is handed to
+      `cordon-scanner decide --lock --point ci_gate` and the job fails when the build gate does not pass.
+    required: false
+    default: "scan"
+  decide-question:
+    description: "Decide mode: the JSON question (compiled policy, locked artifacts, their evidence, the time)."
+    required: false
+    default: ""
+  decide-comment:
+    description: >
+      Decide mode, on a pull request: post the decisions as a comment (updated on later pushes) with the three actions, and
+      write the one REVIEW notification to cordon-notification.json. Needs decide-platform-url.
+    required: false
+    default: "false"
+  decide-platform-url:
+    description: "Decide mode comment: the platform's https base URL the comment's links use."
+    required: false
+    default: ""
+  decide-owner:
+    description: "Decide mode comment: who a REVIEW result is for (a user or org/team), named in the comment and in the notification."
+    required: false
+    default: ""
   working-directory:
     description: "Directory to run in."
     required: false
@@ -210,8 +234,40 @@ runs:
         # not one to trust with the verdict.
         cordon-scanner verify --online
 
+    - name: Decide
+      if: inputs.mode == 'decide'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        CORDON_DECIDE_QUESTION: ${{ inputs.decide-question }}
+      run: |
+        [ -n "$CORDON_DECIDE_QUESTION" ] || { echo "decide mode needs decide-question"; exit 3; }
+        cordon-scanner decide --lock --point ci_gate < "$CORDON_DECIDE_QUESTION" > cordon-decision.json
+
+    - name: Comment the decisions on the pull request
+      if: always() && inputs.mode == 'decide' && inputs.decide-comment == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        # Through the environment, never interpolated: every one of these is chosen by someone else.
+        COMMENT_BASE: ${{ inputs.decide-platform-url }}
+        COMMENT_OWNER: ${{ inputs.decide-owner }}
+        COMMENT_PR: ${{ github.repository }}#${{ github.event.pull_request.number }}
+        REVIEW_PR: ${{ github.event.pull_request.number }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -uo pipefail
+        [ -s cordon-decision.json ] || { echo "no decision to comment"; exit 0; }
+        args=( pr-comment --base "$COMMENT_BASE" --pr "$COMMENT_PR" --notification-out cordon-notification.json )
+        [ -n "$COMMENT_OWNER" ] && args+=( --owner "$COMMENT_OWNER" )
+        cordon-scanner "${args[@]}" < cordon-decision.json > cordon-comment.md || exit 3
+        cat cordon-comment.md >> "$GITHUB_STEP_SUMMARY"
+        gh pr comment "$REVIEW_PR" --body-file cordon-comment.md --edit-last 2>/dev/null \
+          || gh pr comment "$REVIEW_PR" --body-file cordon-comment.md
+
     - name: Scan
       id: scan
+      if: inputs.mode != 'decide'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:

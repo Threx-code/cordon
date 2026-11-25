@@ -156,7 +156,7 @@ class Loosening:
         ):
             if cls._rank(order, getattr(new, field)) < cls._rank(order, getattr(old, field)):
                 out.add(f"default:{field}")
-        for field in ("max_intel_age_s", "bundle_max_age_s"):
+        for field in ("max_intel_age_s", "bundle_max_age_s", "exception_max_age_s"):
             if cls._longer(getattr(old, field), getattr(new, field)):
                 out.add(f"default:{field.removesuffix('_s')}")
         if set(new.warn_until_measured) - set(old.warn_until_measured):

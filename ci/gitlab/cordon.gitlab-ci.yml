@@ -18,6 +18,10 @@
     CORDON_SEVERITY: "low"
     CORDON_FAIL_ON: "high"
     CORDON_UPLOAD: "false"
+    # "scan" (the default) or "decide": decide runs `cordon-scanner decide --lock --point ci_gate` over the
+    # JSON question in CORDON_DECIDE_QUESTION (compiled policy, locked artifacts, their evidence, the time).
+    CORDON_MODE: "scan"
+    CORDON_DECIDE_QUESTION: ""
   id_tokens:
     CORDON_ID_TOKEN:
       aud: cordon
@@ -35,6 +39,7 @@
     paths:
       - cordon.sarif
       - cordon-result.json
+      - cordon-decision.json
     reports:
       junit: cordon-junit.xml
       codequality: gl-code-quality-report.json
@@ -44,6 +49,11 @@ cordon:scan:
   stage: test
   script:
     - |
+      if [ "$CORDON_MODE" = "decide" ]; then
+        [ -n "$CORDON_DECIDE_QUESTION" ] || { echo "decide mode needs CORDON_DECIDE_QUESTION"; exit 3; }
+        cordon-scanner decide --lock --point ci_gate < "$CORDON_DECIDE_QUESTION" > cordon-decision.json
+        exit $?
+      fi
       set -- scan . --severity "$CORDON_SEVERITY" --fail-on "$CORDON_FAIL_ON" --no-color \
         --format text \
         --format sarif:cordon.sarif \

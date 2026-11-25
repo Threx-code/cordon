@@ -217,42 +217,56 @@ class OpenPgp:
             except OSError as exc:
                 problems.append(f"{path}: {exc.strerror or NetworkFailure.reason(exc)}")
                 continue
-            if len(data) > MAX_KEYRING_BYTES:
-                problems.append(f"{path}: larger than a keyring")
-                continue
-            try:
-                if Keybox.detect(data):
-                    data = Keybox.keyblocks(data)
-            except ValueError as exc:
-                problems.append(f"{path}: not a keybox this reads ({exc})")
-                continue
-            armored = Canonical.blocks(data, _PUBLIC_KEY)
-            if armored is None:
-                problems.append(f"{path}: not an OpenPGP keyring (a malformed armored block)")
-                continue
-            try:
-                found = [c for block in (armored or [data]) for c in Certs.split(block)]
-            except PgpError as exc:
-                problems.append(f"{path}: not an OpenPGP keyring ({exc})")
-                continue
-            for cert in found:
-                if cert.primary.version == 4 and not cert.user_ids:
-                    problems.append(
-                        f"{path}: key {cert.fingerprint} has no user ID, so it is left out, as Helm "
-                        "leaves it out"
-                    )
-                    continue
-                problems.extend(f"{path}: key {cert.fingerprint}: {p}" for p in cert.problems)
-                keys.append(
-                    KeyInfo(
-                        cert,
-                        cert.fingerprint,
-                        frozenset(cert.key_ids()),
-                        tuple(cert.certified),
-                        {k: tuple(sorted(v)) for k, v in cert.bindings().items()},
-                    )
-                )
+            OpenPgp._read_keys(data, path, keys, problems)
         return Keyring(tuple(keys), paths, tuple(problems))
+
+    @staticmethod
+    def from_bytes(data: bytes, origin: str) -> Keyring:
+        """The certificates in `data` (armored or binary), as a keyring that names no file: for keys a registry serves, which
+        are not the operator's to trust until they say so."""
+        keys: list[KeyInfo] = []
+        problems: list[str] = []
+        OpenPgp._read_keys(data, origin, keys, problems)
+        return Keyring(tuple(keys), (), tuple(problems))
+
+    @staticmethod
+    def _read_keys(data: bytes, path: str, keys: list[KeyInfo], problems: list[str]) -> None:
+        """Append the certificates `data` holds to `keys`, and what is wrong with any to `problems`."""
+        if len(data) > MAX_KEYRING_BYTES:
+            problems.append(f"{path}: larger than a keyring")
+            return
+        try:
+            if Keybox.detect(data):
+                data = Keybox.keyblocks(data)
+        except ValueError as exc:
+            problems.append(f"{path}: not a keybox this reads ({exc})")
+            return
+        armored = Canonical.blocks(data, _PUBLIC_KEY)
+        if armored is None:
+            problems.append(f"{path}: not an OpenPGP keyring (a malformed armored block)")
+            return
+        try:
+            found = [c for block in (armored or [data]) for c in Certs.split(block)]
+        except PgpError as exc:
+            problems.append(f"{path}: not an OpenPGP keyring ({exc})")
+            return
+        for cert in found:
+            if cert.primary.version == 4 and not cert.user_ids:
+                problems.append(
+                    f"{path}: key {cert.fingerprint} has no user ID, so it is left out, as Helm "
+                    "leaves it out"
+                )
+                continue
+            problems.extend(f"{path}: key {cert.fingerprint}: {p}" for p in cert.problems)
+            keys.append(
+                KeyInfo(
+                    cert,
+                    cert.fingerprint,
+                    frozenset(cert.key_ids()),
+                    tuple(cert.certified),
+                    {k: tuple(sorted(v)) for k, v in cert.bindings().items()},
+                )
+            )
 
     @staticmethod
     def _signature(data: bytes, signature: bytes | None) -> tuple[Signature, bytes] | None:
