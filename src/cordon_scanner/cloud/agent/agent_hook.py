@@ -13,6 +13,8 @@ import json
 import re
 from typing import TYPE_CHECKING, Any, ClassVar, Final, NamedTuple
 
+from cordon_scanner.cloud.agent.hook_observation import HookObservations
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
     from datetime import datetime
@@ -166,6 +168,7 @@ class AgentHook:
         if outcome.decision.state in cls.DENIED and retry_online:
             outcome = cls._ask(runtime, call, clock, environment, scope_path, online=True)
         decision = outcome.decision
+        HookObservations.record(store, hook_input, outcome, clock)
         if decision.state not in cls.DENIED:
             return cls.answer("allow")
         codes = ", ".join(decision.reason_codes)
