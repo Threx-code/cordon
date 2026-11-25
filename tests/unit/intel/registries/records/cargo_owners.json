@@ -1,0 +1,21 @@
+{
+ "users": [
+  {
+   "avatar": "https://avatars.githubusercontent.com/u/291359?v=4",
+   "github_username_matches": true,
+   "id": 7,
+   "kind": "user",
+   "login": "SimonSapin",
+   "name": "Simon Sapin",
+   "url": "https://github.com/SimonSapin"
+  },
+  {
+   "avatar": "https://avatars.githubusercontent.com/u/2566135?v=4",
+   "id": 5,
+   "kind": "team",
+   "login": "github:servo:cargo-publish",
+   "name": "cargo publish",
+   "url": "https://github.com/servo"
+  }
+ ]
+}

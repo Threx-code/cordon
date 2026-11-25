@@ -8,12 +8,23 @@ from __future__ import annotations
 from typing import ClassVar
 
 from cordon_scanner.intel.registries.record_sources.base import RecordSource
+from cordon_scanner.intel.registries.record_sources.cargo import CargoSource
+from cordon_scanner.intel.registries.record_sources.hex import HexSource
 from cordon_scanner.intel.registries.record_sources.npm import NpmSource
+from cordon_scanner.intel.registries.record_sources.pub import PubSource
 from cordon_scanner.intel.registries.record_sources.pypi import PypiSource
+from cordon_scanner.intel.registries.record_sources.rubygems import RubygemsSource
 
 
 class RecordSources:
-    SOURCES: ClassVar[tuple[RecordSource, ...]] = (NpmSource(), PypiSource())
+    SOURCES: ClassVar[tuple[RecordSource, ...]] = (
+        NpmSource(),
+        PypiSource(),
+        CargoSource(),
+        RubygemsSource(),
+        HexSource(),
+        PubSource(),
+    )
 
     @classmethod
     def of(cls, ecosystem: str) -> RecordSource | None:

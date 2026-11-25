@@ -1,0 +1,426 @@
+{
+ "categories": [],
+ "crate": {
+  "badges": [],
+  "categories": [],
+  "created_at": "2015-04-06T18:59:35.782519Z",
+  "default_version": "1.0.7",
+  "description": "Fowler\u2013Noll\u2013Vo hash function",
+  "documentation": "https://doc.servo.org/fnv/",
+  "downloads": 1005457044,
+  "exact_match": false,
+  "homepage": null,
+  "id": "fnv",
+  "keywords": [],
+  "links": {
+   "owner_team": "/api/v1/crates/fnv/owner_team",
+   "owner_user": "/api/v1/crates/fnv/owner_user",
+   "owners": "/api/v1/crates/fnv/owners",
+   "reverse_dependencies": "/api/v1/crates/fnv/reverse_dependencies",
+   "version_downloads": "/api/v1/crates/fnv/downloads",
+   "versions": null
+  },
+  "max_stable_version": "1.0.7",
+  "max_version": "1.0.7",
+  "name": "fnv",
+  "newest_version": "1.0.7",
+  "num_versions": 8,
+  "recent_downloads": 249413675,
+  "repository": "https://github.com/servo/rust-fnv",
+  "trustpub_only": false,
+  "updated_at": "2020-05-14T16:06:29.223002Z",
+  "versions": [
+   241390,
+   70853,
+   34299,
+   32753,
+   29970,
+   21247,
+   21246,
+   8237
+  ],
+  "yanked": false
+ },
+ "keywords": [],
+ "versions": [
+  {
+   "audit_actions": [
+    {
+     "action": "publish",
+     "time": "2020-05-14T16:06:29.223002Z",
+     "user": {
+      "avatar": "https://avatars.githubusercontent.com/u/1617736?v=4",
+      "created_at": "2012-04-06T05:41:40Z",
+      "github_username_matches": true,
+      "id": 1139,
+      "login": "Manishearth",
+      "name": "Manish Goregaokar",
+      "url": "https://github.com/Manishearth"
+     }
+    }
+   ],
+   "bin_names": [],
+   "checksum": "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1",
+   "crate": "fnv",
+   "crate_size": 11266,
+   "created_at": "2020-05-14T16:06:29.223002Z",
+   "description": "Fowler\u2013Noll\u2013Vo hash function",
+   "dl_path": "/api/v1/crates/fnv/1.0.7/download",
+   "documentation": "https://doc.servo.org/fnv/",
+   "downloads": 989084093,
+   "edition": null,
+   "features": {
+    "default": [
+     "std"
+    ],
+    "std": []
+   },
+   "has_lib": true,
+   "homepage": null,
+   "id": 241390,
+   "lib_links": null,
+   "license": "Apache-2.0 / MIT",
+   "linecounts": {
+    "languages": {
+     "Rust": {
+      "code_lines": 311,
+      "comment_lines": 0,
+      "files": 1
+     }
+    },
+    "total_code_lines": 311,
+    "total_comment_lines": 0
+   },
+   "links": {
+    "authors": "/api/v1/crates/fnv/1.0.7/authors",
+    "dependencies": "/api/v1/crates/fnv/1.0.7/dependencies",
+    "version_downloads": "/api/v1/crates/fnv/1.0.7/downloads"
+   },
+   "num": "1.0.7",
+   "published_by": {
+    "avatar": "https://avatars.githubusercontent.com/u/1617736?v=4",
+    "created_at": "2012-04-06T05:41:40Z",
+    "github_username_matches": true,
+    "id": 1139,
+    "login": "Manishearth",
+    "name": "Manish Goregaokar",
+    "url": "https://github.com/Manishearth"
+   },
+   "readme_path": "/api/v1/crates/fnv/1.0.7/readme",
+   "repository": "https://github.com/servo/rust-fnv",
+   "rust_version": null,
+   "trustpub_data": null,
+   "updated_at": "2020-05-14T16:06:29.223002Z",
+   "yank_message": null,
+   "yanked": false
+  },
+  {
+   "audit_actions": [],
+   "bin_names": [],
+   "checksum": "2fad85553e09a6f881f739c29f0b00b0f01357c743266d478b68951ce23285f3",
+   "crate": "fnv",
+   "crate_size": 11131,
+   "created_at": "2017-11-09T23:15:54.192466Z",
+   "description": "Fowler\u2013Noll\u2013Vo hash function",
+   "dl_path": "/api/v1/crates/fnv/1.0.6/download",
+   "documentation": "https://doc.servo.org/fnv/",
+   "downloads": 15143084,
+   "edition": null,
+   "features": {},
+   "has_lib": true,
+   "homepage": null,
+   "id": 70853,
+   "lib_links": null,
+   "license": "Apache-2.0 / MIT",
+   "linecounts": {
+    "languages": {
+     "Rust": {
+      "code_lines": 257,
+      "comment_lines": 0,
+      "files": 1
+     }
+    },
+    "total_code_lines": 257,
+    "total_comment_lines": 0
+   },
+   "links": {
+    "authors": "/api/v1/crates/fnv/1.0.6/authors",
+    "dependencies": "/api/v1/crates/fnv/1.0.6/dependencies",
+    "version_downloads": "/api/v1/crates/fnv/1.0.6/downloads"
+   },
+   "num": "1.0.6",
+   "published_by": null,
+   "readme_path": "/api/v1/crates/fnv/1.0.6/readme",
+   "repository": "https://github.com/servo/rust-fnv",
+   "rust_version": null,
+   "trustpub_data": null,
+   "updated_at": "2017-11-30T02:26:59.338159Z",
+   "yank_message": null,
+   "yanked": false
+  },
+  {
+   "audit_actions": [],
+   "bin_names": [],
+   "checksum": "6cc484842f1e2884faf56f529f960cc12ad8c71ce96cc7abba0a067c98fee344",
+   "crate": "fnv",
+   "crate_size": 6295,
+   "created_at": "2016-09-19T11:01:26.359390Z",
+   "description": "Fowler\u2013Noll\u2013Vo hash function",
+   "dl_path": "/api/v1/crates/fnv/1.0.5/download",
+   "documentation": "https://doc.servo.org/fnv/",
+   "downloads": 1001424,
+   "edition": null,
+   "features": {},
+   "has_lib": true,
+   "homepage": null,
+   "id": 34299,
+   "lib_links": null,
+   "license": "Apache-2.0 / MIT",
+   "linecounts": {
+    "languages": {
+     "Rust": {
+      "code_lines": 257,
+      "comment_lines": 0,
+      "files": 1
+     }
+    },
+    "total_code_lines": 257,
+    "total_comment_lines": 0
+   },
+   "links": {
+    "authors": "/api/v1/crates/fnv/1.0.5/authors",
+    "dependencies": "/api/v1/crates/fnv/1.0.5/dependencies",
+    "version_downloads": "/api/v1/crates/fnv/1.0.5/downloads"
+   },
+   "num": "1.0.5",
+   "published_by": null,
+   "readme_path": "/api/v1/crates/fnv/1.0.5/readme",
+   "repository": "https://github.com/servo/rust-fnv",
+   "rust_version": null,
+   "trustpub_data": null,
+   "updated_at": "2017-11-30T03:21:02.166746Z",
+   "yank_message": null,
+   "yanked": false
+  },
+  {
+   "audit_actions": [],
+   "bin_names": [],
+   "checksum": "8e8af7b5408ab0c4910cad114c8f9eb454bf75df7afe8964307eeafb68a13a5e",
+   "crate": "fnv",
+   "crate_size": 6173,
+   "created_at": "2016-08-30T07:36:12.240356Z",
+   "description": "Fowler\u2013Noll\u2013Vo hash function",
+   "dl_path": "/api/v1/crates/fnv/1.0.4/download",
+   "documentation": "https://doc.servo.org/fnv/",
+   "downloads": 23200,
+   "edition": null,
+   "features": {},
+   "has_lib": true,
+   "homepage": null,
+   "id": 32753,
+   "lib_links": null,
+   "license": "Apache-2.0 / MIT",
+   "linecounts": {
+    "languages": {
+     "Rust": {
+      "code_lines": 253,
+      "comment_lines": 0,
+      "files": 1
+     }
+    },
+    "total_code_lines": 253,
+    "total_comment_lines": 0
+   },
+   "links": {
+    "authors": "/api/v1/crates/fnv/1.0.4/authors",
+    "dependencies": "/api/v1/crates/fnv/1.0.4/dependencies",
+    "version_downloads": "/api/v1/crates/fnv/1.0.4/downloads"
+   },
+   "num": "1.0.4",
+   "published_by": null,
+   "readme_path": "/api/v1/crates/fnv/1.0.4/readme",
+   "repository": "https://github.com/servo/rust-fnv",
+   "rust_version": null,
+   "trustpub_data": null,
+   "updated_at": "2017-11-30T03:47:37.668140Z",
+   "yank_message": null,
+   "yanked": false
+  },
+  {
+   "audit_actions": [],
+   "bin_names": [],
+   "checksum": "d3d4285d5aa1cf04504b7d8c2d1fdccf4586b56739499a04cc58663b2543cd30",
+   "crate": "fnv",
+   "crate_size": 6621,
+   "created_at": "2016-07-13T11:12:20.931135Z",
+   "description": "Fowler\u2013Noll\u2013Vo hash function",
+   "dl_path": "/api/v1/crates/fnv/1.0.3/download",
+   "documentation": "https://doc.servo.org/fnv/",
+   "downloads": 28127,
+   "edition": null,
+   "features": {},
+   "has_lib": true,
+   "homepage": null,
+   "id": 29970,
+   "lib_links": null,
+   "license": "Apache-2.0 / MIT",
+   "linecounts": {
+    "languages": {
+     "Rust": {
+      "code_lines": 247,
+      "comment_lines": 0,
+      "files": 1
+     }
+    },
+    "total_code_lines": 247,
+    "total_comment_lines": 0
+   },
+   "links": {
+    "authors": "/api/v1/crates/fnv/1.0.3/authors",
+    "dependencies": "/api/v1/crates/fnv/1.0.3/dependencies",
+    "version_downloads": "/api/v1/crates/fnv/1.0.3/downloads"
+   },
+   "num": "1.0.3",
+   "published_by": null,
+   "readme_path": "/api/v1/crates/fnv/1.0.3/readme",
+   "repository": "https://github.com/servo/rust-fnv",
+   "rust_version": null,
+   "trustpub_data": null,
+   "updated_at": "2017-11-30T03:17:36.090799Z",
+   "yank_message": null,
+   "yanked": false
+  },
+  {
+   "audit_actions": [],
+   "bin_names": [],
+   "checksum": "6986d86e860ee9eb8fa701235b1c63dc7a2a2054b8e96114611dfa8fd48c950f",
+   "crate": "fnv",
+   "crate_size": 6111,
+   "created_at": "2016-01-24T14:33:08.471748Z",
+   "description": "Fowler\u2013Noll\u2013Vo hash function",
+   "dl_path": "/api/v1/crates/fnv/1.0.2/download",
+   "documentation": "https://doc.servo.org/fnv/",
+   "downloads": 65269,
+   "edition": null,
+   "features": {},
+   "has_lib": true,
+   "homepage": null,
+   "id": 21247,
+   "lib_links": null,
+   "license": "Apache-2.0 / MIT",
+   "linecounts": {
+    "languages": {
+     "Rust": {
+      "code_lines": 247,
+      "comment_lines": 0,
+      "files": 1
+     }
+    },
+    "total_code_lines": 247,
+    "total_comment_lines": 0
+   },
+   "links": {
+    "authors": "/api/v1/crates/fnv/1.0.2/authors",
+    "dependencies": "/api/v1/crates/fnv/1.0.2/dependencies",
+    "version_downloads": "/api/v1/crates/fnv/1.0.2/downloads"
+   },
+   "num": "1.0.2",
+   "published_by": null,
+   "readme_path": "/api/v1/crates/fnv/1.0.2/readme",
+   "repository": "https://github.com/servo/rust-fnv",
+   "rust_version": null,
+   "trustpub_data": null,
+   "updated_at": "2017-11-30T03:05:27.811522Z",
+   "yank_message": null,
+   "yanked": false
+  },
+  {
+   "audit_actions": [],
+   "bin_names": [],
+   "checksum": "7b467540e429838bb5773e0e4f89b00a595f6b21640d6f9ce54a9da2fb2a3f5c",
+   "crate": "fnv",
+   "crate_size": 6106,
+   "created_at": "2016-01-24T14:27:11.726176Z",
+   "description": "Fowler\u2013Noll\u2013Vo hash function",
+   "dl_path": "/api/v1/crates/fnv/1.0.1/download",
+   "documentation": "http://doc.servo.org/fnv/",
+   "downloads": 3526,
+   "edition": null,
+   "features": {},
+   "has_lib": true,
+   "homepage": null,
+   "id": 21246,
+   "lib_links": null,
+   "license": "Apache-2.0 / MIT",
+   "linecounts": {
+    "languages": {
+     "Rust": {
+      "code_lines": 247,
+      "comment_lines": 0,
+      "files": 1
+     }
+    },
+    "total_code_lines": 247,
+    "total_comment_lines": 0
+   },
+   "links": {
+    "authors": "/api/v1/crates/fnv/1.0.1/authors",
+    "dependencies": "/api/v1/crates/fnv/1.0.1/dependencies",
+    "version_downloads": "/api/v1/crates/fnv/1.0.1/downloads"
+   },
+   "num": "1.0.1",
+   "published_by": null,
+   "readme_path": "/api/v1/crates/fnv/1.0.1/readme",
+   "repository": "https://github.com/servo/rust-fnv",
+   "rust_version": null,
+   "trustpub_data": null,
+   "updated_at": "2017-11-30T03:46:52.282710Z",
+   "yank_message": null,
+   "yanked": false
+  },
+  {
+   "audit_actions": [],
+   "bin_names": [],
+   "checksum": "23c5f769d0418837c08fc1fafc29a25baebe21b7eb4e3149db11c37a2019d74c",
+   "crate": "fnv",
+   "crate_size": 5042,
+   "created_at": "2015-04-06T18:59:35.796343Z",
+   "description": "Fowler\u2013Noll\u2013Vo hash function",
+   "dl_path": "/api/v1/crates/fnv/1.0.0/download",
+   "documentation": null,
+   "downloads": 101700,
+   "edition": null,
+   "features": {},
+   "has_lib": true,
+   "homepage": null,
+   "id": 8237,
+   "lib_links": null,
+   "license": "Apache-2.0 / MIT",
+   "linecounts": {
+    "languages": {
+     "Rust": {
+      "code_lines": 241,
+      "comment_lines": 0,
+      "files": 2
+     }
+    },
+    "total_code_lines": 241,
+    "total_comment_lines": 0
+   },
+   "links": {
+    "authors": "/api/v1/crates/fnv/1.0.0/authors",
+    "dependencies": "/api/v1/crates/fnv/1.0.0/dependencies",
+    "version_downloads": "/api/v1/crates/fnv/1.0.0/downloads"
+   },
+   "num": "1.0.0",
+   "published_by": null,
+   "readme_path": "/api/v1/crates/fnv/1.0.0/readme",
+   "repository": null,
+   "rust_version": null,
+   "trustpub_data": null,
+   "updated_at": "2017-11-30T03:59:23.359936Z",
+   "yank_message": null,
+   "yanked": false
+  }
+ ]
+}

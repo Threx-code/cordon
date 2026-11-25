@@ -39,7 +39,7 @@ from typing import Any, ClassVar, Final
 from cordon_scanner.foundation.files.atomic import AtomicFile
 
 STORE_VERSION: Final = 1
-ECOSYSTEMS: Final = frozenset({"npm", "pypi"})
+ECOSYSTEMS: Final = frozenset({"npm", "pypi", "cargo", "rubygems", "hex", "pub"})
 #: npm's lifecycle scripts that run on the installing machine.
 INSTALL_HOOKS: Final = frozenset({"preinstall", "install", "postinstall", "prepare"})
 #: A version number chosen to outrank any internal release: the dependency-confusion shape.
