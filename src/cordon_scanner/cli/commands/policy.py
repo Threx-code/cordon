@@ -115,7 +115,14 @@ class PolicyCommand:
             store=store,
         )
         runtime.resume(now or datetime.now(UTC))
-        puller = BundlePuller(args.url, fetch or cls.fetch, store)  # type: ignore[arg-type]
+        puller = BundlePuller(
+            args.url,
+            fetch or cls.fetch,  # type: ignore[arg-type]
+            store,
+            root_public=root,
+            delegation=delegation,
+            tenant=args.tenant,
+        )
         try:
             state = puller.pull(runtime, now or datetime.now(UTC))
         except BundleRefused as exc:
