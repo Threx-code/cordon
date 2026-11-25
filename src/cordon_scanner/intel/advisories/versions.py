@@ -45,12 +45,28 @@ bound is checked before any regex or split runs, so the cost of a pathological
 string is capped at a length check.
 """
 
-_SEMVER_ECOSYSTEMS = frozenset({"npm", "cargo", "gomod", "nuget", "pub", "composer", "cocoapods"})
+#: SemVer, by each ecosystem's own rule: Hex (Elixir's `Version`), Swift packages, Helm charts (Chart.yaml's
+#: version must be SemVer 2), Terraform modules and providers, Ansible collections, Julia (`VersionNumber`), and
+#: GitHub Actions' release tags (`v4`, `v4.1.2`; a commit pin is not ordered and falls back to "cannot tell").
+_SEMVER_ECOSYSTEMS = frozenset(
+    {
+        "npm", "cargo", "gomod", "nuget", "pub", "composer", "cocoapods",
+        "hex", "swift", "helm", "terraform", "ansible", "julia", "actions",
+    }
+)  # fmt: skip
 #: Ecosystems whose own versions are upstream releases with no scheme of their own, compared the way
 #: Repology compares versions across every distribution (libversion): what NVD's ranges, written in
 #: upstream releases, are matched with. A packaging revision is not part of the release: Homebrew's
 #: `_1`, vcpkg's `#2`.
-_LIBVERSION_ECOSYSTEMS = frozenset({"homebrew", "vcpkg", "conan", "conda", "cpe"})
+#: CRAN (`package_version`: numbers split by `.` or `-`), Hackage (the PVP: dotted numbers), the Bazel Central
+#: Registry (dotted parts that may be words, `1.2.3.bcr.1`), image tags (`3.12.1-slim`) and Nix inputs pinned at a
+#: release tag are ordered the same way. A tag that is a name (`latest`, `bookworm`) or an input pinned at a commit
+#: has no version in it, and compares as "cannot tell".
+_LIBVERSION_ECOSYSTEMS = frozenset(
+    {"homebrew", "vcpkg", "conan", "conda", "cpe", "cran", "hackage", "bazel"}
+)
+_TAG_ECOSYSTEMS = frozenset({"image", "nix"})
+_NOT_A_VERSION: Final = re.compile(r"^[0-9a-f]{7,64}$|^[^0-9]*$")
 _PACKAGING_REVISION: Final = re.compile(r"(?:_\d+|#\d+)$")
 _MAVEN_ECOSYSTEMS = frozenset({"maven", "gradle"})
 
@@ -72,6 +88,8 @@ class Versions:
         **dict.fromkeys(_MAVEN_ECOSYSTEMS, "_maven"),
         **dict.fromkeys(_SEMVER_ECOSYSTEMS, "_semver"),
         **dict.fromkeys(_LIBVERSION_ECOSYSTEMS, "_libversion"),
+        "opam": "_debian",
+        **dict.fromkeys(_TAG_ECOSYSTEMS, "_tag"),
     }
 
     @staticmethod
@@ -122,6 +140,50 @@ class Versions:
     @staticmethod
     def _semver(ecosystem: str, a: str, b: str) -> int:
         return Versions._compare_keys(Versions._semver_key(a), Versions._semver_key(b), a, b)
+
+    @staticmethod
+    def _tag(ecosystem: str, a: str, b: str) -> int:
+        """An image tag or a Nix input's pin: ordered as a release when both carry one (`3.12.1-slim`, `v1.2.0`); a
+        name (`latest`) or a commit has no version, and compares as plain text, "cannot tell"."""
+        if _NOT_A_VERSION.match(a) or _NOT_A_VERSION.match(b):
+            return Versions._compare_raw(a, b)
+        return LibVersion.compare(a, b)
+
+    @staticmethod
+    def _debian(ecosystem: str, a: str, b: str) -> int:
+        """opam's ordering, which is Debian's: alternating runs of non-digits and digits. Non-digit runs compare
+        character by character, `~` before the end of the run, the end before letters, letters before every other
+        character; digit runs compare as numbers."""
+
+        def order(c: str) -> int:
+            if c == "~":
+                return -1
+            if c.isalpha():
+                return ord(c)
+            return ord(c) + 256
+
+        def runs(text: str) -> list[str]:
+            return re.findall(r"\d+|\D+", text)
+
+        left, right = runs(a), runs(b)
+        if left and left[0][0].isdigit():
+            left.insert(0, "")
+        if right and right[0][0].isdigit():
+            right.insert(0, "")
+        for i in range(max(len(left), len(right))):
+            x = left[i] if i < len(left) else ""
+            y = right[i] if i < len(right) else ""
+            if i % 2:
+                nx, ny = int(x or 0), int(y or 0)
+                if nx != ny:
+                    return -1 if nx < ny else 1
+                continue
+            for j in range(max(len(x), len(y))):
+                cx = order(x[j]) if j < len(x) else 0
+                cy = order(y[j]) if j < len(y) else 0
+                if cx != cy:
+                    return -1 if cx < cy else 1
+        return 0
 
     @staticmethod
     def _libversion(ecosystem: str, a: str, b: str) -> int:
