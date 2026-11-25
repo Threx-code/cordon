@@ -66,6 +66,7 @@ except ImportError:  # pragma: no cover - script invocation puts bench/model on 
 
 from bench.model.area_lines import AreaLines
 from bench.model.capacity import Capacity
+from bench.model.established import Established
 
 #: Findings the benign measure does not count: a secret, a policy choice, a known vulnerability or
 #: the scan's own notes are not a malware verdict (review 98).
@@ -132,6 +133,8 @@ LABELLED = {
 
 class VerdictTrain:
     POLICY = Config.default().policy
+    #: The benign units `load` left out because `--established` did not show them established (`bench/model/established.py`).
+    not_established: list[str] = []  # noqa: RUF012 -- one run's list, replaced at each `load`
 
     @staticmethod
     def half(key: str) -> str:
@@ -330,6 +333,9 @@ class VerdictTrain:
             for eco in replaced:
                 half.pop(eco, None)
         seen: set[str] = set()
+        established = getattr(a, "established", None)
+        ages = Established.load(established) if established else None
+        cls.not_established = []
         for row in itertools.chain(cls.rows(a.benign), *(cls.rows(p) for p in a.registry_scans)):
             if row["file"] in seen:
                 continue
@@ -339,6 +345,11 @@ class VerdictTrain:
                 continue
             eco = a.eco or ECOSYSTEM.get(raw_eco, raw_eco)
             key = "pkg:" + cls.package_name(row["file"])
+            if ages is not None and not Established.accepts(
+                eco, key.removeprefix("pkg:"), ages.get(row["file"])
+            ):
+                cls.not_established.append(row["file"])
+                continue
             add(row, 0, eco, key, "corpus", key)
         if a.benchmark:
             # Every ecosystem's real malware, on the benchmark's own split: its holdout is never
@@ -580,6 +591,13 @@ class VerdictTrain:
         p = argparse.ArgumentParser()
         p.add_argument("--corpus", type=Path, required=True, help="every benign corpus unit")
         p.add_argument("--benign", type=Path, required=True)
+        p.add_argument(
+            "--established",
+            type=Path,
+            default=None,
+            help="JSON lines of {file, first_published}: a benign unit trains only if it is established "
+            "(first published 90 days ago or more, or on a shipped list of popular or real names)",
+        )
         p.add_argument(
             "--malware", type=Path, help="npm/PyPI malware scans (superseded by --benchmark)"
         )
@@ -1312,6 +1330,7 @@ class VerdictTrain:
             "add_only": sorted(add_only_areas),
             "lift_areas": sorted(lift_areas),
             "keep": sorted(rare_rules | NAME_PROVENANCE_RULES),
+            **({"not_established": len(cls.not_established)} if a.established else {}),
             "benign_blocked": {},
             "malware_caught": {},
         }

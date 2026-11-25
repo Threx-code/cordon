@@ -1186,6 +1186,7 @@
   "test_crlf_detection.py": "foundation/text",
   "test_byte_order_mark.py": "foundation/text",
   "test_commercial_bench.py": "bench",
+  "test_established_benign.py": "bench",
   "test_code_features.py": "detect/code",
   "test_memo.py": "detect/code/capability",
   "test_composite_package_paths.py": "detect/code",
