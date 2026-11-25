@@ -295,7 +295,9 @@ class TestATagWithoutAVersion:
     @pytest.mark.parametrize("ecosystem", ["image", "nix"])
     @pytest.mark.parametrize("other", ["latest", "3f2a9c1d0b7e4a5f6c8d9e0a1b2c3d4e5f6a7b8c"])
     def test_a_name_or_a_commit_compares_as_text(self, ecosystem: str, other: str) -> None:
-        assert versions.Versions.compare(ecosystem, "1.0.0", other) == (-1 if other > "1.0.0" else 1)
+        assert versions.Versions.compare(ecosystem, "1.0.0", other) == (
+            -1 if other > "1.0.0" else 1
+        )
 
     def test_the_debian_comparer_orders_huge_digit_runs_without_int(self) -> None:
         a, b = "1." + "9" * 5000, "1." + "1" + "0" * 5000
@@ -314,3 +316,31 @@ class TestActionsTags:
 
     def test_a_branch_name_compares_as_text(self) -> None:
         assert versions.Versions.compare("actions", "main", "v4") == (-1 if "main" < "v4" else 1)
+
+
+class TestNixComparesAsNixDoes:
+    """`builtins.compareVersions`, by the examples in the Nix manual's description of it."""
+
+    @pytest.mark.parametrize(
+        ("earlier", "later"),
+        [
+            ("1.0", "2.3"),
+            ("2.1", "2.3"),
+            ("2.3", "2.3.1"),
+            ("2.3pre1", "2.3"),
+            ("2.3pre3", "2.3pre12"),
+            ("2.3a", "2.3c"),
+            ("2.3a", "2.3.1"),
+            ("2.3pre1", "2.3q"),
+            ("23.05", "23.11"),
+        ],
+    )
+    def test_the_published_order(self, earlier: str, later: str) -> None:
+        assert versions.Versions.compare("nix", earlier, later) == -1
+        assert versions.Versions.compare("nix", later, earlier) == 1
+
+    def test_a_huge_number_is_compared_without_int(self) -> None:
+        assert (
+            versions.Versions._nix("nix", "1." + "9" * 5000 + "a", "1." + "1" + "0" * 5000 + "a")
+            == -1
+        )

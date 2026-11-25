@@ -69,7 +69,8 @@ class Versions:
     #:   _libversion  upstream releases with no scheme of their own, compared as Repology compares them across
     #:                distributions, which is what NVD's ranges are written in; also CRAN (`package_version`), Hackage
     #:                (the PVP) and the Bazel Central Registry (`1.2.3.bcr.1`)
-    #:   _tag         an image tag or a Nix input's pin: a release when both carry one, else "cannot tell"
+    #:   _tag         an image tag: a release when both carry one, else "cannot tell"
+    #:   _nix         Nix's own `builtins.compareVersions`, for an input pinned at a release; a commit or a name, as text
     #:   _debian      opam's order, which is Debian's
     SCHEMES: ClassVar[dict[str, str]] = {
         "npm": "_semver",
@@ -90,7 +91,7 @@ class Versions:
         "conan": "_libversion",
         "vcpkg": "_libversion",
         "homebrew": "_libversion",
-        "nix": "_tag",
+        "nix": "_nix",
         "julia": "_semver",
         "hackage": "_libversion",
         "opam": "_debian",
@@ -151,6 +152,43 @@ class Versions:
     @staticmethod
     def _semver(ecosystem: str, a: str, b: str) -> int:
         return Versions._compare_keys(Versions._semver_key(a), Versions._semver_key(b), a, b)
+
+    @staticmethod
+    def _nix(ecosystem: str, a: str, b: str) -> int:
+        """Nix's `builtins.compareVersions`: components split at `.` and `-` and between digits and letters; two numbers
+        compare by value, `pre` is below everything, a number is above a word, words compare as text, and a version that
+        runs out of components is the lower. A commit or a name has no version: compared as text."""
+        if _NOT_A_VERSION.match(a) or _NOT_A_VERSION.match(b):
+            return Versions._compare_raw(a, b)
+
+        def parts(text: str) -> list[str]:
+            return re.findall(r"\d+|[^\d.\-]+", text)
+
+        def less(x: str, y: str) -> bool:
+            if x.isdigit() and y.isdigit():
+                nx, ny = x.lstrip("0"), y.lstrip("0")
+                return (len(nx), nx) < (len(ny), ny)
+            if x == "" and y.isdigit():
+                return True
+            if x == "pre" and y != "pre":
+                return True
+            if y == "pre":
+                return False
+            if y.isdigit():
+                return True
+            if x.isdigit():
+                return False
+            return x < y
+
+        left, right = parts(a), parts(b)
+        for i in range(max(len(left), len(right))):
+            x = left[i] if i < len(left) else ""
+            y = right[i] if i < len(right) else ""
+            if less(x, y):
+                return -1
+            if less(y, x):
+                return 1
+        return 0
 
     @staticmethod
     def _tag(ecosystem: str, a: str, b: str) -> int:
