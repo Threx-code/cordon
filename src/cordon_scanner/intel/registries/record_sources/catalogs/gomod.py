@@ -25,9 +25,6 @@ API = "https://proxy.golang.org"
 PATH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._~/-]*")
 VERSION = re.compile(r"v[0-9][0-9A-Za-z.+_-]*")
 INFOS = 62
-RETRACT = re.compile(r"^\s*retract\s*(?:\(\s*)?(\[[^\]]*\]|v[0-9][^\s/]*)", re.MULTILINE)
-RETRACT_BLOCK = re.compile(r"retract\s*\((.*?)\)", re.DOTALL)
-RANGE = re.compile(r"(v[0-9][^\s,\]/]*)")
 
 
 class GomodSource(RecordSource):
@@ -76,21 +73,31 @@ class GomodSource(RecordSource):
 
     @classmethod
     def retracted(cls, mod: Any) -> list[tuple[tuple[Any, ...], tuple[Any, ...]]]:
-        """The version ranges a `go.mod` retracts, as (low, high) sort keys; a single version is a range of one."""
+        """The version ranges a `go.mod` retracts, as (low, high) sort keys; a single version is a range of one.
+        Read line by line, with plain splits: a `retract (` block runs to its closing `)`."""
         if not isinstance(mod, str):
             return []
-        lines: list[str] = []
-        for block in RETRACT_BLOCK.findall(mod):
-            lines.extend(block.splitlines())
-        lines.extend(
-            line
-            for line in mod.splitlines()
-            if line.strip().startswith("retract") and "(" not in line
-        )
         found = []
-        for line in lines:
-            text = line.split("//", 1)[0].replace("retract", "")
-            tokens = RANGE.findall(text)
+        inside = False
+        for raw in mod.splitlines():
+            line = raw.split("//", 1)[0].strip()
+            if inside:
+                if line.startswith(")"):
+                    inside = False
+                    continue
+                text = line
+            elif line.startswith("retract"):
+                text = line[len("retract") :].strip()
+                if text.startswith("("):
+                    inside = text.strip("( ") == ""
+                    text = text.strip("( )") if not inside else ""
+            else:
+                continue
+            tokens = [
+                t
+                for t in text.replace("[", " ").replace("]", " ").replace(",", " ").split()
+                if t.startswith("v") and t[1:2].isdigit()
+            ]
             if tokens:
                 found.append((cls.sort_key(tokens[0]), cls.sort_key(tokens[-1])))
         return found
