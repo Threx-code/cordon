@@ -32,6 +32,7 @@ from cordon_scanner.foundation.models import (
     RedactionMode,
     Severity,
 )
+from cordon_scanner.intel.malware.reuse_index import ReuseKeys
 from cordon_scanner.intel.registry import ReuseIndex
 
 if TYPE_CHECKING:
@@ -51,8 +52,8 @@ class CodeReuseDetector(BaseDetector):
     requires = DetectorRequirements(content=True)
 
     #: Languages that are data, never behaviour; and names of shared interface text.
-    NOT_CODE: ClassVar[frozenset[str]] = frozenset({"json", "toml", "xml", "yaml"})
-    NOT_CODE_SUFFIXES: ClassVar[tuple[str, ...]] = (".d.ts", ".d.mts", ".d.cts", ".map", ".json")
+    NOT_CODE: ClassVar[frozenset[str]] = ReuseKeys.NOT_CODE
+    NOT_CODE_SUFFIXES: ClassVar[tuple[str, ...]] = ReuseKeys.NOT_CODE_SUFFIXES
 
     @staticmethod
     def declared_rules() -> tuple[DeclaredRule, ...]:
@@ -77,7 +78,7 @@ class CodeReuseDetector(BaseDetector):
         )
 
     #: The hooks npm runs on every install from the registry (item 65).
-    INSTALL_HOOKS: ClassVar[tuple[str, ...]] = ("preinstall", "install", "postinstall")
+    INSTALL_HOOKS: ClassVar[tuple[str, ...]] = ReuseKeys.INSTALL_HOOKS
 
     def inspect(self, unit: Unit, ctx: ScanContext) -> Iterable[Finding]:
         if not isinstance(unit, FileUnit):
@@ -101,28 +102,22 @@ class CodeReuseDetector(BaseDetector):
     def is_root_manifest(unit: FileUnit) -> bool:
         """The package's own package.json (a tarball's `package/package.json`, or a tree's top one):
         the one whose hooks npm runs on install; a vendored copy's never run."""
-        inner = unit.content.path.rpartition("!")[2]
-        return inner in ("package.json", "package/package.json")
+        return ReuseKeys.is_root_manifest(unit.content.path)
 
     def _hooks(self, unit: FileUnit, ctx: ScanContext) -> Iterable[Finding]:
         """Item 65: an install hook whose command has the shape of an earlier campaign's hook, looked
         up in the same table under its own key domain (`HookShape`)."""
         index, _ = ReuseIndex.shipped()
-        if index is None or unit.content.size > (1 << 20):
+        if index is None or unit.content.size > ReuseKeys.MAX_MANIFEST:
             return ()
         try:
             manifest = ScannedJson.loads(unit.content.raw)
         except ValueError:
             # S2: too deep to read is not empty: escapes to OPERATIONAL.DETECTOR.FAILED, a gap
             return ()  # the manifest's own readers report a manifest that does not parse
-        scripts = manifest.get("scripts") if isinstance(manifest, dict) else None
-        if not isinstance(scripts, dict):
-            return ()
         out = []
-        for hook in CodeReuseDetector.INSTALL_HOOKS:
-            command = scripts.get(hook)
-            key = ReuseIndex.hook_key(command) if isinstance(command, str) else None
-            group = index.lookup(key, space="hook") if key is not None else None
+        for hook, key in ReuseKeys.hook_keys(manifest):
+            group = index.lookup(key, space="hook")
             if group is not None:
                 out.append(self._finding(unit, ctx, group, hook=hook))
         return out
@@ -131,12 +126,7 @@ class CodeReuseDetector(BaseDetector):
     def is_code(unit: FileUnit) -> bool:
         """A shipped code unit: not derived (a lifted or inline program is ours, not shipped), not
         data, not a declaration file or map."""
-        path = unit.content.path
-        if "#" in path.rpartition("!")[2] or unit.content.is_binary or unit.language is None:
-            return False
-        if unit.language in CodeReuseDetector.NOT_CODE:
-            return False
-        return not path.lower().endswith(CodeReuseDetector.NOT_CODE_SUFFIXES)
+        return ReuseKeys.is_code(unit.content.path, unit.content.is_binary, unit.language)
 
     @staticmethod
     def fingerprint(unit: FileUnit) -> bytes | None:

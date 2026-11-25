@@ -64,6 +64,14 @@ class Accumulator:
     binaries_complete: bool = True
     """False when a native file could not be hashed whole (a truncated one with no digest of its whole) or there were
     more than `MAX_BINARIES`: the list is then a part, and says so."""
+    reuse_keys: bool = False
+    """Whether to collect the package's code-reuse keys (`Config.reuse_keys`): off, nothing below is computed."""
+    reuse_code: set[str] = field(default_factory=set)
+    """Each code file's `ReuseIndex.fingerprint` (hex), when `reuse_keys`. Read by the facts export (`package.reuse`)."""
+    reuse_hooks: set[str] = field(default_factory=set)
+    """Each install hook's `HookShape` key (hex) in the package's own package.json, when `reuse_keys`."""
+    reuse_complete: bool = True
+    """False when a code file could not be hashed whole, or past `MAX_REUSE` keys: the keys are then a part, and say so."""
     tool_lists: list[list[dict[str, Any]]] = field(default_factory=list)
     """Each JSON file that declares a whole MCP tool list (`DeclaredTools`), for the facts export (`package.tool_list`)."""
     files_skipped: int = 0
@@ -225,6 +233,7 @@ class Accumulator:
 
     MAX_EXTENSIONS: ClassVar[int] = 256
     MAX_BINARIES: ClassVar[int] = 4096
+    MAX_REUSE: ClassVar[int] = 4096
 
     def scanned(self, path: str, content: FileContent | None = None) -> None:
         """One more file scanned, counted under its extension; past `MAX_EXTENSIONS` distinct ones, the rest count as `other`.
@@ -251,9 +260,46 @@ class Accumulator:
                 self.binaries.add(content.sha256)
             elif content.sha256 not in self.binaries:
                 self.binaries_complete = False
+        if self.reuse_keys:
+            self._reuse(path, content)
         declared = DeclaredTools.of(path, content.raw) if not content.truncated else None
         if declared is not None:
             self.tool_lists.append(declared)
+
+    def _reuse(self, path: str, content: FileContent) -> None:
+        """The file's reuse keys, by the rule the code-reuse detector looks them up by (`ReuseKeys`)."""
+        from cordon_scanner.analysis.shared.languages import LanguageRegistry
+        from cordon_scanner.foundation.formats.scanned_json import ScannedJson
+        from cordon_scanner.intel.malware.reuse_index import ReuseIndex, ReuseKeys
+
+        keys: list[bytes] = []
+        if ReuseKeys.is_code(path, content.is_binary, LanguageRegistry.of_file(path, content)):
+            if not content.truncated:
+                digest = ReuseIndex.fingerprint(content.raw)
+            elif content.streamed is not None:
+                digest = ReuseIndex.fingerprint(content.streamed)
+            else:
+                self.reuse_complete = False
+                digest = None
+            if digest is not None:
+                self._keep(self.reuse_code, digest.hex())
+        if ReuseKeys.is_root_manifest(path):
+            if content.truncated or content.size > ReuseKeys.MAX_MANIFEST:
+                self.reuse_complete = False
+                return
+            try:
+                manifest = ScannedJson.loads(content.raw)
+            except (ValueError, RecursionError):
+                return
+            keys = [key for _, key in ReuseKeys.hook_keys(manifest)]
+        for key in keys:
+            self._keep(self.reuse_hooks, key.hex())
+
+    def _keep(self, into: set[str], key: str) -> None:
+        if len(self.reuse_code) + len(self.reuse_hooks) < self.MAX_REUSE:
+            into.add(key)
+        elif key not in into:
+            self.reuse_complete = False
 
     def tool_list(self) -> tuple[dict[str, Any], ...] | None:
         """The one tool list the package declares as data, or None when there is none or more than one."""
@@ -270,6 +316,9 @@ class Accumulator:
             "binaries": tuple(sorted(self.binaries)),
             "binaries_complete": self.binaries_complete,
             "tool_list": self.tool_list(),
+            "reuse_code": tuple(sorted(self.reuse_code)) if self.reuse_keys else None,
+            "reuse_hooks": tuple(sorted(self.reuse_hooks)) if self.reuse_keys else None,
+            "reuse_complete": self.reuse_complete,
         }
 
     def destinations(self) -> dict[str, tuple[tuple[str, ...], tuple[str, ...]]]:

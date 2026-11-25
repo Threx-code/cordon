@@ -252,6 +252,14 @@ class ScanFacts:
             },
             "files": files,
         }
+        if result.reuse_code is not None:
+            # Only when the scan was asked for them (`reuse_keys`): every other record's bytes are unchanged.
+            record["package"]["reuse"] = {
+                "fingerprint": "crix1",
+                "code": list(result.reuse_code),
+                "hook": list(result.reuse_hooks or ()),
+                "complete": result.reuse_complete,
+            }
         record["digest"] = hashlib.sha256(ScanFacts.canonical(record)).hexdigest()
         return record
 
