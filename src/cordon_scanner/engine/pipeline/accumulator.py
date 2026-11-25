@@ -71,6 +71,10 @@ class Accumulator:
     reuse_hooks: set[str] = field(default_factory=set)
     """Each install hook's `HookShape` key (hex) in the package's own package.json, when `reuse_keys`."""
     reuse_complete: bool = True
+    campaign_paths: list[str] = field(default_factory=list)
+    """Every member path of the package, for its campaign fingerprint's layout (`reuse_keys`); bounded."""
+    campaign_manifest: tuple[str, Any] | None = None
+    """`(ecosystem, content)` of the package's root manifest, for its campaign fingerprint (`reuse_keys`)."""
     """False when a code file could not be hashed whole, or past `MAX_REUSE` keys: the keys are then a part, and say so."""
     tool_lists: list[list[dict[str, Any]]] = field(default_factory=list)
     """Each JSON file that declares a whole MCP tool list (`DeclaredTools`), for the facts export (`package.tool_list`)."""
@@ -234,6 +238,7 @@ class Accumulator:
     MAX_EXTENSIONS: ClassVar[int] = 256
     MAX_BINARIES: ClassVar[int] = 4096
     MAX_REUSE: ClassVar[int] = 4096
+    MAX_CAMPAIGN_PATHS: ClassVar[int] = 20_000
 
     @classmethod
     def for_config(cls, config: Any) -> Accumulator:
@@ -269,6 +274,7 @@ class Accumulator:
                 self.binaries_complete = False
         if self.reuse_keys:
             self._reuse(path, content, opens)
+            self._campaign(path, content)
         declared = DeclaredTools.of(path, content.raw) if not content.truncated else None
         if declared is not None:
             self.tool_lists.append(declared)
@@ -315,6 +321,31 @@ class Accumulator:
         for key in keys:
             self._keep(self.reuse_hooks, key.hex())
 
+    def _campaign(self, path: str, content: FileContent) -> None:
+        """What the package's campaign fingerprint is made of: its member paths and its root manifest."""
+        from cordon_scanner.intel.registry import CampaignFingerprint
+
+        _, bang, member = path.partition("!")
+        if bang and "!" not in member and len(self.campaign_paths) < self.MAX_CAMPAIGN_PATHS:
+            self.campaign_paths.append(member)
+        if self.campaign_manifest is None:
+            ecosystem = CampaignFingerprint.root_manifest(path)
+            if ecosystem is not None and not content.truncated:
+                self.campaign_manifest = (ecosystem, content)
+
+    def campaign(self) -> dict[str, Any] | None:
+        """The package's campaign fingerprint, in any ecosystem: `{ecosystem, manifest, layout, deps}`; None when the
+        scan was not asked for package keys or found no root manifest."""
+        from cordon_scanner.intel.registry import CampaignFingerprint
+
+        if not self.reuse_keys or self.campaign_manifest is None:
+            return None
+        ecosystem, content = self.campaign_manifest
+        return {
+            "ecosystem": ecosystem,
+            **CampaignFingerprint.of_manifest(ecosystem, content, self.campaign_paths),
+        }
+
     def _keep(self, into: set[str], key: str) -> None:
         if len(self.reuse_code) + len(self.reuse_hooks) < self.MAX_REUSE:
             into.add(key)
@@ -339,6 +370,7 @@ class Accumulator:
             "reuse_code": tuple(sorted(self.reuse_code)) if self.reuse_keys else None,
             "reuse_hooks": tuple(sorted(self.reuse_hooks)) if self.reuse_keys else None,
             "reuse_complete": self.reuse_complete,
+            "campaign": self.campaign(),
         }
 
     def destinations(self) -> dict[str, tuple[tuple[str, ...], tuple[str, ...]]]:

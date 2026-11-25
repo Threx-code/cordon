@@ -225,3 +225,62 @@ class TestEveryEcosystemsInstallTimeCodeIsKeyed:
         assert ReuseIndex.fingerprint(body).hex() in reuse["code"], (
             f"{ecosystem}: {path} carries no reuse key"
         )
+
+
+class TestTheCampaignFingerprintIsInTheFacts:
+    """A scan asked for package keys reports the package's campaign fingerprint for any ecosystem, so the platform
+    fingerprints every release it analyses, not only npm tarballs."""
+
+    @staticmethod
+    def archive(tmp_path, root: str, members: dict[str, bytes]):
+        import io
+        import tarfile
+
+        path = tmp_path / f"{root}.tar.gz"
+        with tarfile.open(path, "w:gz") as tar:
+            for name, data in members.items():
+                info = tarfile.TarInfo(f"{root}/{name}")
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+        return path
+
+    @pytest.mark.parametrize(
+        "ecosystem,root,manifest,body",
+        [
+            (
+                "cargo",
+                "demo-1.0.0",
+                "Cargo.toml",
+                b'[package]\nname = "demo"\nversion = "1.0.0"\n[dependencies]\nserde = "1"\n',
+            ),
+            (
+                "pypi",
+                "demo-1.0.0",
+                "pyproject.toml",
+                b'[project]\nname = "demo"\nversion = "1.0.0"\ndependencies = ["requests"]\n',
+            ),
+            (
+                "npm",
+                "package",
+                "package.json",
+                b'{"name": "demo", "version": "1.0.0", "dependencies": {"axios": "1"}, "scripts": {"postinstall": "node x.js", "t": "y"}}',
+            ),
+        ],
+    )
+    def test_each_ecosystems_package_carries_its_fingerprint(
+        self, tmp_path, ecosystem, root, manifest, body
+    ):
+        path = self.archive(
+            tmp_path,
+            root,
+            {manifest: body, "src/a.code": b"x" * 10, "src/b.code": b"y" * 10, "README.md": b"z"},
+        )
+        campaign = Package.facts(path, reuse=True)["package"]["campaign"]
+        assert campaign["ecosystem"] == ecosystem
+        assert campaign["manifest"] and campaign["layout"] and campaign["deps"]
+
+    def test_an_ordinary_scan_carries_none(self, tmp_path):
+        path = self.archive(
+            tmp_path, "demo-1.0.0", {"Cargo.toml": b'[package]\nname = "demo"\nversion = "1"\n'}
+        )
+        assert "campaign" not in Package.facts(path, reuse=False)["package"]

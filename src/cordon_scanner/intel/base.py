@@ -600,6 +600,7 @@ class CampaignFacets(Protocol):
     def of_manifest(
         self, ecosystem: str, content: Any, paths: Iterable[str]
     ) -> dict[str, str | None]: ...
+    def root_manifest(self, path: str) -> str | None: ...
 
 
 class CampaignSiblings(Protocol):

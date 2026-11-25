@@ -175,21 +175,15 @@ class GraphDiff:
             .dependencies
         )
 
-    #: The kinds pinned by a ref rather than a resolved version: a workflow action and a container image.
-    PINNED_BY_REF: ClassVar[frozenset[str]] = frozenset({"actions", "image"})
-
     @staticmethod
     def pinned_at(dependency: Dependency) -> str | None:
-        """What a dependency is pinned at: its version, else the ref it is declared at (an action's `@v4` or commit, an
-        image's tag), so repinning an action or an image is a change the review sees."""
+        """What a dependency is pinned at: its version, else the ref it is declared at (`ref:<tag or commit>`, how an
+        action, a chart, a module or a flake input is pinned), so repinning one is a change the review sees. An unlocked
+        range is not a version and never enters the diff as one."""
         if dependency.version:
             return dependency.version
-        if dependency.ecosystem not in GraphDiff.PINNED_BY_REF:
-            return None  # an unlocked range is not a version: it never enters the diff as one
-        if dependency.declared_spec:
-            return dependency.declared_spec
-        tail = dependency.purl.rpartition("@")[2] if "@" in dependency.purl else ""
-        return tail or None
+        spec = dependency.declared_spec or ""
+        return spec if spec.startswith("ref:") else None
 
     @staticmethod
     def diff(old: tuple[Dependency, ...], new: tuple[Dependency, ...]) -> list[PackageChange]:

@@ -562,6 +562,8 @@ class ScanResult:
     reuse_hooks: tuple[str, ...] | None = None
     """Each install hook's shape key (hex), collected with `reuse_code`."""
     reuse_complete: bool = True
+    campaign: dict[str, Any] | None = None
+    """The package's campaign fingerprint (`{ecosystem, manifest, layout, deps}`), collected with `reuse_code`."""
     tool_list: tuple[dict[str, Any], ...] | None = None
     """The MCP tools one JSON file declares whole (`DeclaredTools`), when exactly one file does; None when none does or when
     more than one does (which of them the server serves is not known). Read by the facts export; not in `to_dict`."""

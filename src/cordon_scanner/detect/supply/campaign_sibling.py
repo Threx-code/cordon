@@ -45,7 +45,11 @@ MAX_MANIFEST = 1 << 20
 
 
 class CampaignSiblingDetector(BaseDetector):
-    """Reports a published package, in any ecosystem, whose campaign fingerprint matches a condemned release's."""
+    """Reports a published package, in any ecosystem, whose campaign fingerprint matches a condemned release's.
+
+    The fingerprint is computed for every ecosystem; a match needs condemned releases of that ecosystem in the index,
+    which ships npm's today. Until each ecosystem's condemned releases are fingerprinted into it (the platform does
+    this as it confirms them), a package outside npm is fingerprinted and finds no sibling."""
 
     id = "campaign-sibling"
     version = "0.1.0"
@@ -85,23 +89,6 @@ class CampaignSiblingDetector(BaseDetector):
         return (self._finding(unit, ctx, *found),)
 
     @staticmethod
-    def root_manifest(path: str) -> str | None:
-        """The ecosystem whose package this archive member is the manifest of: a manifest file the ecosystem's own
-        parser reads, at the package's root (at most one directory in) or where its archive keeps it."""
-        from cordon_scanner.ecosystems.registry import EcosystemRegistry
-
-        _, bang, member = path.rpartition("!")
-        if not bang or member.count("/") > 1:
-            return None
-        ecosystem = EcosystemRegistry.manifest_ecosystem(member)
-        if ecosystem in EcosystemRegistry.PACKAGE_JSON_FINGERPRINTS:
-            # As the shipped index was built: the package.json one directory in, never a deno.json.
-            return (
-                ecosystem if member.count("/") == 1 and member.endswith("/package.json") else None
-            )
-        return ecosystem
-
-    @staticmethod
     def siblings_of(
         unit: FileUnit, ctx: ScanContext
     ) -> tuple[dict[str, str | None], list[dict[str, Any]]] | None:
@@ -109,7 +96,7 @@ class CampaignSiblingDetector(BaseDetector):
         them, itself excluded; None for any other file. The `package` rule module reads the same answer
         (`modules.scanner_facts`)."""
         content = unit.content
-        ecosystem = CampaignSiblingDetector.root_manifest(content.path)
+        ecosystem = CampaignFingerprint.root_manifest(content.path)
         if ecosystem is None:
             return None
         if content.truncated or len(content.raw) > MAX_MANIFEST:

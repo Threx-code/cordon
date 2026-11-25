@@ -305,7 +305,7 @@ class ScanFacts:
         when the scan was asked for them (`reuse_keys`); `{}` otherwise, so every other record's bytes are unchanged."""
         if result.reuse_code is None:
             return {}
-        return {
+        out: dict[str, Any] = {
             "reuse": {
                 "fingerprint": "crix1",
                 "code": list(result.reuse_code),
@@ -313,6 +313,9 @@ class ScanFacts:
                 "complete": result.reuse_complete,
             }
         }
+        if result.campaign is not None:
+            out["campaign"] = dict(result.campaign)
+        return out
 
     @staticmethod
     def binaries(result: ScanResult) -> list[str] | None:

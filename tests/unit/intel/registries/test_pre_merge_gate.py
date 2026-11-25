@@ -191,9 +191,12 @@ class TestTheCodesAndVersionsDecideReads:
 
         ranged = Dependency(purl="pkg:npm/ms", ecosystem="npm", name="ms", declared_spec="^2.0.0")
         action = Dependency(
-            purl="pkg:github/actions/checkout@v4", ecosystem="actions", name="actions/checkout"
+            purl="pkg:github/actions/checkout@v4",
+            ecosystem="actions",
+            name="actions/checkout",
+            declared_spec="ref:v4",
         )
-        assert GraphDiff.pinned_at(ranged) is None and GraphDiff.pinned_at(action) == "v4"
+        assert GraphDiff.pinned_at(ranged) is None and GraphDiff.pinned_at(action) == "ref:v4"
 
     def test_every_code_is_the_one_decide_gives_the_same_finding(self) -> None:
         from cordon_scanner.decide.decision.evidence import FindingFact
