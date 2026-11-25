@@ -174,6 +174,9 @@ class TestThePullRequest:
         assert 'rm -f "$notes"' in action and '--annotations "$notes"' in action, "removed first"
         assert '2> "$RUNNER_TEMP/cordon-review.err"' in action, "stderr never reaches the runner"
         assert 'if [ "$code" -le 1 ]' in action, "only a finished review is printed"
+        assert "sed 's/^[[:space:]]*::/: :/'" in action, (
+            "a failed run's messages are shown, never as commands"
+        )
 
 
 class TestTheCodesAndVersionsDecideReads:
@@ -193,3 +196,33 @@ class TestTheCodesAndVersionsDecideReads:
             purl="pkg:github/actions/checkout@v4", ecosystem="actions", name="actions/checkout"
         )
         assert GraphDiff.pinned_at(ranged) is None and GraphDiff.pinned_at(action) == "v4"
+
+    def test_every_code_is_the_one_decide_gives_the_same_finding(self) -> None:
+        from cordon_scanner.decide.decision.evidence import FindingFact
+        from cordon_scanner.decide.decision.pipeline import RuleStage
+        from cordon_scanner.detect.supply import release_diff
+
+        def decide_gives(rule: str, category: str) -> str:
+            fact = FindingFact(rule_id=rule, severity="high", confidence="high", category=category)
+            from cordon_scanner.decide.decision.reason_map import ReasonMap
+
+            return ReasonMap.of(rule) or RuleStage._code_of((fact,))
+
+        for category in ("malicious", "suspicious"):
+            change = PackageChange("added", "npm", "x", None, "1.0.0")
+            change.categories = {"SUSPECT.UNMAPPED.001": category}
+            assert change.code_of("SUSPECT.UNMAPPED.001") == decide_gives(
+                "SUSPECT.UNMAPPED.001", category
+            )
+        # A changed release's findings carry no category: every rule the comparison can raise is a SUSPECT rule.
+        for rule in (
+            release_diff.RELEASE_NEW_HOOK,
+            release_diff.RELEASE_NEW_CAPABILITY,
+            release_diff.RELEASE_NEW_OBFUSCATION,
+            release_diff.RELEASE_NEW_BINARY,
+            release_diff.RELEASE_NEW_PUBLISHER,
+        ):
+            assert rule.startswith("SUSPECT.")
+            assert PackageChange("upgraded", "npm", "x", "1", "2").code_of(rule) == decide_gives(
+                rule, "suspicious"
+            )

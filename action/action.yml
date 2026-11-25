@@ -342,6 +342,11 @@ runs:
         # Each blocking change as an annotation titled with its reason code, so the failed check says why; only
         # from a review that finished (0 clean, 1 findings), never from one that died part way.
         if [ "$code" -le 1 ] && [ -f "$notes" ]; then cat "$notes"; fi
+        # A review that died says why, with any line it printed kept from acting as a workflow command.
+        if [ "$code" -gt 1 ] && [ -s "$RUNNER_TEMP/cordon-review.err" ]; then
+          echo "::error::the dependency review stopped (exit $code); its last messages follow"
+          tail -n 20 "$RUNNER_TEMP/cordon-review.err" | sed 's/^[[:space:]]*::/: :/'
+        fi
         if [ "$REVIEW_COMMENT" = "true" ]; then
           gh pr comment "$REVIEW_PR" --body-file cordon-review.md --edit-last 2>/dev/null \
             || gh pr comment "$REVIEW_PR" --body-file cordon-review.md
