@@ -12,6 +12,7 @@ handler in mcp/extensions.
 from __future__ import annotations
 
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any, NoReturn
 
@@ -46,4 +47,17 @@ class NoRedirects(urllib.request.HTTPRedirectHandler, ClosedErrors):
         return urllib.request.build_opener(NoRedirects, *handlers)
 
 
-__all__ = ["ClosedErrors", "NoRedirects"]
+class HttpsRedirects(urllib.request.HTTPRedirectHandler):
+    """Follows a redirect only to an HTTPS address, a few hops at most (a release asset may move to storage)."""
+
+    max_redirections = 5
+
+    def redirect_request(
+        self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str
+    ) -> Any:
+        if urllib.parse.urlsplit(newurl).scheme != "https":
+            return None
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+__all__ = ["ClosedErrors", "HttpsRedirects", "NoRedirects"]

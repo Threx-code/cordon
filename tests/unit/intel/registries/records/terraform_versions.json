@@ -1,0 +1,774 @@
+{
+ "data": {
+  "attributes": {
+   "alias": "random",
+   "description": "Supports the use of randomness within Terraform configurations. This is a logical provider, which means that it works entirely within Terraform logic, and does not interact with any other services.",
+   "downloads": 3654331688,
+   "featured": false,
+   "full-name": "hashicorp/random",
+   "logo-url": "/images/providers/hashicorp.svg",
+   "name": "random",
+   "namespace": "hashicorp",
+   "owner-name": "hashicorp",
+   "robots-noindex": false,
+   "source": "https://github.com/hashicorp/terraform-provider-random",
+   "tier": "official",
+   "unlisted": false,
+   "warning": ""
+  },
+  "id": "365",
+  "links": {
+   "self": "/v2/providers/365"
+  },
+  "relationships": {
+   "provider-versions": {
+    "data": [
+     {
+      "id": "2345",
+      "type": "provider-versions"
+     },
+     {
+      "id": "2346",
+      "type": "provider-versions"
+     },
+     {
+      "id": "2347",
+      "type": "provider-versions"
+     },
+     {
+      "id": "2348",
+      "type": "provider-versions"
+     },
+     {
+      "id": "2349",
+      "type": "provider-versions"
+     },
+     {
+      "id": "2343",
+      "type": "provider-versions"
+     },
+     {
+      "id": "2344",
+      "type": "provider-versions"
+     },
+     {
+      "id": "2618",
+      "type": "provider-versions"
+     },
+     {
+      "id": "2675",
+      "type": "provider-versions"
+     },
+     {
+      "id": "2730",
+      "type": "provider-versions"
+     },
+     {
+      "id": "3041",
+      "type": "provider-versions"
+     },
+     {
+      "id": "3163",
+      "type": "provider-versions"
+     },
+     {
+      "id": "4385",
+      "type": "provider-versions"
+     },
+     {
+      "id": "6579",
+      "type": "provider-versions"
+     },
+     {
+      "id": "6157",
+      "type": "provider-versions"
+     },
+     {
+      "id": "8372",
+      "type": "provider-versions"
+     },
+     {
+      "id": "9469",
+      "type": "provider-versions"
+     },
+     {
+      "id": "21527",
+      "type": "provider-versions"
+     },
+     {
+      "id": "21582",
+      "type": "provider-versions"
+     },
+     {
+      "id": "22760",
+      "type": "provider-versions"
+     },
+     {
+      "id": "23695",
+      "type": "provider-versions"
+     },
+     {
+      "id": "24361",
+      "type": "provider-versions"
+     },
+     {
+      "id": "24411",
+      "type": "provider-versions"
+     },
+     {
+      "id": "25054",
+      "type": "provider-versions"
+     },
+     {
+      "id": "27489",
+      "type": "provider-versions"
+     },
+     {
+      "id": "27549",
+      "type": "provider-versions"
+     },
+     {
+      "id": "27651",
+      "type": "provider-versions"
+     },
+     {
+      "id": "27870",
+      "type": "provider-versions"
+     },
+     {
+      "id": "36247",
+      "type": "provider-versions"
+     },
+     {
+      "id": "36302",
+      "type": "provider-versions"
+     },
+     {
+      "id": "46076",
+      "type": "provider-versions"
+     },
+     {
+      "id": "52365",
+      "type": "provider-versions"
+     },
+     {
+      "id": "54221",
+      "type": "provider-versions"
+     },
+     {
+      "id": "59857",
+      "type": "provider-versions"
+     },
+     {
+      "id": "67041",
+      "type": "provider-versions"
+     },
+     {
+      "id": "67081",
+      "type": "provider-versions"
+     },
+     {
+      "id": "70191",
+      "type": "provider-versions"
+     },
+     {
+      "id": "86497",
+      "type": "provider-versions"
+     },
+     {
+      "id": "87407",
+      "type": "provider-versions"
+     },
+     {
+      "id": "96615",
+      "type": "provider-versions"
+     },
+     {
+      "id": "108791",
+      "type": "provider-versions"
+     }
+    ],
+    "links": {
+     "related": "/v2/providers/365/provider-versions"
+    }
+   }
+  },
+  "type": "providers"
+ },
+ "included": [
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 203394646,
+    "published-at": "2023-12-04T14:00:32Z",
+    "tag": "v3.6.0",
+    "version": "3.6.0"
+   },
+   "id": "46076",
+   "links": {
+    "self": "/v2/provider-versions/46076"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 226222,
+    "published-at": "2018-04-03T22:58:06Z",
+    "tag": "v1.2.0",
+    "version": "1.2.0"
+   },
+   "id": "2348",
+   "links": {
+    "self": "/v2/provider-versions/2348"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 728334,
+    "published-at": "2019-03-20T02:38:44Z",
+    "tag": "v2.1.0",
+    "version": "2.1.0"
+   },
+   "id": "2618",
+   "links": {
+    "self": "/v2/provider-versions/2618"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 32102097,
+    "published-at": "2019-09-25T21:08:46Z",
+    "tag": "v2.2.1",
+    "version": "2.2.1"
+   },
+   "id": "3163",
+   "links": {
+    "self": "/v2/provider-versions/3163"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 26022637,
+    "published-at": "2020-10-09T02:11:33Z",
+    "tag": "v3.0.0",
+    "version": "3.0.0"
+   },
+   "id": "6157",
+   "links": {
+    "self": "/v2/provider-versions/6157"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 12329510,
+    "published-at": "2022-06-07T12:12:13Z",
+    "tag": "v3.3.1",
+    "version": "3.3.1"
+   },
+   "id": "24411",
+   "links": {
+    "self": "/v2/provider-versions/24411"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 2432285,
+    "published-at": "2022-08-31T14:57:15Z",
+    "tag": "v3.4.1",
+    "version": "3.4.1"
+   },
+   "id": "27549",
+   "links": {
+    "self": "/v2/provider-versions/27549"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 3482652,
+    "published-at": "2023-04-11T16:06:35Z",
+    "tag": "v3.5.0",
+    "version": "3.5.0"
+   },
+   "id": "36247",
+   "links": {
+    "self": "/v2/provider-versions/36247"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 4728161,
+    "published-at": "2019-04-30T21:54:26Z",
+    "tag": "v2.1.2",
+    "version": "2.1.2"
+   },
+   "id": "2730",
+   "links": {
+    "self": "/v2/provider-versions/2730"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 1285460,
+    "published-at": "2022-08-30T15:05:02Z",
+    "tag": "v3.4.0",
+    "version": "3.4.0"
+   },
+   "id": "27489",
+   "links": {
+    "self": "/v2/provider-versions/27489"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 30264909,
+    "published-at": "2026-01-13T21:21:38Z",
+    "tag": "v3.8.0",
+    "version": "3.8.0"
+   },
+   "id": "86497",
+   "links": {
+    "self": "/v2/provider-versions/86497"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 331931837,
+    "published-at": "2026-01-27T15:47:57Z",
+    "tag": "v3.8.1",
+    "version": "3.8.1"
+   },
+   "id": "87407",
+   "links": {
+    "self": "/v2/provider-versions/87407"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 272097733,
+    "published-at": "2026-09-11T15:17:02Z",
+    "tag": "v3.9.1",
+    "version": "3.9.1"
+   },
+   "id": "108791",
+   "links": {
+    "self": "/v2/provider-versions/108791"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 3777802,
+    "published-at": "2019-08-08T17:25:57Z",
+    "tag": "v2.2.0",
+    "version": "2.2.0"
+   },
+   "id": "3041",
+   "links": {
+    "self": "/v2/provider-versions/3041"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 15647595,
+    "published-at": "2020-07-07T15:42:55Z",
+    "tag": "v2.3.0",
+    "version": "2.3.0"
+   },
+   "id": "4385",
+   "links": {
+    "self": "/v2/provider-versions/4385"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 17752911,
+    "published-at": "2022-03-17T17:23:01Z",
+    "tag": "v3.1.2",
+    "version": "3.1.2"
+   },
+   "id": "21582",
+   "links": {
+    "self": "/v2/provider-versions/21582"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 41918498,
+    "published-at": "2022-04-22T13:38:46Z",
+    "tag": "v3.1.3",
+    "version": "3.1.3"
+   },
+   "id": "22760",
+   "links": {
+    "self": "/v2/provider-versions/22760"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 5817046,
+    "published-at": "2022-06-06T15:46:21Z",
+    "tag": "v3.3.0",
+    "version": "3.3.0"
+   },
+   "id": "24361",
+   "links": {
+    "self": "/v2/provider-versions/24361"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 198451132,
+    "published-at": "2024-05-21T19:38:54Z",
+    "tag": "v3.6.2",
+    "version": "3.6.2"
+   },
+   "id": "54221",
+   "links": {
+    "self": "/v2/provider-versions/54221"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 224312,
+    "published-at": "2018-05-21T22:07:34Z",
+    "tag": "v1.3.0",
+    "version": "1.3.0"
+   },
+   "id": "2349",
+   "links": {
+    "self": "/v2/provider-versions/2349"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 54180039,
+    "published-at": "2020-10-26T13:48:17Z",
+    "tag": "v2.3.1",
+    "version": "2.3.1"
+   },
+   "id": "6579",
+   "links": {
+    "self": "/v2/provider-versions/6579"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 63151406,
+    "published-at": "2022-06-23T15:35:16Z",
+    "tag": "v3.3.2",
+    "version": "3.3.2"
+   },
+   "id": "25054",
+   "links": {
+    "self": "/v2/provider-versions/25054"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 4393162,
+    "published-at": "2022-09-02T12:09:30Z",
+    "tag": "v3.4.2",
+    "version": "3.4.2"
+   },
+   "id": "27651",
+   "links": {
+    "self": "/v2/provider-versions/27651"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 224770,
+    "published-at": "2017-09-15T20:54:27Z",
+    "tag": "v1.0.0",
+    "version": "1.0.0"
+   },
+   "id": "2346",
+   "links": {
+    "self": "/v2/provider-versions/2346"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 247329786,
+    "published-at": "2022-09-08T14:51:11Z",
+    "tag": "v3.4.3",
+    "version": "3.4.3"
+   },
+   "id": "27870",
+   "links": {
+    "self": "/v2/provider-versions/27870"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 534630022,
+    "published-at": "2025-04-22T11:56:05Z",
+    "tag": "v3.7.2",
+    "version": "3.7.2"
+   },
+   "id": "70191",
+   "links": {
+    "self": "/v2/provider-versions/70191"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 231481,
+    "published-at": "2018-08-15T23:56:09Z",
+    "tag": "v2.0.0",
+    "version": "2.0.0"
+   },
+   "id": "2344",
+   "links": {
+    "self": "/v2/provider-versions/2344"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 1414546,
+    "published-at": "2022-03-16T15:32:03Z",
+    "tag": "v3.1.1",
+    "version": "3.1.1"
+   },
+   "id": "21527",
+   "links": {
+    "self": "/v2/provider-versions/21527"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 321244836,
+    "published-at": "2024-09-11T14:08:43Z",
+    "tag": "v3.6.3",
+    "version": "3.6.3"
+   },
+   "id": "59857",
+   "links": {
+    "self": "/v2/provider-versions/59857"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 336734,
+    "published-at": "2025-02-24T21:55:11Z",
+    "tag": "v3.7.0-alpha1",
+    "version": "3.7.0-alpha1"
+   },
+   "id": "67041",
+   "links": {
+    "self": "/v2/provider-versions/67041"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 107369700,
+    "published-at": "2025-02-25T17:30:25Z",
+    "tag": "v3.7.1",
+    "version": "3.7.1"
+   },
+   "id": "67081",
+   "links": {
+    "self": "/v2/provider-versions/67081"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 227970,
+    "published-at": "2017-07-12T19:48:48Z",
+    "tag": "v0.1.0",
+    "version": "0.1.0"
+   },
+   "id": "2345",
+   "links": {
+    "self": "/v2/provider-versions/2345"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 280489,
+    "published-at": "2019-04-12T00:16:45Z",
+    "tag": "v2.1.1",
+    "version": "2.1.1"
+   },
+   "id": "2675",
+   "links": {
+    "self": "/v2/provider-versions/2675"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 173652143,
+    "published-at": "2021-02-19T17:07:32Z",
+    "tag": "v3.1.0",
+    "version": "3.1.0"
+   },
+   "id": "9469",
+   "links": {
+    "self": "/v2/provider-versions/9469"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 326011675,
+    "published-at": "2023-04-12T20:17:34Z",
+    "tag": "v3.5.1",
+    "version": "3.5.1"
+   },
+   "id": "36302",
+   "links": {
+    "self": "/v2/provider-versions/36302"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 61925914,
+    "published-at": "2024-04-16T06:27:34Z",
+    "tag": "v3.6.1",
+    "version": "3.6.1"
+   },
+   "id": "52365",
+   "links": {
+    "self": "/v2/provider-versions/52365"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 501121088,
+    "published-at": "2026-05-13T08:43:37Z",
+    "tag": "v3.9.0",
+    "version": "3.9.0"
+   },
+   "id": "96615",
+   "links": {
+    "self": "/v2/provider-versions/96615"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 224342,
+    "published-at": "2017-12-01T01:29:27Z",
+    "tag": "v1.1.0",
+    "version": "1.1.0"
+   },
+   "id": "2347",
+   "links": {
+    "self": "/v2/provider-versions/2347"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 212186,
+    "published-at": "2018-05-22T19:20:03Z",
+    "tag": "v1.3.1",
+    "version": "1.3.1"
+   },
+   "id": "2343",
+   "links": {
+    "self": "/v2/provider-versions/2343"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 28725500,
+    "published-at": "2021-01-12T15:41:13Z",
+    "tag": "v3.0.1",
+    "version": "3.0.1"
+   },
+   "id": "8372",
+   "links": {
+    "self": "/v2/provider-versions/8372"
+   },
+   "type": "provider-versions"
+  },
+  {
+   "attributes": {
+    "description": "terraform-provider-random",
+    "downloads": 22828108,
+    "published-at": "2022-05-18T14:45:23Z",
+    "tag": "v3.2.0",
+    "version": "3.2.0"
+   },
+   "id": "23695",
+   "links": {
+    "self": "/v2/provider-versions/23695"
+   },
+   "type": "provider-versions"
+  }
+ ]
+}

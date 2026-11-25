@@ -126,6 +126,6 @@ class TestTheScannerOfTheSource:
     def test_the_scan_reads_syntax_only(self, tmp_path: Path) -> None:
         (tmp_path / "m.py").write_text('import os\nX = {"npm", "pypi"}\n', encoding="utf-8")
         assert (
-            ast.parse((tmp_path / "m.py").read_text())
+            ast.parse((tmp_path / "m.py").read_text(encoding="utf-8"))
             and len(EcosystemLiterals.sites(tmp_path, tmp_path)) == 1
         )

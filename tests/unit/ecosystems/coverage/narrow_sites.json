@@ -56,7 +56,6 @@
  {"ids": ["gradle", "maven"], "site": "src/cordon_scanner/intel/registries/registry_client.py::RegistryClient.attestation_payload#0"},
  {"ids": ["actions", "ansible", "bazel", "cargo", "cocoapods", "composer", "conan", "conda", "cran", "gomod", "gradle", "hackage", "helm", "hex", "homebrew", "image", "julia", "maven", "nuget", "opam", "pub", "rubygems", "terraform", "vcpkg"], "site": "src/cordon_scanner/intel/registries/registry_hosts.py::ALIASES#0"},
  {"ids": ["actions", "ansible", "bazel", "cargo", "cocoapods", "composer", "conan", "conda", "cran", "gomod", "hackage", "hex", "homebrew", "image", "julia", "maven", "nuget", "opam", "pub", "rubygems", "terraform", "vcpkg"], "site": "src/cordon_scanner/intel/registries/registry_hosts.py::HOSTS#0"},
- {"ids": ["npm", "pypi"], "site": "src/cordon_scanner/intel/registries/registry_record.py::ECOSYSTEMS#0"},
  {"ids": ["cargo", "composer", "conda", "gomod", "hex", "maven", "npm", "nuget", "pub", "pypi", "rubygems"], "site": "src/cordon_scanner/intel/registries/registry_request.py::ARCHIVE_HOSTS#0"},
  {"ids": ["cargo", "gomod", "gradle", "hex", "maven", "npm", "nuget", "pub", "pypi", "rubygems"], "site": "src/cordon_scanner/intel/registries/release_history.py::ECOSYSTEMS#0"},
  {"ids": ["gradle", "maven"], "site": "src/cordon_scanner/intel/registries/release_history.py::ReleaseHistory.timeline#0"},

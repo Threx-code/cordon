@@ -162,6 +162,16 @@ class TestTheFetch:
             RecordFetch.documents(Greedy(), "pkg", "1.0.0")
 
 
+#: A valid name where an ecosystem's own rule asks for more than a word.
+NAMES = {
+    "composer": "vendor/example",
+    "ansible": "community.example",
+    "terraform": "hashicorp/example",
+    "maven": "group:example",
+    "gradle": "group:example",
+}
+
+
 class TestTheTable:
     def test_the_table_and_the_constant_name_the_same_ecosystems(self) -> None:
         assert RecordSources.ecosystems() == ECOSYSTEMS
@@ -169,8 +179,11 @@ class TestTheTable:
     def test_every_source_asks_https_documents_and_says_what_its_publisher_is(self) -> None:
         for source in RecordSources.SOURCES:
             # A package that is a repository is named `owner/repo`; every other registry names one word.
-            name = "owner/example" if getattr(source, "SEGMENTS", (1, 1))[0] > 1 else "example"
-            documents = source.documents(name, "1.0.0")
+            fallback = "owner/example" if getattr(source, "SEGMENTS", (1, 1))[0] > 1 else "example"
+            documents = source.documents(
+                NAMES.get(source.ecosystem, fallback),
+                "v1.0.0" if source.ecosystem == "gomod" else "1.0.0",
+            )
             assert documents and all(d.url.startswith("https://") for d in documents), (
                 source.ecosystem
             )

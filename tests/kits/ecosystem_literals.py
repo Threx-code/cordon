@@ -99,7 +99,7 @@ class EcosystemLiterals:
                 number = counted.get(anchor, 0)
                 counted[anchor] = number + 1
                 out.append(
-                    Site(str(path.relative_to(relative_to)), anchor, number, node.lineno, ids)
+                    Site(path.relative_to(relative_to).as_posix(), anchor, number, node.lineno, ids)
                 )
         return sorted(out, key=lambda s: (s.path, s.anchor, s.index))
 

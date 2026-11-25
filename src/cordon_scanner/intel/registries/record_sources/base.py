@@ -82,8 +82,9 @@ class RecordSource(ABC):
     def followed(
         self, name: str, version: str, documents: Mapping[str, Any]
     ) -> tuple[Document, ...]:
-        """Documents the first ones point to (the pages of a registration index, the per-version answers of a proxy), asked for once
-        the first round is read; none by default. They are fetched the same way, and passed to `record` beside the first ones."""
+        """Documents the ones fetched so far point to (the pages of a registration index, the next page of a listing, the per-version
+        answers of a proxy); none by default. Asked again after each round until it names nothing new, at most `RecordFetch.MAX_FOLLOWED`
+        in all; fetched the same way, and passed to `record` beside the first ones."""
         return ()
 
     @abstractmethod
@@ -160,12 +161,16 @@ class RecordFetch:
         found: dict[str, Any] = {}
         if not cls._fetch_into(wanted, found, token):
             return None
-        more = source.followed(name, version, found)
-        if len(more) > cls.MAX_FOLLOWED:
-            raise ValueError(f"a record follows at most {cls.MAX_FOLLOWED} documents")
-        if more and not cls._fetch_into(more, found, token):
-            return None
-        return found
+        followed = 0
+        while True:
+            more = tuple(d for d in source.followed(name, version, found) if d.url not in found)
+            if not more:
+                return found
+            followed += len(more)
+            if followed > cls.MAX_FOLLOWED:
+                raise ValueError(f"a record follows at most {cls.MAX_FOLLOWED} documents")
+            if not cls._fetch_into(more, found, token):
+                return None
 
     @staticmethod
     def _fetch_into(wanted: tuple[Document, ...], found: dict[str, Any], token: str | None) -> bool:

@@ -1,0 +1,13 @@
+{
+ "affiliation": null,
+ "date_registered": "2013-04-30T20:54:42Z",
+ "hub_user": "stackbrew",
+ "is_private": false,
+ "last_updated": "2026-10-30T10:58:14.081369Z",
+ "name": "busybox",
+ "namespace": "library",
+ "repository_type": "image",
+ "status": 1,
+ "status_description": "active",
+ "user": "library"
+}
