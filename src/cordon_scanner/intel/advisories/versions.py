@@ -208,12 +208,50 @@ class Versions:
         if _NOT_A_VERSION.match(a) or _NOT_A_VERSION.match(b):
             return Versions._compare_raw(a, b)
         left, right = Versions._release_of(a), Versions._release_of(b)
-        if left is None or right is None:
+        if left is None or right is None or Versions._pre(left[1]) or Versions._pre(right[1]):
+            # No release to read, or a pre-release (`-rc1`, `-beta2`): ordered as releases are, before its release.
             return LibVersion.compare(a, b)
         released = LibVersion.compare(left[0], right[0])
         if released:
             return released
-        return Versions._compare_raw(left[1], right[1])
+        return Versions._variant_order(left[1], right[1])
+
+    #: The words that make a tag's suffix a pre-release of its release rather than a variant of it.
+    PRE_RELEASE: ClassVar[tuple[str, ...]] = (
+        "rc",
+        "alpha",
+        "beta",
+        "pre",
+        "dev",
+        "snapshot",
+        "preview",
+        "a",
+        "b",
+    )
+
+    @staticmethod
+    def _pre(variant: str) -> bool:
+        """Whether a tag's suffix is a pre-release: its first word, after the separator, is a pre-release marker."""
+        word = ""
+        for char in variant.lstrip("-._+").lower():
+            if not char.isalpha():
+                break
+            word += char
+        return word in Versions.PRE_RELEASE
+
+    @staticmethod
+    def _variant_order(x: str, y: str) -> int:
+        """Two variants of one release (`-debian-12-r2`, `-debian-12-r10`): runs of digits by value, the rest as text."""
+        left = ["".join(r) for _, r in itertools.groupby(x, str.isdigit)]
+        right = ["".join(r) for _, r in itertools.groupby(y, str.isdigit)]
+        for p, q in zip(left, right, strict=False):
+            if p.isdigit() and q.isdigit():
+                np_, nq = p.lstrip("0"), q.lstrip("0")
+                if (len(np_), np_) != (len(nq), nq):
+                    return -1 if (len(np_), np_) < (len(nq), nq) else 1
+            elif p != q:
+                return -1 if p < q else 1
+        return (len(left) > len(right)) - (len(left) < len(right))
 
     @staticmethod
     def _release_of(tag: str) -> tuple[str, str] | None:

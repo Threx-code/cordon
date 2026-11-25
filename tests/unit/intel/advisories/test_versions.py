@@ -368,3 +368,28 @@ class TestAnImageTagsVariant:
         assert versions.Versions.in_range(
             "image", "1.25.2-debian-12-r9", introduced="0", fixed="1.25.3"
         )
+
+
+class TestAnImagesPreReleaseIsBelowItsRelease:
+    """A pre-release tag (`-rc1`, `-beta2`, `-alpha`) is before its release, so an advisory fixed in the release still
+    finds it; a variant (`-debian-12-r0`) is the release itself, and two variants order by their numbers."""
+
+    @pytest.mark.parametrize(
+        "pre", ["1.25.3-rc1", "1.25.3-beta2", "1.25.3-alpha", "1.25.3-RC.1", "v1.25.3-pre1"]
+    )
+    def test_a_pre_release_is_affected_by_an_advisory_fixed_in_its_release(self, pre: str) -> None:
+        assert versions.Versions.compare("image", pre, "1.25.3") == -1
+        assert versions.Versions.in_range("image", pre, introduced="0", fixed="1.25.3")
+
+    def test_a_variant_is_after_the_release_before_it(self) -> None:
+        assert versions.Versions.compare("image", "1.25.3-debian-12-r0", "1.25.2") == 1
+
+    @pytest.mark.parametrize(
+        ("earlier", "later"),
+        [
+            ("1.25.3-debian-12-r2", "1.25.3-debian-12-r10"),
+            ("1.25.3-debian-9-r0", "1.25.3-debian-12-r0"),
+        ],
+    )
+    def test_two_variants_order_by_their_numbers(self, earlier: str, later: str) -> None:
+        assert versions.Versions.compare("image", earlier, later) == -1

@@ -15,7 +15,9 @@ from cordon_scanner.intel.advisories.upstream.base import Unnamed, Upstream
 from cordon_scanner.intel.advisories.upstream.charts_images import (
     ChartIndex,
     ChartsImages,
+    Hosts,
     ImageName,
+    OciConfig,
 )
 from cordon_scanner.intel.advisories.upstream_advisories import SUPPORTED, Upstreams
 from support import ROOT
@@ -151,6 +153,7 @@ class TestAnImage:
         )
         upstream = ChartsImages.image(dependency)
         assert isinstance(upstream, Upstream) and upstream.query == {"commit": "a" * 40}
+        assert upstream.inferred  # the image's own claim, never a verified origin
 
 
 class TestAnImageName:
@@ -175,3 +178,105 @@ class TestAnImageName:
     @pytest.mark.parametrize("name", ["", "../x", "a/../b", "a//b", "UPPER/../x", "a?b", "a#b"])
     def test_a_hostile_name_is_refused(self, name: str) -> None:
         assert ImageName.split(name) is None
+
+
+class TestAHostileRegistry:
+    """What a registry answers is untrusted: anything but an object at each step is a ValueError, never another error."""
+
+    @pytest.mark.parametrize(
+        ("manifest", "config"),
+        [
+            ([], {}),
+            (None, {}),
+            ({"config": None}, {}),
+            ({"config": {"digest": 3}}, {}),
+            ({"manifests": "x"}, {}),
+            ({"config": {"digest": "sha256:" + "0" * 64}}, []),
+        ],
+    )
+    def test_a_malformed_answer_is_a_value_error(
+        self, monkeypatch: pytest.MonkeyPatch, manifest: Any, config: Any
+    ) -> None:
+        from cordon_scanner.intel.registries import registry_image
+
+        class Hostile:
+            def __init__(self, registry: str, repository: str) -> None:
+                pass
+
+            def manifest(self, reference: str) -> tuple[bytes, str]:
+                return json.dumps(manifest).encode(), ""
+
+            def blob(self, digest: str, pull: Any) -> bytes:
+                return json.dumps(config).encode()
+
+        monkeypatch.setattr(registry_image, "RegistryImage", Hostile)
+        with pytest.raises(ValueError):
+            OciConfig.of("registry.example.com", "a/b", "1.0")
+
+
+class TestAHostNamedByScannedContent:
+    @pytest.mark.parametrize(
+        "host",
+        [
+            "localhost",
+            "localhost:5000",
+            "127.0.0.1",
+            "[::1]",
+            "10.0.0.5:443",
+            "192.168.1.1",
+            "169.254.169.254",
+            "intranet",
+            "svc.local",
+            "db.internal",
+            "",
+        ],
+    )
+    def test_a_local_or_private_host_is_not_asked(self, host: str) -> None:
+        assert not Hosts.public(host)
+
+    @pytest.mark.parametrize(
+        "host", ["registry-1.docker.io", "ghcr.io", "charts.jetstack.io:443", "8.8.8.8"]
+    )
+    def test_a_public_host_is_asked(self, host: str) -> None:
+        assert Hosts.public(host)
+
+    def test_a_chart_repository_on_this_machine_is_left_unchecked(self) -> None:
+        https = Dependency(
+            purl="pkg:helm/x@1",
+            ecosystem="helm",
+            name="x",
+            version="1",
+            resolved_from="https://127.0.0.1:8080/c",
+        )
+        assert isinstance(ChartsImages.helm(https), Unnamed)
+        oci = Dependency(
+            purl="pkg:helm/x@1",
+            ecosystem="helm",
+            name="x",
+            version="1",
+            resolved_from="oci://localhost:5000/c",
+        )
+        with pytest.raises(ValueError):
+            ChartsImages.helm(oci)
+
+
+class TestAnOciChartTag:
+    def test_build_metadata_is_asked_as_helm_stores_it(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        asked: list[tuple[str, str, str]] = []
+
+        def of(registry: str, repository: str, reference: str) -> dict[str, Any]:
+            asked.append((registry, repository, reference))
+            return {}
+
+        monkeypatch.setattr(OciConfig, "of", staticmethod(of))
+        dependency = Dependency(
+            purl="pkg:helm/chart@1.2.3+build.4",
+            ecosystem="helm",
+            name="chart",
+            version="1.2.3+build.4",
+            resolved_from="oci://registry.example.com/charts",
+        )
+        ChartsImages.helm(dependency)
+        assert asked == [("registry.example.com", "charts/chart", "1.2.3_build.4")]

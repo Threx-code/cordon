@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import re
+import urllib.parse
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.intel.advisories.upstream.base import RepositoryArchive, Unnamed, Upstream
@@ -58,6 +59,32 @@ class ImageName:
         return registry, repository
 
 
+class Hosts:
+    """A host named by scanned content (an `oci://` repository, a chart repository URL, an image's registry) is asked
+    only when it is a public name: never this machine, a private network or a bare word, so a chart or a Dockerfile
+    cannot make an `--online` scan probe the network it runs in."""
+
+    @staticmethod
+    def public(host: str) -> bool:
+        import ipaddress
+
+        name = host.strip().lower().rsplit("@", 1)[-1]
+        name = (
+            name[1:].split("]", 1)[0]
+            if name.startswith("[")
+            else name.rsplit(":", 1)[0]
+            if name.count(":") == 1
+            else name
+        )
+        if not name or name == "localhost" or name.endswith((".localhost", ".local", ".internal")):
+            return False
+        try:
+            address = ipaddress.ip_address(name)
+        except ValueError:
+            return "." in name
+        return address.is_global
+
+
 class OciConfig:
     """An image's or an OCI chart's configuration blob, through its manifest (one platform of an index)."""
 
@@ -65,24 +92,31 @@ class OciConfig:
 
     @classmethod
     def of(cls, registry: str, repository: str, reference: str) -> dict[str, Any]:
+        """The configuration as an object; anything else a registry answers (a list, a null, a missing digest) is a
+        `ValueError`, which the caller reports as unchecked."""
         from cordon_scanner.intel.registries.registry_image import Pull, RegistryImage
 
+        if not Hosts.public(registry):
+            raise ValueError("a registry on this machine or a private network is not asked")
         image = RegistryImage(registry, repository)
-        body, _media = image.manifest(reference)
-        document = json.loads(body)
-        if isinstance(document.get("manifests"), list):
-            chosen = cls.platform(document["manifests"])
+        document = cls.object(json.loads(image.manifest(reference)[0]), "manifest")
+        if "manifests" in document:
+            listed = document["manifests"]
+            chosen = cls.platform(listed) if isinstance(listed, list) else None
             if chosen is None:
                 raise ValueError("the index lists no platform")
-            document = json.loads(image.manifest(chosen)[0])
-        digest = str((document.get("config") or {}).get("digest") or "")
-        size = (document.get("config") or {}).get("size")
-        if not digest or (isinstance(size, int) and size > cls.MAX):
+            document = cls.object(json.loads(image.manifest(chosen)[0]), "manifest")
+        descriptor = cls.object(document.get("config"), "config descriptor")
+        digest, size = descriptor.get("digest"), descriptor.get("size")
+        if not isinstance(digest, str) or not digest or (isinstance(size, int) and size > cls.MAX):
             raise ValueError("the manifest names no readable configuration")
-        config = json.loads(image.blob(digest, Pull()))
-        if not isinstance(config, dict):
-            raise ValueError("the configuration is not an object")
-        return config
+        return cls.object(json.loads(image.blob(digest, Pull())), "configuration")
+
+    @staticmethod
+    def object(value: Any, what: str) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            raise ValueError(f"the {what} is not an object")
+        return value
 
     @staticmethod
     def platform(manifests: list[Any]) -> str | None:
@@ -183,9 +217,13 @@ class ChartsImages:
         name, version = dependency.name, dependency.version or ""
         if repository.startswith("oci://"):
             host, _, path = repository.removeprefix("oci://").partition("/")
-            config = OciConfig.of(host, f"{path.strip('/')}/{name}".strip("/"), version)
+            # Helm stores a version's `+` (build metadata) as `_` in its OCI tag.
+            tag = version.replace("+", "_")
+            config = OciConfig.of(host, f"{path.strip('/')}/{name}".strip("/"), tag)
             fields: dict[str, Any] | None = config
         elif repository.startswith("https://"):
+            if not Hosts.public(urllib.parse.urlsplit(repository).netloc):
+                return Unnamed("its chart repository is on this machine or a private network")
             text = Fetch.get(repository.rstrip("/") + "/index.yaml", ChartsImages.MAX_INDEX)
             fields = ChartIndex.entry(text.decode("utf-8", "replace"), name, version)
         else:
@@ -215,16 +253,20 @@ class ChartsImages:
         if split is None or not tag:
             return Unnamed("it is not an image reference with a tag or digest")
         config = OciConfig.of(split[0], split[1], tag)
-        labels = (config.get("config") or {}).get("Labels") or {}
+        inner = config.get("config")
+        labels = inner.get("Labels") if isinstance(inner, dict) else None
         if not isinstance(labels, dict):
             labels = {}
         source = str(labels.get("org.opencontainers.image.source") or "")
         revision = str(labels.get("org.opencontainers.image.revision") or "")
         release = str(labels.get("org.opencontainers.image.version") or "")
+        # The labels are the image author's own claim, never a verified origin: matched as an inference only.
         how = f"the image's labels ({split[1]}:{tag})"
         repository = RepositoryArchive.repository(source) if source else None
         if repository and re.fullmatch(r"[0-9a-f]{40}", revision):
-            return RepositoryArchive.upstream(repository, revision, how)
+            from dataclasses import replace
+
+            return replace(RepositoryArchive.upstream(repository, revision, how), inferred=True)
         if not source:
             return Unnamed("the image's configuration names no source")
         return Inference.inferred(
