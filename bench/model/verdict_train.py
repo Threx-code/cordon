@@ -690,7 +690,7 @@ class VerdictTrain:
             type=float,
             default=None,
             help="weight a legitimate unit whose out-of-fold score is at least --hard-legit-from by this "
-            "factor (above 1) in the final fit, and record the rule and the numbers in the model",
+            "factor (above 1) in the final fit, and record the rule and the numbers in the report",
         )
         p.add_argument(
             "--hard-legit-from",
@@ -701,9 +701,16 @@ class VerdictTrain:
         p.add_argument(
             "--time-cutoff",
             metavar="YYYY-MM-DD",
+            type=SplitWeights.day,
             default=None,
-            help="report, in the model's record, how many malicious units dated on or after this day the "
-            "model blocks (counts and recall)",
+            help="report, in the report file, how many malicious work-half units dated on or after this "
+            "day the gate blocks (counts and recall); out of time only under --split time, else out of fold",
+        )
+        p.add_argument(
+            "--families-one-side",
+            action="store_true",
+            help="refuse to train when a malicious family has units on both halves of the split as assigned "
+            "(--split family keeps a datadog family on one side); the count is always in the report",
         )
         p.add_argument(
             "--capacity-search",
@@ -810,6 +817,8 @@ class VerdictTrain:
             "build. Without it the report is the WORK half (out-of-fold recall, work false-block rate).",
         )
         a = p.parse_args()
+        if a.hard_legit_from is not None and not a.hard_legit_factor:
+            p.error("--hard-legit-from needs --hard-legit-factor")
 
         if not (a.malware or a.benchmark):
             raise SystemExit("--malware or --benchmark is required")
@@ -846,6 +855,20 @@ class VerdictTrain:
             print(f"dropped {len(unstable)} version-unstable features: {sorted(unstable)[:40]}")
             for r in data:
                 r["f"] = {k: v for k, v in r["f"].items() if k not in unstable}
+        # Malicious families on both halves of the split as it was assigned (work and holdout, before they are cut): a count, never names.
+        split_records: dict[str, Any] = {
+            "families_on_both_halves": {
+                "split": a.split,
+                "count": SplitWeights.families_split(
+                    [r for r in data if r["label"] and r["half"] in ("work", "holdout")], "half"
+                ),
+            }
+        }
+        if a.families_one_side and split_records["families_on_both_halves"]["count"]:
+            raise SystemExit(
+                f"{split_records['families_on_both_halves']['count']} malicious families have units on both halves under "
+                f"--split {a.split}: use --split family"
+            )
         work = [r for r in data if r["half"] == "work" and r["eco"] != a.leave_out]
         test = [r for r in data if r["half"] == "holdout"]
         if a.split == "p8":
@@ -1277,7 +1300,6 @@ class VerdictTrain:
                     legit_scores[r["area"]].append(float(r["score"]))
             lines, line_bounds = AreaLines.enforce(lines, legit_scores, a.line_upper)
 
-        SplitWeights.one_side(work)
         weights = hard = None
         if a.hard_legit_factor:
             listed, hard = SplitWeights.hard_legit(
@@ -1295,13 +1317,17 @@ class VerdictTrain:
 
         fitted = {x: fit_group(idx) for x, idx in groups.items()}
         exported = cls.export(fitted["*"], names)
+        # The records of how the data was weighted and cut go to the report, not into the model: the model is trees and feature names only.
         if hard is not None:
-            exported = SplitWeights.attach(exported, hard_legit=hard)
+            split_records["hard_legit"] = hard
         if a.time_cutoff:
-            over = [bool(r["score"] >= lines.get(r["area"], lines[Verdict.FALLBACK])) for r in work]
-            exported = SplitWeights.attach(
-                exported, time_split=SplitWeights.time_check(work, over, a.time_cutoff)
-            )
+            over = [blocked(r, lines) for r in work]
+            late = SplitWeights.time_check(work, over, a.time_cutoff)
+            # Only a time split is out of time; any other leaves these units in the training folds, so the number is out-of-fold.
+            split_records["time_split" if a.split == "time" else "late_units"] = {
+                **late,
+                "out_of": "time" if a.split == "time" else "fold",
+            }
         if capacity is not None:
             exported = Capacity.attach(exported, capacity)
         if line_bounds is not None:
@@ -1374,6 +1400,7 @@ class VerdictTrain:
             "add_only": sorted(add_only_areas),
             "lift_areas": sorted(lift_areas),
             "keep": sorted(rare_rules | NAME_PROVENANCE_RULES),
+            **split_records,
             **({"not_established": len(cls.not_established)} if a.established else {}),
             "benign_blocked": {},
             "malware_caught": {},

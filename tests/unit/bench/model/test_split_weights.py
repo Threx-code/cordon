@@ -82,10 +82,9 @@ class TestHardLegitimateUnitsAreWeightedAndTheWeightIsRecorded:
         with pytest.raises(ValueError, match="one score"):
             SplitWeights.hard_legit(self.ROWS, self.SCORES[:-1], factor=2.0)
 
-    def test_the_record_rides_with_the_exported_model(self) -> None:
-        _, record = SplitWeights.hard_legit(self.ROWS, self.SCORES, factor=3.0)
-        exported = SplitWeights.attach({"trees": []}, hard_legit=record)
-        assert exported["hard_legit"] == record and exported["trees"] == []
+    def test_a_score_that_is_not_a_number_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="not a number"):
+            SplitWeights.hard_legit(self.ROWS, (0.1, float("nan"), 0.9, 0.9, 0.2), factor=2.0)
 
 
 class TestTheTimeSplitRecallIsReported:
@@ -115,3 +114,43 @@ class TestTheTimeSplitRecallIsReported:
     def test_one_flag_for_each_row(self) -> None:
         with pytest.raises(ValueError, match="one flag"):
             SplitWeights.time_check(self.ROWS, [True], "2026-03-01")
+
+
+class TestAFamilyOnBothHalvesOfTheSplitAsAssigned:
+    """The check reads the half each row was given (`half`), which --split package, family, time and p8 each assign their own way."""
+
+    @staticmethod
+    def rows(halves: dict[str, list[str]]) -> list[dict[str, Any]]:
+        return [
+            {"family": family, "half": half, "family_half": "work", "label": 1}
+            for family, given in halves.items()
+            for half in given
+        ]
+
+    def test_a_family_with_releases_on_both_halves_is_counted_and_refused(self) -> None:
+        rows = self.rows({"a": ["work", "holdout"], "b": ["work", "work"], "c": ["holdout"]})
+        assert SplitWeights.families_split(rows, "half") == 1
+        with pytest.raises(ValueError, match="1 family has"):
+            SplitWeights.one_side(rows, "half")
+
+    def test_the_family_half_column_alone_cannot_show_it(self) -> None:
+        """The first version of the check read `family_half`, which is the same for every row of a family: it passed these rows."""
+        rows = self.rows({"a": ["work", "holdout"]})
+        assert SplitWeights.one_side(rows) == 1 and SplitWeights.families_split(rows, "half") == 1
+
+    def test_a_family_split_keeps_every_family_on_one_side(self) -> None:
+        rows = self.rows({f"f{n}": [VerdictTrain.half(f"f{n}")] * 3 for n in range(40)})
+        assert SplitWeights.families_split(rows, "half") == 0
+        assert SplitWeights.one_side(rows, "half") == 40
+
+
+class TestADayIsRefusedUnlessItIsOne:
+    @pytest.mark.parametrize(
+        "text", ["2026/01/01", "2026-1-1", "20260101", "2026-13-01", "", "yesterday"]
+    )
+    def test_a_cut_off_that_is_not_a_day_is_refused(self, text: str) -> None:
+        with pytest.raises(ValueError, match="YYYY-MM-DD"):
+            SplitWeights.day(text)
+
+    def test_a_day_is_kept_as_it_is(self) -> None:
+        assert SplitWeights.day("2026-03-01") == "2026-03-01"

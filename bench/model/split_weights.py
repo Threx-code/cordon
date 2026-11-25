@@ -2,16 +2,18 @@
 
 * `SplitWeights.one_side` refuses rows in which a family has a unit on each half of the split (every release of a family is on one side).
 * `SplitWeights.hard_legit` gives a legitimate unit whose out-of-fold score (the score of a model that never saw its family) is at least `from_score`
-  the weight `factor`, every other unit weight 1, and returns the record of what was done: the rule, the numbers and the sum, which the exported
-  model carries (`attach`).
+  the weight `factor`, every other unit weight 1, and returns the record of what was done: the rule, the numbers and the sum, which the trainer's
+  report carries (never the model: that is trees and feature names only).
 * `SplitWeights.time_check` reports, for the malicious units dated on or after a cut-off, how many the model blocks, as counts and a recall; with
   no unit after the cut-off it says so rather than reporting a number.
 """
 
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
+from datetime import date
 from typing import Any, ClassVar
 
 
@@ -19,17 +21,32 @@ class SplitWeights:
     DEFAULT_FROM: ClassVar[float] = 0.5
 
     @staticmethod
-    def one_side(rows: Sequence[Mapping[str, Any]]) -> int:
-        """The number of families checked; `ValueError` (with the count of families split, never their names) when a family has rows on both halves."""
+    def families_split(rows: Sequence[Mapping[str, Any]], side: str = "family_half") -> int:
+        """How many families have rows on more than one value of `side` (the half each row was given): a count, never names."""
         sides: dict[str, set[str]] = defaultdict(set)
         for row in rows:
-            sides[str(row["family"])].add(str(row["family_half"]))
-        split = sum(1 for halves in sides.values() if len(halves) > 1)
+            sides[str(row["family"])].add(str(row[side]))
+        return sum(1 for values in sides.values() if len(values) > 1)
+
+    @classmethod
+    def one_side(cls, rows: Sequence[Mapping[str, Any]], side: str = "family_half") -> int:
+        """The number of families checked; `ValueError` (with the count of families split, never their names) when a family has rows on two sides."""
+        split = cls.families_split(rows, side)
         if split:
             raise ValueError(
                 f"{split} famil{'y has' if split == 1 else 'ies have'} units on both halves of the split"
             )
-        return len(sides)
+        return len({str(row["family"]) for row in rows})
+
+    @staticmethod
+    def day(text: str) -> str:
+        """A day as `YYYY-MM-DD`, or `ValueError`: a string compare of any other form would sort wrongly and report no recall silently."""
+        if len(text) != 10:
+            raise ValueError(f"a day is YYYY-MM-DD, not {text!r}")
+        try:
+            return date.fromisoformat(text).isoformat()
+        except ValueError:
+            raise ValueError(f"a day is YYYY-MM-DD, not {text!r}") from None
 
     @classmethod
     def hard_legit(
@@ -44,6 +61,8 @@ class SplitWeights:
         at least `from_score` (0.5 when none is given). `factor` is above 1."""
         if len(scores) != len(rows):
             raise ValueError("one score for each row")
+        if any(math.isnan(score) for score in scores):
+            raise ValueError("a score is not a number")
         if not factor > 1:
             raise ValueError("the weight of a hard legitimate unit is above 1")
         floor = cls.DEFAULT_FROM if from_score is None else from_score
@@ -91,11 +110,6 @@ class SplitWeights:
             if after
             else "no malicious unit is dated on or after the cut-off: no recall is reported",
         }
-
-    @staticmethod
-    def attach(exported: dict[str, Any], **records: dict[str, Any]) -> dict[str, Any]:
-        """`exported` with each record under its name (`hard_legit`, `time_split`)."""
-        return {**exported, **records}
 
 
 __all__ = ["SplitWeights"]
