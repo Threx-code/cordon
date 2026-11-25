@@ -622,21 +622,20 @@ class TestThePlatformsRecordedAnswerUnderACustomerRoot:
         )
         assert state == "new" and bundle["version"] == 1
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="the recorded bundle's compiled policy (id `legacy`) carries no expires_at, which LocalRuntime._policy_of refuses; "
-        "when the platform's bundle carries one this flips and the mark is removed",
-    )
-    def test_the_runtime_takes_the_recorded_bundle(self, tmp_path: Path) -> None:
-        runtime, puller, recorded = self.device(tmp_path)
-        assert puller.pull(runtime, self.moment(recorded)) == "new"
-
-    def test_the_decision_delegation_in_that_body_is_accepted_and_kept_before_the_policy_is_read(
+    def test_the_runtime_takes_the_recorded_bundle_and_its_policy_has_an_expiry_inside_the_bundles(
         self, tmp_path: Path
     ) -> None:
         runtime, puller, recorded = self.device(tmp_path)
-        with pytest.raises(BundleError, match="no expiry"):
-            puller.pull(runtime, self.moment(recorded))
+        assert puller.pull(runtime, self.moment(recorded)) == "new"
+        assert runtime.held is not None and runtime.held["version"] == 1
+        policy_ends = datetime.fromisoformat(runtime.held["compiled_table"]["expires_at"])
+        assert policy_ends <= datetime.fromisoformat(runtime.held["expires_at"])
+
+    def test_the_decision_delegation_in_that_body_is_accepted_and_kept(
+        self, tmp_path: Path
+    ) -> None:
+        runtime, puller, recorded = self.device(tmp_path)
+        puller.pull(runtime, self.moment(recorded))
         assert puller.refusal() is None
         assert (
             puller.held_sequence()
@@ -649,8 +648,7 @@ class TestThePlatformsRecordedAnswerUnderACustomerRoot:
     ) -> None:
         runtime, puller, recorded = self.device(tmp_path)
         now = self.moment(recorded)
-        with pytest.raises(BundleError, match="no expiry"):
-            puller.pull(runtime, now)
+        puller.pull(runtime, now)
         root = bytes.fromhex(recorded["root_public"])
         accepted = DecisionDelegation.accept(
             root, recorded["root_delegation"], recorded["tenant"], puller.decision_delegation()
@@ -665,8 +663,7 @@ class TestThePlatformsRecordedAnswerUnderACustomerRoot:
     ) -> None:
         runtime, puller, recorded = self.device(tmp_path)
         now = self.moment(recorded)
-        with pytest.raises(BundleError, match="no expiry"):
-            puller.pull(runtime, now)
+        assert puller.pull(runtime, now) == "new"
         seen: list[str] = []
 
         def again(url: str, headers: dict[str, str]) -> tuple[int, dict[str, str], bytes]:
