@@ -127,6 +127,44 @@ class TestACompiledPolicy:
         assert [rule.id for rule in policy.rules] == [rule["id"] for rule in SOURCE["rules"]]
 
 
+class TestTheSealIdentifiesTheRulesNotTheLifetime:
+    """The digest leaves out `expires_at`: the platform gives a policy a lifetime (its bundle's) without changing the policy's digest between the
+    cloud and a device or from one refresh to the next. A bundle signature covers the whole payload, expiry included."""
+
+    #: The digest of this fixture's rules with no expiry, as it was before the expiry left the seal.
+    GOLDEN = "sha256:42181a1333b30658e259dc51ce227041cd68239032cef8c204ca39b5f3c7cc2e"
+
+    def test_a_policy_with_no_expiry_keeps_exactly_its_digest(self) -> None:
+        assert PolicyCompiler.compile(Sources.make()).sha256 == self.GOLDEN
+
+    def test_the_same_rules_with_and_without_an_expiry_have_the_same_digest(self) -> None:
+        plain = PolicyCompiler.compile(Sources.make())
+        timed = PolicyCompiler.compile(Sources.make(expires_at="2030-01-01T00:00:00+00:00"))
+        assert plain.sha256 == timed.sha256 == self.GOLDEN
+
+    def test_another_expiry_is_the_same_digest(self) -> None:
+        one = PolicyCompiler.compile(Sources.make(expires_at="2030-01-01T00:00:00+00:00"))
+        two = PolicyCompiler.compile(Sources.make(expires_at="2031-06-01T12:00:00+00:00"))
+        assert one.sha256 == two.sha256
+
+    def test_an_expiry_added_without_sealing_again_still_verifies(self) -> None:
+        from dataclasses import replace
+
+        plain = PolicyCompiler.compile(Sources.make())
+        replace(plain, expires_at="2030-01-01T00:00:00+00:00").verify()
+
+    def test_the_rules_are_still_what_the_digest_identifies(self) -> None:
+        base = PolicyCompiler.compile(Sources.make(expires_at="2030-01-01T00:00:00+00:00")).sha256
+        assert PolicyCompiler.compile(Sources.make(version=15)).sha256 != base
+
+    def test_a_policy_edited_after_sealing_is_still_refused(self) -> None:
+        from dataclasses import replace
+
+        plain = PolicyCompiler.compile(Sources.make())
+        with pytest.raises(PolicyError):
+            replace(plain, version=plain.version + 1).verify()
+
+
 class TestWhatIsRefused:
     def refused(self, needle: str, **changes) -> None:
         with pytest.raises(PolicyError, match=needle):
