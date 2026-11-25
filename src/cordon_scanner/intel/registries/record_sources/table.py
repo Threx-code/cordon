@@ -10,6 +10,13 @@ from typing import ClassVar
 from cordon_scanner.intel.registries.record_sources.ansible import AnsibleSource
 from cordon_scanner.intel.registries.record_sources.base import RecordSource
 from cordon_scanner.intel.registries.record_sources.cargo import CargoSource
+from cordon_scanner.intel.registries.record_sources.catalogs.cran import CranSource
+from cordon_scanner.intel.registries.record_sources.catalogs.gomod import GomodSource
+from cordon_scanner.intel.registries.record_sources.catalogs.hackage import HackageSource
+from cordon_scanner.intel.registries.record_sources.catalogs.helm import HelmSource
+from cordon_scanner.intel.registries.record_sources.catalogs.image import ImageSource
+from cordon_scanner.intel.registries.record_sources.catalogs.maven import GradleSource, MavenSource
+from cordon_scanner.intel.registries.record_sources.catalogs.terraform import TerraformSource
 from cordon_scanner.intel.registries.record_sources.cocoapods import CocoapodsSource
 from cordon_scanner.intel.registries.record_sources.composer import ComposerSource
 from cordon_scanner.intel.registries.record_sources.conda import CondaSource
@@ -34,6 +41,14 @@ class RecordSources:
         AnsibleSource(),
         CondaSource(),
         NugetSource(),
+        CranSource(),
+        HackageSource(),
+        TerraformSource(),
+        HelmSource(),
+        ImageSource(),
+        GomodSource(),
+        MavenSource(),
+        GradleSource(),
     )
 
     @classmethod

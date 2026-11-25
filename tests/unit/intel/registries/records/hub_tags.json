@@ -1,0 +1,77 @@
+{
+ "count": 219,
+ "next": "https://hub.docker.com/v2/repositories/library/busybox/tags?page=2&page_size=10",
+ "previous": null,
+ "results": [
+  {
+   "last_updated": "2026-10-30T10:58:12.083348Z",
+   "last_updater_username": "doijanky",
+   "name": "unstable-uclibc",
+   "tag_last_pushed": "2026-10-30T10:58:12.083348Z",
+   "tag_status": "active"
+  },
+  {
+   "last_updated": "2026-10-30T10:58:09.644768Z",
+   "last_updater_username": "doijanky",
+   "name": "unstable-musl",
+   "tag_last_pushed": "2026-10-30T10:58:09.644768Z",
+   "tag_status": "active"
+  },
+  {
+   "last_updated": "2026-10-30T10:58:04.090253Z",
+   "last_updater_username": "doijanky",
+   "name": "uclibc",
+   "tag_last_pushed": "2026-10-30T10:58:04.090253Z",
+   "tag_status": "active"
+  },
+  {
+   "last_updated": "2026-10-30T10:58:01.557228Z",
+   "last_updater_username": "doijanky",
+   "name": "musl",
+   "tag_last_pushed": "2026-10-30T10:58:01.557228Z",
+   "tag_status": "active"
+  },
+  {
+   "last_updated": "2026-10-30T10:57:56.13243Z",
+   "last_updater_username": "doijanky",
+   "name": "1.38.0-uclibc",
+   "tag_last_pushed": "2026-10-30T10:57:56.13243Z",
+   "tag_status": "active"
+  },
+  {
+   "last_updated": "2026-10-30T10:57:53.677701Z",
+   "last_updater_username": "doijanky",
+   "name": "1.38.0-musl",
+   "tag_last_pushed": "2026-10-30T10:57:53.677701Z",
+   "tag_status": "active"
+  },
+  {
+   "last_updated": "2026-10-30T10:57:48.1057Z",
+   "last_updater_username": "doijanky",
+   "name": "1.38-uclibc",
+   "tag_last_pushed": "2026-10-30T10:57:48.1057Z",
+   "tag_status": "active"
+  },
+  {
+   "last_updated": "2026-10-30T10:57:45.511657Z",
+   "last_updater_username": "doijanky",
+   "name": "1.38-musl",
+   "tag_last_pushed": "2026-10-30T10:57:45.511657Z",
+   "tag_status": "active"
+  },
+  {
+   "last_updated": "2026-10-30T10:57:40.030979Z",
+   "last_updater_username": "doijanky",
+   "name": "1.37.0-uclibc",
+   "tag_last_pushed": "2026-10-30T10:57:40.030979Z",
+   "tag_status": "active"
+  },
+  {
+   "last_updated": "2026-10-30T10:57:37.329799Z",
+   "last_updater_username": "doijanky",
+   "name": "1.37.0-musl",
+   "tag_last_pushed": "2026-10-30T10:57:37.329799Z",
+   "tag_status": "active"
+  }
+ ]
+}

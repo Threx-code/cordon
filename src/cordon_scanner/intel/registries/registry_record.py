@@ -52,6 +52,14 @@ ECOSYSTEMS: Final = frozenset(
         "ansible",
         "conda",
         "nuget",
+        "cran",
+        "hackage",
+        "terraform",
+        "helm",
+        "image",
+        "gomod",
+        "maven",
+        "gradle",
     }
 )
 #: npm's lifecycle scripts that run on the installing machine.

@@ -163,7 +163,13 @@ class TestTheFetch:
 
 
 #: A valid name where an ecosystem's own rule asks for more than a word.
-NAMES = {"composer": "vendor/example", "ansible": "community.example"}
+NAMES = {
+    "composer": "vendor/example",
+    "ansible": "community.example",
+    "terraform": "hashicorp/example",
+    "maven": "group:example",
+    "gradle": "group:example",
+}
 
 
 class TestTheTable:
@@ -172,7 +178,10 @@ class TestTheTable:
 
     def test_every_source_asks_https_documents_and_says_what_its_publisher_is(self) -> None:
         for source in RecordSources.SOURCES:
-            documents = source.documents(NAMES.get(source.ecosystem, "example"), "1.0.0")
+            documents = source.documents(
+                NAMES.get(source.ecosystem, "example"),
+                "v1.0.0" if source.ecosystem == "gomod" else "1.0.0",
+            )
             assert documents and all(d.url.startswith("https://") for d in documents), (
                 source.ecosystem
             )
