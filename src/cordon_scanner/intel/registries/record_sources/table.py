@@ -7,13 +7,14 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+from cordon_scanner.intel.registries.record_sources import git_hosted
 from cordon_scanner.intel.registries.record_sources.base import RecordSource
 from cordon_scanner.intel.registries.record_sources.npm import NpmSource
 from cordon_scanner.intel.registries.record_sources.pypi import PypiSource
 
 
 class RecordSources:
-    SOURCES: ClassVar[tuple[RecordSource, ...]] = (NpmSource(), PypiSource())
+    SOURCES: ClassVar[tuple[RecordSource, ...]] = (NpmSource(), PypiSource(), *git_hosted.SOURCES)
 
     @classmethod
     def of(cls, ecosystem: str) -> RecordSource | None:
