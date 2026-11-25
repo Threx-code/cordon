@@ -123,3 +123,59 @@ class TestTheVerifier:
     def test_it_shares_no_code_with_the_scanner(self) -> None:
         text = (ROOT / "scripts" / "release" / "verify_artifacts.py").read_text(encoding="utf-8")
         assert "cordon_scanner import" not in text and "from cordon_scanner" not in text
+
+
+class TestTheGaps:
+    verifier = Loaded.verifier().ArtifactVerifier
+
+    def test_a_missing_sums_file_leaves_every_artifact_unlisted(self, tmp_path: Path) -> None:
+        artifacts = Release.build(tmp_path)
+        (tmp_path / "SHA256SUMS").unlink()
+        found = self.verifier.problems(tmp_path)
+        assert all(any(f"{a.name}: not in SHA256SUMS" in line for line in found) for a in artifacts)
+
+    def test_a_sums_line_with_a_short_digest_lists_nothing(self, tmp_path: Path) -> None:
+        wheel = Release.build(tmp_path)[0]
+        sums = (tmp_path / "SHA256SUMS").read_text(encoding="utf-8").splitlines()
+        (tmp_path / "SHA256SUMS").write_text(
+            "\n".join(f"abc  {wheel.name}" if wheel.name in line else line for line in sums) + "\n",
+            encoding="utf-8",
+        )
+        found = self.verifier.problems(tmp_path)
+        assert f"{wheel.name}: not in SHA256SUMS" in found and not any(
+            "digest differs" in line for line in found
+        )
+
+    @pytest.mark.parametrize("text", ["not json", "{}", '{"subject": 5}', "[]"])
+    def test_a_statement_that_is_not_an_in_toto_statement_says_so(
+        self, tmp_path: Path, text: str
+    ) -> None:
+        wheel = Release.build(tmp_path)[0]
+        (tmp_path / (wheel.name + ".intoto.json")).write_text(text, encoding="utf-8")
+        assert f"{wheel.name}: the statement is not an in-toto statement" in self.verifier.problems(
+            tmp_path
+        )
+
+    def test_the_script_exits_0_when_every_artifact_verifies_and_1_when_one_does_not(
+        self, tmp_path: Path
+    ) -> None:
+        import subprocess
+        import sys
+
+        script = str(ROOT / "scripts" / "release" / "verify_artifacts.py")
+        artifacts = Release.build(tmp_path)
+        ok = subprocess.run(
+            [sys.executable, "-I", script, str(tmp_path)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert (ok.returncode, ok.stdout.strip()) == (0, "every artifact verifies")
+        artifacts[0].write_bytes(artifacts[0].read_bytes() + b"x")
+        bad = subprocess.run(
+            [sys.executable, "-I", script, str(tmp_path)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert bad.returncode == 1 and "digest differs" in bad.stdout

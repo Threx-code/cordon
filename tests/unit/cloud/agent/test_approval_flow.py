@@ -10,7 +10,7 @@ import base64
 import json
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -54,6 +54,7 @@ class Flow:
         self.policy = Kit.compiled(1, self.expires, on_incomplete={"*": "block"}, rules=REVIEW)
         self.delegation = self.delegated()
         self.asked: list[dict[str, Any]] = []
+        self.version: str | None = None
         self.answer: Any = None  # what the platform answers next: (status, body) or an exception
 
     def delegated(self) -> dict[str, Any]:
@@ -113,11 +114,14 @@ class Flow:
         resolvers = {"mcp_server": self.resolve}
         return CordonRuntime(local, resolvers=resolvers, sources=sources)
 
-    @staticmethod
-    def resolve(reference: str) -> Resolution:
+    def resolve(self, reference: str) -> Resolution:
         digest = ArtifactDigests.of_bytes(f"mcp_server:{reference}".encode())
         return Resolution(
-            kind="mcp_server", subject_id="mcp/files", status="resolved", digest=digest
+            kind="mcp_server",
+            subject_id="mcp/files",
+            status="resolved",
+            digest=digest,
+            version=self.version,
         )
 
     def hook(self, retry_online: bool) -> tuple[str, str]:
@@ -142,8 +146,42 @@ class Flow:
     def requests(self) -> list[dict[str, Any]]:
         return [json.loads(p.body) for p in self.store.pending() if p.kind == "approval-request"]
 
+    @staticmethod
+    def signed(
+        decision: Decision,
+        signer: Ed25519Signer,
+        subject_id: str,
+        digest: str,
+        extra: tuple[dict[str, Any], ...],
+        extra_first: bool,
+    ) -> dict[str, Any]:
+        """The decision's envelope, with other subjects in its statement when asked: signed by the same key, so only its content is wrong."""
+        if not extra:
+            return DecisionEnvelope.sign(decision, signer, subject_id=subject_id, digest=digest)
+        statement = DecisionEnvelope.statement(decision, subject_id, digest)
+        statement["subject"] = (
+            [*extra, *statement["subject"]] if extra_first else [*statement["subject"], *extra]
+        )
+        body = ArtifactDigests.canonical_json(statement)
+        signature = signer.sign(Dsse.pae(DecisionEnvelope.TYPE, body))
+        return {
+            "payloadType": DecisionEnvelope.TYPE,
+            "payload": base64.b64encode(body).decode("ascii"),
+            "signatures": [
+                {
+                    "keyid": Dsse.keyid(signer.public),
+                    "sig": base64.b64encode(signature).decode("ascii"),
+                }
+            ],
+        }
+
     def approved(
-        self, signer: Ed25519Signer = DECIDER, *, policy: Any = None
+        self,
+        signer: Ed25519Signer = DECIDER,
+        *,
+        policy: Any = None,
+        extra_subjects: tuple[dict[str, Any], ...] = (),
+        extra_first: bool = False,
     ) -> tuple[int, dict[str, Any]]:
         """The platform's recorded answer once the approver has approved the digest: the decision it makes, signed."""
         call = AgentCalls.of(
@@ -175,8 +213,8 @@ class Flow:
             actor="agent",
             environment="production",
         )
-        envelope = DecisionEnvelope.sign(
-            decision, signer, subject_id=artifact.subject_id, digest=str(artifact.digest)
+        envelope = self.signed(
+            decision, signer, artifact.subject_id, str(artifact.digest), extra_subjects, extra_first
         )
         answer = {
             "index": 0,
@@ -308,4 +346,31 @@ class TestAnAnswerTheDeviceCannotTrustChangesNothing(Fixtures):
         from cordon_scanner.cloud import CloudError
 
         flow.answer = CloudError("could not reach api.cordon.test")
+        assert flow.hook(retry_online=True)[0] == "deny"
+
+
+class TestWhatTheDeviceAsksAndTakes(Fixtures):
+    OTHER: ClassVar[dict[str, Any]] = {"name": "mcp/other", "digest": {"sha256": "0" * 64}}
+
+    def test_the_question_carries_the_subject_the_version_and_the_digest(self, flow: Flow) -> None:
+        flow.version = "1.4.2"
+        flow.answer = flow.approved()
+        flow.hook(retry_online=True)
+        digest = flow.resolve("x").digest
+        assert [a["version"] for a in flow.asked[-1]["body"]["artifacts"]] == ["1.4.2"]
+        assert flow.asked[-1]["body"]["artifacts"][0]["subject"] == "mcp/files"
+        assert flow.asked[-1]["body"]["artifacts"][0]["digest"].startswith("sha256:") and digest
+
+    def test_a_server_with_no_known_version_is_asked_about_with_an_empty_one(
+        self, flow: Flow
+    ) -> None:
+        flow.answer = flow.approved()
+        flow.hook(retry_online=True)
+        assert flow.asked[-1]["body"]["artifacts"][0]["version"] == ""
+
+    @pytest.mark.parametrize("first", [False, True])
+    def test_a_statement_about_more_than_the_one_subject_is_refused_even_when_one_matches(
+        self, flow: Flow, first: bool
+    ) -> None:
+        flow.answer = flow.approved(extra_subjects=(self.OTHER,), extra_first=first)
         assert flow.hook(retry_online=True)[0] == "deny"

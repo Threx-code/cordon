@@ -98,7 +98,7 @@ class TestALostNetwork(Stored):
 
 
 class TestARefusal(Stored):
-    @pytest.mark.parametrize("status", [400, 401, 403, 422])
+    @pytest.mark.parametrize("status", [400, 401, 403, 422, 499])
     def test_is_raised_and_never_queued(self, store: LocalStore, status: int) -> None:
         with pytest.raises(CloudError, match="refused"):
             Kit.send(Kit.report("one"), store, Cloud((status, b'{"error": "no"}')))
@@ -121,3 +121,42 @@ class TestNoStore:
             DeviceInventory.report(
                 Kit.report("one"), url=URL, token="dt", transport=Cloud(Kit.DOWN)
             )
+
+
+class TestTheStatusBoundaries(Stored):
+    @pytest.mark.parametrize("status", [200, 201, 202])
+    def test_each_success_status_is_a_receipt_and_queues_nothing(
+        self, store: LocalStore, status: int
+    ) -> None:
+        assert Kit.send(Kit.report("one"), store, Cloud((status, b'{"receipt": "r9"}'))) == "r9"
+        assert store.pending() == []
+
+    @pytest.mark.parametrize("status", [203, 204, 299])
+    def test_any_other_success_status_is_not_a_receipt(
+        self, store: LocalStore, status: int
+    ) -> None:
+        with pytest.raises(CloudError, match="refused"):
+            Kit.send(Kit.report("one"), store, Cloud((status, b"{}")))
+
+    def test_500_is_the_first_server_error_with_a_json_body_or_none(
+        self, store: LocalStore
+    ) -> None:
+        assert (
+            Kit.send(Kit.report("a", "a" * 32), store, Cloud((500, b'{"error": "x"}')))
+            == ReportQueue.QUEUED
+        )
+        assert (
+            Kit.send(Kit.report("b", "b" * 32), store, Cloud((500, b"<html>x</html>")))
+            == ReportQueue.QUEUED
+        )
+        assert len(store.pending()) == 2
+
+    def test_499_is_a_refusal_with_a_body_that_is_not_json_too(self, store: LocalStore) -> None:
+        with pytest.raises(CloudError):
+            Kit.send(Kit.report("one"), store, Cloud((499, b"<html>x</html>")))
+        assert store.pending() == []
+
+    def test_the_queued_report_is_json_the_cloud_can_read_back(self, store: LocalStore) -> None:
+        Kit.send(Kit.report("one"), store, Cloud(Kit.DOWN))
+        (item,) = store.pending()
+        assert json.loads(item.body) == Kit.report("one")
