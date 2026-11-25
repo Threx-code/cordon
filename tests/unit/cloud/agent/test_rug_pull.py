@@ -11,7 +11,7 @@ import json
 import time
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -245,3 +245,186 @@ class TestTheHookOverhead(Fixtures):
             samples.append((time.perf_counter() - started) * 1000)
         p95 = sorted(samples)[int(self.CALLS * 0.95) - 1]
         assert verdicts == {"deny"} and p95 < self.BUDGET_MS, f"p95 {p95:.1f} ms"
+
+
+class Several:
+    """A project with several remote servers, some approved, and what each serves."""
+
+    def __init__(self, tmp_path: Path) -> None:
+        self.root = tmp_path / "multi"
+        (self.root / ".cordon").mkdir(parents=True)
+        self.store = LocalStore(tmp_path / "multi-store")
+        self.urls = {
+            name: f"https://{name}.example.com/mcp" for name in ("first", "second", "third")
+        }
+
+    def configure(
+        self, path: str = ".mcp.json", names: tuple[str, ...] = ("first", "second", "third")
+    ) -> None:
+        target = self.root / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            json.dumps({"mcpServers": {n: {"url": self.urls[n]} for n in names}}), encoding="utf-8"
+        )
+
+    def approve(self, names: tuple[str, ...]) -> None:
+        document = {
+            "servers": {n: McpApprovals.record(self.urls[n], [SEARCH, FETCH]) for n in names}
+        }
+        (self.root / ".cordon" / "mcp-tools.json").write_text(
+            json.dumps(document), encoding="utf-8"
+        )
+
+    def sweep(self, served: dict[str, Any]) -> list[dict[str, Any]]:
+        def read(url: str) -> list[Any]:
+            value = served[url.split("//")[1].split(".")[0]]
+            if isinstance(value, Exception):
+                raise value
+            return value
+
+        return RugPull.sweep(self.store, {"cwd": str(self.root)}, NOW, read)
+
+
+class SeveralFixtures:
+    @pytest.fixture
+    def several(self, tmp_path: Path) -> Several:
+        return Several(tmp_path)
+
+
+class TestOneServerNeverStopsTheOthers(SeveralFixtures):
+    CHANGED: ClassVar[list[Any]] = [SEARCH, FETCH, EXTRA]
+
+    def test_a_server_with_no_approval_is_skipped_and_the_next_is_read(
+        self, several: Several
+    ) -> None:
+        several.configure()
+        several.approve(("second",))
+        found = several.sweep(
+            {"first": self.CHANGED, "second": self.CHANGED, "third": self.CHANGED}
+        )
+        assert [r["server"] for r in found] == ["second"]
+
+    def test_a_server_that_cannot_be_read_does_not_stop_the_next(self, several: Several) -> None:
+        several.configure()
+        several.approve(("first", "second"))
+        found = several.sweep({"first": LiveMcpError("down"), "second": self.CHANGED, "third": []})
+        assert [r["server"] for r in found] == ["second"]
+
+    def test_an_unchanged_server_does_not_stop_the_next(self, several: Several) -> None:
+        several.configure()
+        several.approve(("first", "second"))
+        found = several.sweep({"first": [SEARCH, FETCH], "second": self.CHANGED, "third": []})
+        assert [r["server"] for r in found] == ["second"]
+
+    def test_a_config_that_is_not_a_file_or_is_too_large_names_no_server_and_the_next_config_is_read(
+        self, several: Several
+    ) -> None:
+        several.configure(".cursor/mcp.json", ("third",))
+        (several.root / ".mcp.json").mkdir()  # a folder where a config file should be
+        several.approve(("third",))
+        assert [r["server"] for r in several.sweep({"third": self.CHANGED})] == ["third"]
+
+    def test_a_config_over_the_size_cap_is_not_read_and_one_at_the_cap_is(
+        self, several: Several
+    ) -> None:
+        several.configure(".mcp.json", ("first",))
+        several.approve(("first",))
+        padded = (several.root / ".mcp.json").read_text(encoding="utf-8")
+        for size, expected in ((RugPull.MAX_CONFIG_BYTES, 1), (RugPull.MAX_CONFIG_BYTES + 1, 0)):
+            (several.root / ".mcp.json").write_text(
+                padded + " " * (size - len(padded)), encoding="utf-8"
+            )
+            assert len(several.sweep({"first": self.CHANGED})) == expected
+
+    def test_a_config_that_is_not_text_names_no_server_and_the_next_config_is_read(
+        self, several: Several
+    ) -> None:
+        several.configure(".cursor/mcp.json", ("third",))
+        (several.root / ".mcp.json").write_bytes(b"\xff\xfe\x00bad")
+        several.approve(("third",))
+        assert len(several.sweep({"third": self.CHANGED})) == 1
+
+    def test_at_most_ten_servers_are_read(self, several: Several) -> None:
+        names = tuple(f"s{i}" for i in range(12))
+        several.urls = {n: f"https://{n}.example.com/mcp" for n in names}
+        several.configure(names=names)
+        several.approve(names)
+        assert len(several.sweep(dict.fromkeys(names, self.CHANGED))) == 10
+
+    def test_no_working_folder_or_no_approvals_means_nothing_to_check(
+        self, several: Several, tmp_path: Path
+    ) -> None:
+        assert RugPull.sweep(several.store, {}, NOW, lambda url: []) == []
+        assert RugPull.sweep(several.store, {"cwd": ""}, NOW, lambda url: []) == []
+        assert RugPull.sweep(several.store, {"cwd": 5}, NOW, lambda url: []) == []
+        assert (
+            RugPull.sweep(several.store, {"cwd": str(tmp_path / "nowhere")}, NOW, lambda url: [])
+            == []
+        )
+
+
+class TestTheNamesTheStoreKeepsAndTheCallsItHolds(SeveralFixtures):
+    def test_a_server_name_is_lower_case_with_only_store_characters_and_at_most_60(self) -> None:
+        assert RugPull.key("My Docs/Server") == "my_docs_server"
+        assert RugPull.key("a" * 100) == "a" * 60
+        assert RugPull.key("") == "server"
+        assert RugPull.key("ok.name-1_x") == "ok.name-1_x"
+
+    def test_only_a_tool_name_with_a_server_part_names_a_server(self, several: Several) -> None:
+        several.configure()
+        several.approve(("first",))
+        several.sweep({"first": [SEARCH, FETCH, EXTRA], "second": [], "third": []})
+        held = lambda tool: RugPull.held_key(several.store, {"tool_name": tool})  # noqa: E731
+        assert held("mcp__first__search") == "first"
+        assert held("mcp__first__a__b") == "first"
+        assert held("mcp__first") is None and held("mcp__") is None
+        assert held("first__search") is None and held("Bash") is None
+        assert (
+            RugPull.held_key(several.store, {}) is None
+            and RugPull.held_key(several.store, {"tool_name": 5}) is None
+        )
+
+    def test_the_resolver_and_the_scan_know_only_a_server_with_a_record(
+        self, several: Several
+    ) -> None:
+        from cordon_scanner.decide.decision.evidence import ArtifactRef
+
+        several.configure()
+        several.approve(("first",))
+        several.sweep({"first": [SEARCH, FETCH, EXTRA], "second": [], "third": []})
+        assert RugPull.resolver(several.store)("first").status == "resolved"
+        assert RugPull.resolver(several.store)("nothing").status != "resolved"
+        scan = RugPull.scan(several.store)
+        assert (
+            scan(
+                ArtifactRef(kind="mcp_server", subject_id="mcp/first", digest="sha256:" + "a" * 64)
+            )
+            is not None
+        )
+        assert (
+            scan(
+                ArtifactRef(
+                    kind="mcp_server", subject_id="mcp/unknown", digest="sha256:" + "a" * 64
+                )
+            )
+            is None
+        )
+        assert (
+            scan(
+                ArtifactRef(kind="package", subject_id="pkg:npm/first", digest="sha256:" + "a" * 64)
+            )
+            is None
+        )
+
+    def test_the_caps(self) -> None:
+        assert (RugPull.MAX_CONFIG_BYTES, RugPull.MAX_SERVERS, RugPull.SHOWN) == (1 << 20, 10, 5)
+
+    def test_only_five_names_of_a_kind_are_shown_and_the_rest_are_counted(self) -> None:
+        record = {"added": [f"t{i}" for i in range(8)], "removed": [f"r{i}" for i in range(5)]}
+        text = RugPull.describe(record)
+        assert (
+            "t0, t1, t2, t3, t4 and 3 more" in text
+            and "r0, r1, r2, r3, r4" in text
+            and "r4 and" not in text
+        )
+        assert RugPull.describe({}) == "its list digest differs"
