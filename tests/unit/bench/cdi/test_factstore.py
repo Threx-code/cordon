@@ -115,3 +115,55 @@ class TestACandidateReadingANewFactIsRefused:
             term_version="1",
         )
         assert out["decision"] == "proceed"
+
+
+class TestTheLegitimateStoreIsRebuiltPerHead:
+    """LL-104: a candidate reading a new fact against an old store is refused; the store is rebuilt at the candidate's head, reading only what changed."""
+
+    @staticmethod
+    def newer() -> list[Reader]:
+        return [*Kit.readers(hooks="2"), Reader("urls", "1", lambda data: {"urls": data.count(b"http")})]
+
+    def old(self) -> tuple[FactStore, dict[str, str]]:
+        kept: dict[str, str] = {}
+        store = FactStore(Kit.readers(), "1", kept, head="aaaa111")
+        Kit.run(store)
+        return store, kept
+
+    def test_the_rebuild_makes_only_the_changed_and_the_new_readers_facts(self) -> None:
+        old, _ = self.old()
+        rebuilt, record = old.rebuild(UNITS, self.newer(), "1", "bbbb222")
+        assert (record.units, record.made, record.kept) == (5, 10, 10)
+        assert sorted({reader for _, reader in rebuilt.made}) == ["hooks", "urls"]
+        assert record.readers == {"flows": "1", "hooks": "2", "words": "1", "urls": "1"} and record.head == "bbbb222"
+
+    def test_the_old_store_refuses_a_candidate_that_reads_the_new_fact_and_the_rebuilt_one_admits_it(self) -> None:
+        old, _ = self.old()
+        rebuilt, _ = old.rebuild(UNITS, self.newer(), "1", "bbbb222")
+        assert "urls" in (old.refuses({"urls"}, "1") or "")
+        assert rebuilt.refuses({"urls", "hooks"}, "1") is None
+
+    def test_a_candidate_of_another_head_is_refused_and_one_of_the_stores_head_is_not(self) -> None:
+        old, _ = self.old()
+        assert "head bbbb222" in (old.refuses({"flows"}, "1", "bbbb222") or "")
+        assert old.refuses({"flows"}, "1", "aaaa111") is None
+        assert old.refuses({"flows"}, "1") is None
+
+    def test_a_unit_that_could_not_be_read_is_named_not_read_as_having_no_facts(self) -> None:
+        old, _ = self.old()
+        units = {**UNITS, "unit-x": None}
+        rebuilt, record = old.rebuild(units, Kit.readers(), "1", "bbbb222")
+        assert record.unread == ("unit-x",) and record.units == 6 and (record.made, record.kept) == (0, 15)
+        assert all(digest != "unit-x" for digest, _ in rebuilt.made)
+
+    def test_the_rebuild_leaves_the_old_store_as_it_was(self) -> None:
+        old, kept = self.old()
+        before = dict(kept)
+        old.rebuild(UNITS, self.newer(), "1", "bbbb222")
+        assert old.head == "aaaa111" and len(old.made) == 15
+        assert all(kept[key] == value for key, value in before.items())
+
+    def test_a_new_term_version_makes_every_fact_again(self) -> None:
+        old, _ = self.old()
+        _, record = old.rebuild(UNITS, Kit.readers(), "2", "bbbb222")
+        assert (record.made, record.kept) == (15, 0)
