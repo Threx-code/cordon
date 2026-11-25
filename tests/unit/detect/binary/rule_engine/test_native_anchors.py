@@ -313,11 +313,15 @@ class TestHexHitsArguments:
         assert bytes(got[0]) == (1).to_bytes(8, "little")
         assert peak < 1 << 20  # a table sized by max_hits was about 48 MB
 
+    #: One event whose lanes cost far more than the 0.05 s budgets these tests give, on any machine: with 70,000 bytes
+    #: the work was close to 0.05 s itself, and a fast runner finished inside the budget and never timed out.
+    MANY_LANES = b"a" + b"b" * 1_000_000
+
     def heavy(self, left: float, wall: float) -> float:
         """Seconds a many-lane native match runs before TimeoutError, given a CPU budget and a wall backstop."""
         import time
 
-        data = b"a" + b"b" * 70_000
+        data = self.MANY_LANES
         forward = self.layout(
             (self.BYTE, 0x61, 0), (self.SKIP, 0, 65_000), (self.BYTE, 0x62, 0), (self.BYTE, 0x63, 0),
             (self.DONE, 0, 0),
@@ -343,7 +347,7 @@ class TestHexHitsArguments:
         from cordon_scanner.detect.binary.rule_engine.pattern import Op
         from cordon_scanner.detect.binary.rule_engine.threads import Lanes
 
-        data = b"a" + b"b" * 70_000
+        data = self.MANY_LANES
         # every position after the skip reads "b", so each becomes a lane, each insert a move
         forward = self.layout(
             (self.BYTE, 0x61, 0), (self.SKIP, 0, 65_000), (self.BYTE, 0x62, 0), (self.BYTE, 0x63, 0),

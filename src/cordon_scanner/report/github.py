@@ -77,6 +77,7 @@ class GithubReporter(BaseReporter):
                 f"{finding.message} "
                 f"[{finding.severity}/{finding.confidence}, "
                 f"risk {finding.risk.value}/100{', ' + finding.assurance if finding.assurance else ''}] {finding.remediation}"
+                f"{' ' + finding.assurance_hint if finding.assurance_hint else ''}"
             )
             yield f"::{level} {','.join(parts)}::{message}\n".encode()
 

@@ -321,6 +321,89 @@ class TestTheReleasePackagesTheExtension:
         assert "needs.publish.result == 'skipped' && needs.confirm.result == 'success'" in job
 
 
+class TestTheExtensionIsAttestedWhereItIsBuilt:
+    """The .vsix is built by a job that holds no write permission and no credential (npm and vsce run third-party code
+    there), attested by the release job that runs none of that code, replaced on a re-run, and published by the
+    Marketplace job only after one file, exactly, verifies against this repository, workflow, tag and commit."""
+
+    @staticmethod
+    def job(name: str) -> str:
+        import re
+
+        text = RELEASE.read_text(encoding="utf-8")
+        start = text.index(f"\n  {name}:\n")
+        following = re.search(r"\n  [a-z][a-z0-9-]*:\n", text[start + 1 :])
+        return text[start : start + 1 + following.start()] if following else text[start:]
+
+    @staticmethod
+    def steps(job: str) -> list[str]:
+        """The job's steps, each as its own text, so a check reads one step and never a neighbour's."""
+        body = job.split("    steps:\n", 1)[1]
+        parts = body.split("\n      - ")
+        return [
+            ("- " + part if i else part).strip() for i, part in enumerate(parts) if part.strip()
+        ]
+
+    @classmethod
+    def step(cls, job: str, marker: str) -> str:
+        found = [s for s in cls.steps(job) if marker in s]
+        assert len(found) == 1, (marker, len(found))
+        return found[0]
+
+    def test_the_build_job_can_write_nothing_and_keeps_no_credential(self):
+        job = self.job("vscode-build")
+        header = job.split("    steps:")[0]
+        granted = [
+            line.strip()
+            for line in header.split("    permissions:\n", 1)[1].splitlines()
+            if line.startswith("      ")
+        ]
+        assert granted == ["contents: read"], granted
+        assert "persist-credentials: false" in self.step(job, "actions/checkout@")
+        assert "@vscode/vsce@" in self.step(job, "Build the VS Code extension")
+        assert "upload-artifact@" in self.step(job, "name: vsix")
+
+    def test_the_release_job_runs_no_npm_and_attests_the_downloaded_file_before_uploading(self):
+        job = self.job("github-release")
+        commands = "\n".join(line for line in job.splitlines() if not line.strip().startswith("#"))
+        assert "npm " not in commands and "npx " not in commands and "vsce" not in commands
+        steps = self.steps(job)
+        download = next(
+            i for i, s in enumerate(steps) if "download-artifact@" in s and "name: vsix" in s
+        )
+        attest = next(i for i, s in enumerate(steps) if "subject-path: artefacts/*.vsix" in s)
+        publish = next(i for i, s in enumerate(steps) if "gh release create" in s)
+        assert download < attest < publish
+        assert "needs: [build, publish, confirm, vscode-build]" in job
+
+    def test_a_re_run_replaces_the_page_file_with_the_one_it_attested(self):
+        publish = self.step(self.job("github-release"), "gh release create")
+        assert 'gh release upload "$GITHUB_REF_NAME" artefacts/*.vsix --clobber' in publish
+
+    def test_the_marketplace_verifies_exactly_one_file_for_this_tag_and_commit(self):
+        verify = self.step(self.job("vscode-marketplace"), "gh attestation verify")
+        assert '"${#files[@]}" -ne 1' in verify and "exit 1" in verify
+        for flag in (
+            '--signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release.yml"',
+            '--source-ref "refs/tags/${GITHUB_REF_NAME}"',
+            '--source-digest "${GITHUB_SHA}"',
+            '--cert-oidc-issuer "https://token.actions.githubusercontent.com"',
+            "--deny-self-hosted-runners",
+        ):
+            assert flag in verify, flag
+        assert "|| true" not in verify and "set -euo pipefail" in verify
+
+    def test_the_file_published_is_the_file_verified(self):
+        job = self.job("vscode-marketplace")
+        assert 'echo "VSIX=${files[0]}" >> "$GITHUB_ENV"' in self.step(job, "gh attestation verify")
+        publish = self.step(job, "name: Publish\n")
+        assert 'package="${VSIX}"' in publish and "ls vsix" not in publish
+
+    def test_the_marketplace_signs_nothing(self):
+        job = self.job("vscode-marketplace")
+        assert "attest-build-provenance" not in job and "id-token: write" not in job
+
+
 class TestReleaseWorkflowPublishesTheImage:
     """The Dockerfile existed and nothing built or pushed it -- README called
     this out explicitly ("no published container image yet"). These assert

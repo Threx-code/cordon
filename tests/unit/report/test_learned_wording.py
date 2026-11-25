@@ -62,6 +62,20 @@ class TestALearnedFindingIsNeverWordedAsConfirmed:
             assert SAID not in Kit.render(reporter, other).lower(), reporter
 
 
+class TestEverySurfaceSaysHowToHoldOrReportIt:
+    def test_every_surface_carries_the_same_hint_for_a_learned_finding_only(
+        self, tmp_path: Path
+    ) -> None:
+        learned = Kit.result(tmp_path, "LEARNED.X.001")
+        other = Kit.result(tmp_path, "MALWARE.X.001")
+        hint = learned.findings[0].assurance_hint
+        assert hint and "suppress add LEARNED.X.001" in hint and "Report action" in hint
+        assert other.findings[0].assurance_hint is None
+        for reporter in ("text", "json", "sarif", "markdown", "github"):
+            assert "suppress add LEARNED.X.001" in Kit.render(reporter, learned), reporter
+            assert "suppress add" not in Kit.render(reporter, other), reporter
+
+
 class TestAHeldRuleSaysWhoHoldsItUntilWhen:
     def test_a_hold_reads_held_at_warn_by_the_role_until_the_date(self) -> None:
         assert (
