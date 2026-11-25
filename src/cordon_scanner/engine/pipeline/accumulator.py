@@ -8,15 +8,21 @@ instance reusable and safe to share; each phase that adds to a scan is handed th
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.engine.pipeline.constants import INCOMPLETE_WHEN_REPORTED
+from cordon_scanner.foundation.files.declared_tools import DeclaredTools
+from cordon_scanner.foundation.files.extension import FileExtension
+from cordon_scanner.foundation.files.file_facts import FileFacts
+from cordon_scanner.foundation.files.native import NativeFile
 from cordon_scanner.foundation.models import Finding, Severity
 from cordon_scanner.foundation.results import NOT_CONTENT_GAPS, Dependency, OperationalFinding
 from cordon_scanner.foundation.taxonomy import AttackCategory
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+
+    from cordon_scanner.foundation.content import FileContent
 
 
 NOTICES = ("OPERATIONAL.INTEL.", "OPERATIONAL.ADVISORY.")
@@ -43,6 +49,26 @@ class Accumulator:
     """Archives already reported as read in part (`OPERATIONAL.ARCHIVE.REJECTED`), which the
     truncation notice would only repeat."""
     files_scanned: int = 0
+    extensions: dict[str, int] = field(default_factory=dict)
+    """Every scanned file counted under its extension (`FileExtension.of`: empty for none, `other` for an odd one). Read by the facts
+    export (`package.extensions`), which classes it against its closed list; the keys are bounded by `MAX_EXTENSIONS`."""
+    size_classes: dict[str, int] = field(default_factory=dict)
+    """Every scanned file counted under its size class (`FileFacts.size_class`). Read by the facts export (`package.size_classes`)."""
+    encoded_literals: dict[str, int] = field(default_factory=dict)
+    """The encoded literals the scanned text files hold, counted by kind (`FileFacts.encoded_literals`): counts, never the literals. Read by the facts export."""
+    instruction_files: int = 0
+    """How many scanned files are an agent's instruction files (`FileFacts.is_instruction`). Read by the facts export."""
+    binaries: set[str] = field(default_factory=set)
+    """The SHA-256 of every native executable or library scanned (`NativeFile`), by the whole file's digest. Read by
+    the facts export (`package.binaries`); bounded by `MAX_BINARIES`."""
+    binaries_complete: bool = True
+    """False when a native file could not be hashed whole (a truncated one with no digest of its whole) or there were
+    more than `MAX_BINARIES`: the list is then a part, and says so."""
+    executables: dict[str, dict[str, Any]] = field(default_factory=dict)
+    """The record of each native executable scanned (`ExecutableRecord`), by the file's digest: one per distinct file, at most
+    `MAX_BINARIES`. Read by the facts export (`package.executables`)."""
+    tool_lists: list[list[dict[str, Any]]] = field(default_factory=list)
+    """Each JSON file that declares a whole MCP tool list (`DeclaredTools`), for the facts export (`package.tool_list`)."""
     files_skipped: int = 0
     bytes_scanned: int = 0
     rules_evaluated: int = 0
@@ -50,6 +76,9 @@ class Accumulator:
     facts: dict[str, dict[str, list[Any]]] = field(default_factory=dict)
     """Per-file facts the workers sent back (item 56, `engine/isolation/facts.py`), by path: plain data
     the parent joins across files without parsing any of them."""
+    reach: dict[str, tuple[str, int]] | None = None
+    """How each code file is reached from a place that runs (`decide/reach.py`), worked out once, before the package-scope rules read it and
+    the result carries it."""
     facts_bytes: int = 0
     """The bytes those facts took, against the scan's bound."""
     facts_content: int = 0
@@ -188,6 +217,85 @@ class Accumulator:
             return False
         self.findings.append(finding)
         return True
+
+    def capability_names(self) -> dict[str, tuple[str, ...]]:
+        """Each file's capability names from its worker's facts (`cap.all`), sorted."""
+        return {
+            path: tuple(sorted(set(held.get("cap.all", ()))))
+            for path, held in sorted(self.facts.items())
+            if held.get("cap.all")
+        }
+
+    MAX_EXTENSIONS: ClassVar[int] = 256
+    MAX_BINARIES: ClassVar[int] = 4096
+
+    def scanned(self, path: str, content: FileContent | None = None) -> None:
+        """One more file scanned, counted under its extension; past `MAX_EXTENSIONS` distinct ones, the rest count as `other`.
+        With its content, a native file is also recorded by the digest of the whole file (`binaries`), and a JSON file
+        that declares a whole tool list is kept (`tool_lists`)."""
+        self.files_scanned += 1
+        ext = FileExtension.of(path)
+        if ext not in self.extensions and len(self.extensions) >= self.MAX_EXTENSIONS:
+            ext = "other"
+        self.extensions[ext] = self.extensions.get(ext, 0) + 1
+        if content is None:
+            return
+        size = FileFacts.size_class(content.size)
+        self.size_classes[size] = self.size_classes.get(size, 0) + 1
+        if FileFacts.is_instruction(path):
+            self.instruction_files += 1
+        if not content.is_binary:
+            for kind, count in FileFacts.encoded_literals(content.raw).items():
+                self.encoded_literals[kind] = self.encoded_literals.get(kind, 0) + count
+        if NativeFile.is_native(path, content.raw[:8]):
+            if content.truncated and content.whole_sha256 is None and content.streamed is None:
+                self.binaries_complete = False
+            elif len(self.binaries) < self.MAX_BINARIES:
+                self.binaries.add(content.sha256)
+            elif content.sha256 not in self.binaries:
+                self.binaries_complete = False
+            if content.sha256 not in self.executables and len(self.executables) < self.MAX_BINARIES:
+                from cordon_scanner.detect.registry import ExecutableRecord
+
+                record = ExecutableRecord.of(
+                    content.raw,
+                    whole=not content.truncated,
+                    reason="truncated" if content.truncated else None,
+                )
+                if record is not None:
+                    self.executables[content.sha256] = record
+        declared = DeclaredTools.of(path, content.raw) if not content.truncated else None
+        if declared is not None:
+            self.tool_lists.append(declared)
+
+    def tool_list(self) -> tuple[dict[str, Any], ...] | None:
+        """The one tool list the package declares as data, or None when there is none or more than one."""
+        return tuple(self.tool_lists[0]) if len(self.tool_lists) == 1 else None
+
+    def collected(self) -> dict[str, Any]:
+        """The per-package collections a scan result carries: the extension counts, the native file digests and whether
+        that list is whole, and the one declared tool list."""
+        return {
+            "extensions": dict(self.extensions),
+            "size_classes": dict(self.size_classes),
+            "encoded_literals": dict(self.encoded_literals),
+            "instruction_files": self.instruction_files,
+            "binaries": tuple(sorted(self.binaries)),
+            "binaries_complete": self.binaries_complete,
+            "executables": tuple(self.executables[k] for k in sorted(self.executables)),
+            "tool_list": self.tool_list(),
+        }
+
+    def destinations(self) -> dict[str, tuple[tuple[str, ...], tuple[str, ...]]]:
+        """Each file's destination digests from its worker's facts (`net.host`, `net.domain`), sorted."""
+        return {
+            path: (
+                tuple(sorted(set(held.get("net.host", ())))),
+                tuple(sorted(set(held.get("net.domain", ())))),
+            )
+            for path, held in sorted(self.facts.items())
+            if held.get("net.host")
+        }
 
     def explain_incomplete(self) -> None:
         """An incomplete scan says why: when no coverage finding names what went unexamined, a

@@ -13,6 +13,11 @@ exercise them use, in place of a third-party library:
   ladder over all 253 bits, which removes the branch on the key, not every timing difference. The
   release ceremony runs offline on a machine no one else can run code on, where that is the
   threat model; nothing here signs on a shared host.
+- **On a device, with one exception.** `cloud/device_attestation.py` uses this signer on a laptop,
+  and that is acceptable only because of how it uses it: each key is made in memory for ONE
+  statement, enrolled for minutes, used to sign once and let go, and never written to disk. A
+  timing attack needs many signatures under one key, and that never happens there. Any other use
+  on a device or a shared host would need many signatures per key and is not covered by this.
 """
 
 from __future__ import annotations

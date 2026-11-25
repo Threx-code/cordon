@@ -10,50 +10,7 @@ from __future__ import annotations
 from typing import Final
 
 from cordon_scanner.foundation.files.globs import PathGlob
-
-INSTRUCTION_PATHS: Final = (
-    "**/CLAUDE.md",
-    "**/CLAUDE.local.md",
-    "**/AGENTS.md",
-    "**/AGENT.md",
-    "**/GEMINI.md",
-    "**/.cursorrules",
-    "**/.cursor/rules/**",
-    "**/.windsurfrules",
-    "**/.windsurf/rules/**",
-    "**/.clinerules",
-    "**/.clinerules/**",
-    "**/.github/copilot-instructions.md",
-    "**/.github/instructions/**",
-    "**/.github/prompts/**",
-    "**/SKILL.md",
-    "**/.claude/commands/**",
-    "**/.claude/agents/**",
-    "**/.claude/skills/**",
-    "**/.claude/output-styles/**",
-    # Copilot's custom chat modes, agents and the rest of its prompt files.
-    "**/.github/chatmodes/**",
-    "**/.github/agents/**",
-    # Cursor, Gemini CLI, opencode and Windsurf commands and workflows: prompts the agent runs.
-    "**/.cursor/commands/**",
-    "**/.gemini/commands/**",
-    "**/.opencode/agent/**",
-    "**/.opencode/command/**",
-    "**/.windsurf/workflows/**",
-    # Kiro, Amazon Q, JetBrains Junie, Augment, Trae, Roo, Continue, Zed and goose.
-    "**/.kiro/steering/**",
-    "**/.amazonq/rules/**",
-    "**/.junie/**",
-    "**/.augment-guidelines",
-    "**/.augment/rules/**",
-    "**/.trae/rules/**",
-    "**/.roo/rules/**",
-    "**/.roo/rules-*/**",
-    "**/.continue/rules/**",
-    "**/.continue/prompts/**",
-    "**/.rules",
-    "**/.goosehints",
-)
+from cordon_scanner.foundation.files.instruction_paths import INSTRUCTION_PATHS
 
 AGENT_SETTINGS_PATHS: Final = (
     "**/.claude/settings.json",

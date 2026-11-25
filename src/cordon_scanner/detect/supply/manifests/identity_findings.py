@@ -32,6 +32,11 @@ if TYPE_CHECKING:
 
 
 class IdentityFindings:
+    #: A Python package's own manifests: its `__init__.py` and `setup.py` are not code files of
+    #: its own when the code is counted (`PackageIdentities._code_files`).
+    PYTHON_MANIFESTS: ClassVar[frozenset[str]] = frozenset(
+        {"setup.py", "PKG-INFO", "METADATA", "pyproject.toml", "setup.cfg"}
+    )
     """The manifest findings about a published package's name and version."""
 
     OWN_NAME_MEASURED_ON: ClassVar[frozenset[str]] = frozenset({"pypi", "npm"})
@@ -130,10 +135,20 @@ class IdentityFindings:
             or sdist_root is not None
             or unit.path.rpartition("!")[2] == "package/package.json"
         )
+        # The name is the whole of the evidence only where there is nothing else to judge: the
+        # squats waiting for the typo ship one or two code files (inda, lxlm, TensorFolw), as
+        # `NameRisk` counts them. A project with code of its own -- adjango, btorch, dredis,
+        # scopy, one edit from django, torch, redis, scipy -- has that code judged by the content
+        # rules; its name alone is reported below the gate (pypi-benign F472: 14 of 21).
+        from cordon_scanner.detect.supply.name_risk import NameRisk, PackageIdentities
+
+        python = posixpath.basename(unit.path) in IdentityFindings.PYTHON_MANIFESTS
+        code_files = PackageIdentities._code_files(unit, ctx, python=python)
+        stub = code_files <= NameRisk.MAX_CODE_FILES_TO_BLOCK
         yield ManifestFinding.finding(
             rule_id="SUSPECT.TYPOSQUAT.PACKAGE_NAME.001",
             category=Category.SUSPICIOUS,
-            severity=Severity.HIGH if published else Severity.MEDIUM,
+            severity=Severity.HIGH if published and stub else Severity.MEDIUM,
             confidence=Confidence.MEDIUM,
             title="Package is named like a popular package",
             message=(
@@ -146,7 +161,12 @@ class IdentityFindings:
             ctx=ctx,
             detail=f"{manifest.name} ~ {target}",
             capabilities=[],
-            reasons=[f"one edit from {target}"],
+            reasons=[f"one edit from {target}"]
+            + (
+                []
+                if stub
+                else [f"ships {code_files} code files of its own, judged on their content"]
+            ),
         )
 
     #: A version that wins semver resolution over any real release: major 99 or above, or every

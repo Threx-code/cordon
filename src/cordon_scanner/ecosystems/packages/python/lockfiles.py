@@ -34,6 +34,30 @@ class PypiLockfiles:
         def normalize_name(self, name: str) -> str: ...
 
     @staticmethod
+    def _all_hashes(package: dict[str, Any]) -> tuple[str, ...]:
+        """Every hash a poetry, uv or PDM package lists, in file order: the sdist, then each wheel, then poetry's `files`; no hash twice."""
+        found: list[str] = []
+        sdist = package.get("sdist")
+        groups = [
+            [sdist] if isinstance(sdist, dict) else [],
+            package.get("wheels"),
+            package.get("files"),
+        ]
+        for group in groups:
+            for item in group if isinstance(group, list) else ():
+                if isinstance(item, dict) and item.get("hash") and str(item["hash"]) not in found:
+                    found.append(str(item["hash"]))
+        return PypiLockfiles._well_formed(found)
+
+    @staticmethod
+    def _well_formed(values: Any) -> tuple[str, ...]:
+        """The `algorithm:hex` digests among the values, in order and once each; anything else a lockfile puts there is dropped, since a report carries only what is a digest."""
+        wanted = (str(v) for v in values) if isinstance(values, (list, tuple)) else ()
+        return tuple(
+            dict.fromkeys(v for v in wanted if re.fullmatch(r"[a-z0-9]+:[0-9a-f]{32,128}", v))
+        )
+
+    @staticmethod
     def _first_hash(package: dict[str, Any]) -> str | None:
         files = package.get("files")
         if isinstance(files, list):
@@ -131,6 +155,7 @@ class PypiLockfiles:
                     name=name,
                     version=str(package.get("version", "")),
                     integrity=PypiLockfiles._first_hash(package),
+                    hashes=PypiLockfiles._all_hashes(package),
                     resolved_from=resolved,
                     scope=scope,
                     dependencies=tuple(sorted((package.get("dependencies") or {}).keys())),
@@ -178,6 +203,31 @@ class PypiLockfiles:
             return path
         return None
 
+    @staticmethod
+    def _early_uv_schema(data: dict[str, Any]) -> bool:
+        """uv's first lock schema: `version = 1` and no `revision` key."""
+        version = data.get("version")
+        return (
+            isinstance(version, int)
+            and not isinstance(version, bool)
+            and version == 1
+            and ("revision" not in data)
+        )
+
+    @staticmethod
+    def _uv_header_only(path: str, data: dict[str, Any]) -> bool:
+        """A `uv.lock` that is uv's header and nothing else: an integer `version`, a string
+        `requires-python`, an optional integer `revision`, and no other key. That file has no
+        entries; anything else without tables is still reported (05-CENSUS C2, 08 7b)."""
+        if path.replace("\\", "/").rsplit("/", 1)[-1] != "uv.lock":
+            return False
+        if set(data) - {"version", "revision", "requires-python"}:
+            return False
+        ints = [data.get("version")] + ([data["revision"]] if "revision" in data else [])
+        return all(isinstance(v, int) and not isinstance(v, bool) for v in ints) and isinstance(
+            data.get("requires-python"), str
+        )
+
     def _parse_pep_style_lock(self, content: FileContent) -> LockGraph:
         """`uv.lock` and `pdm.lock`, which share poetry's `[[package]]` table and
         nothing else about what is inside it.
@@ -203,6 +253,20 @@ class PypiLockfiles:
             )
 
         packages = data.get("package")
+        distributions = data.get("distribution")
+        if distributions is not None:
+            if packages is not None or not PypiLockfiles._early_uv_schema(data):
+                return LockGraph(
+                    path=content.path,
+                    ecosystem=self.id,
+                    parse_error="[[distribution]] tables outside uv's first lock schema",
+                )
+            # uv's first schema (version 1, no `revision`) named the tables `[[distribution]]`;
+            # they hold what `[[package]]` holds and are read with the same checks.
+            packages = distributions
+        if packages is None and PypiLockfiles._uv_header_only(content.path, data):
+            # A project that depends on nothing: uv writes its header and no tables.
+            return LockGraph(path=content.path, ecosystem=self.id, entries=())
         if not isinstance(packages, list):
             return LockGraph(
                 path=content.path,
@@ -309,6 +373,7 @@ class PypiLockfiles:
                     name=name,
                     version=str(package.get("version", "")),
                     integrity=PypiLockfiles._artefact_hash(package),
+                    hashes=PypiLockfiles._all_hashes(package),
                     resolved_from=resolved,
                     scope=scope,
                     dependencies=PypiLockfiles._pep_style_dependencies(package),
@@ -452,7 +517,8 @@ class PypiLockfiles:
             for name, meta in sorted((data.get(section) or {}).items()):
                 if not isinstance(meta, dict):
                     continue
-                hashes = meta.get("hashes") or []
+                listed = meta.get("hashes")
+                hashes = PypiLockfiles._well_formed(listed)
                 resolved = None
                 if isinstance(meta.get("git"), str):
                     resolved = f"git+{meta['git']}" + (
@@ -467,7 +533,9 @@ class PypiLockfiles:
                     LockEntry(
                         name=str(name),
                         version=str(meta.get("version", "")).lstrip("="),
-                        integrity=str(hashes[0]) if hashes else None,
+                        # What the file wrote first, well formed or not: the integrity check reads it.
+                        integrity=str(listed[0]) if isinstance(listed, list) and listed else None,
+                        hashes=hashes,
                         resolved_from=resolved,
                         scope=scope,
                         # Pipfile.lock lists every package flat, with no edges and no mark of
@@ -504,7 +572,8 @@ class PypiLockfiles:
         for line in lines:
             if line.startswith("-"):
                 continue
-            hashes = re.findall(r"--hash[=\s]\s*(\S+)", line)
+            written = re.findall(r"--hash[=\s]\s*(\S+)", line)
+            hashes = PypiLockfiles._well_formed(written)
             requirement = re.split(r"\s--hash", line, maxsplit=1)[0]
             parsed = PypiRequirement.parse(requirement)
             if parsed is None:
@@ -516,7 +585,8 @@ class PypiLockfiles:
                 LockEntry(
                     name=name,
                     version=PypiManifest._version_of(spec[2:].lstrip("=")),
-                    integrity=hashes[0] if hashes else None,
+                    integrity=written[0] if written else None,
+                    hashes=hashes,
                     resolved_from=index,
                     direct=True,
                     platform=(marker,) if marker else (),
@@ -545,6 +615,7 @@ class PypiLockfiles:
                     name=e.name,
                     version=e.version,
                     integrity=e.integrity,
+                    hashes=e.hashes,
                     resolved_from=e.resolved_from,
                     direct=(
                         self.normalize_name(e.name) not in via

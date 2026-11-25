@@ -403,6 +403,11 @@ class Explanation:
     """Fingerprints of the findings that fed a composite rule."""
     escalations: tuple[str, ...] = ()
     """Context-driven escalations, such as execution during install."""
+    basis: tuple[str, ...] = ()
+    """Which reading of a rule with several readings decided, as stable codes: the text read
+    (`description`, `return`), then each reading that fired (`phrase:secrecy`, `chain:order+banner`,
+    `model=0.84/0.6813` for score and block line). Never matched text. Lets a consumer count findings by
+    the reading that made them without parsing the message."""
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {"summary": self.summary, "matched_rule": self.matched_rule}
@@ -410,6 +415,8 @@ class Explanation:
             out["contributing"] = list(self.contributing)
         if self.escalations:
             out["escalations"] = list(self.escalations)
+        if self.basis:
+            out["basis"] = list(self.basis)
         return out
 
 
@@ -588,6 +595,22 @@ class Finding:
         return digest[:16]
 
     @property
+    def assurance(self) -> str | None:
+        """How sure the finding is of itself: `suspected, machine-made` for a finding of a learned rule (a measured probability, never a confirmed verdict), None for any other. Every surface that lists findings shows it."""
+        return "suspected, machine-made" if self.rule_id.startswith("LEARNED.") else None
+
+    @property
+    def assurance_hint(self) -> str | None:
+        """What to do with a machine-made finding, said the same way in every format: how to hold it and how to report
+        it. None for any other finding."""
+        if not self.assurance:
+            return None
+        return (
+            f"To hold it: cordon-scanner suppress add {self.rule_id} <path> --justification <why>. "
+            "To report it as a false positive: the Report action on this finding in the Cordon console."
+        )
+
+    @property
     def is_suppressed(self) -> bool:
         return self.suppressed is not None
 
@@ -626,6 +649,9 @@ class Finding:
                 self.attack_category.value if self.attack_category else "unspecified"
             ),
         }
+        if self.assurance:
+            out["assurance"] = self.assurance
+            out["assurance_hint"] = self.assurance_hint
         if self.references:
             out["references"] = list(self.references)
         if self.related:

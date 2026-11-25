@@ -29,12 +29,15 @@ import re
 from typing import TYPE_CHECKING, Final
 
 from cordon_scanner.detect.agents.autorun import AUTORUN_PATHS
+from cordon_scanner.detect.agents.bridges.records import BridgeRecords
 from cordon_scanner.detect.agents.ci_workflows import WorkflowFindings
 from cordon_scanner.detect.agents.extension_files import ExtensionFileFindings
 from cordon_scanner.detect.agents.findings import AgentFinding
+from cordon_scanner.detect.agents.installs.planting import AgentPlanting
 from cordon_scanner.detect.agents.instruction_files import InstructionFileFindings
 from cordon_scanner.detect.agents.instructions import InstructionText
 from cordon_scanner.detect.agents.mcp_servers.findings import McpServerFindings
+from cordon_scanner.detect.agents.mcp_servers.lookalike_names import OwnPackageName
 from cordon_scanner.detect.agents.mcp_servers.source import (
     MCP_SDK,
     SERVER_SOURCE_SUFFIXES,
@@ -57,6 +60,7 @@ from cordon_scanner.detect.agents.paths import (
 from cordon_scanner.detect.agents.rule_catalogue import RULES
 from cordon_scanner.detect.agents.settings_files import SettingsFileFindings
 from cordon_scanner.detect.agents.skills import SkillScripts
+from cordon_scanner.detect.agents.text_findings import AgentTextFindings
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit
 from cordon_scanner.detect.catalogue import DeclaredRule
 from cordon_scanner.foundation.models import (
@@ -93,6 +97,17 @@ _INSTALL_REDIRECT: Final = re.compile(
 )
 
 
+_AGENT_TEXT_PATHS: Final = (
+    *INSTRUCTION_PATHS,
+    *AGENT_SETTINGS_PATHS,
+    *VSCODE_SETTINGS_PATHS,
+    *MCP_PATHS,
+    *CODEX_CONFIG_PATHS,
+    *COMMAND_PATHS,
+)
+"""The files whose text the agent-text rules and the instruction readers go through. Past
+`AgentTextFindings.ATR_TEXT_LIMIT` such a file is read in part, and said so (S1)."""
+
 _HIDDEN_DIRECTIVE_DOCS: Final = (
     ".md",
     ".mdc",
@@ -109,7 +124,7 @@ class AgentChainDetector(BaseDetector):
     """Agent instruction files, agent settings, MCP configurations and AI agents in CI."""
 
     id = AgentFinding.DETECTOR
-    version = "0.1.0"
+    version = "0.2.0"
     categories = frozenset(
         {Category.MALICIOUS, Category.SUSPICIOUS, Category.POLICY, Category.VULNERABLE}
     )
@@ -135,6 +150,16 @@ class AgentChainDetector(BaseDetector):
             ]
         return []
 
+    @staticmethod
+    def _mcp_server_files(path: str, unit: FileUnit, ctx: ScanContext) -> list[Finding]:
+        """An MCP server's own source and its own manifest."""
+        found: list[Finding] = []
+        if path.endswith(SERVER_SOURCE_SUFFIXES) and MCP_SDK.search(unit.content.text):
+            found.extend(McpServerFindings.server_source(unit, ctx))
+        if path.rsplit("/", 1)[-1] in OwnPackageName.MANIFESTS:
+            found.extend(McpServerFindings.own_package(unit, ctx))
+        return found
+
     def inspect(self, unit: Unit, ctx: ScanContext) -> Iterable[Finding]:
         if not isinstance(unit, FileUnit):
             return ()
@@ -143,7 +168,10 @@ class AgentChainDetector(BaseDetector):
         path = (
             unit.content.path.rpartition("!")[2] if "!" in unit.content.path else unit.content.path
         )
-        findings: list[Finding] = []
+        findings: list[Finding] = [*AgentPlanting.scan(unit, ctx), *BridgeRecords.of(unit, ctx)]
+        if AgentPaths._paths_match(path, _AGENT_TEXT_PATHS):
+            unit, gap = AgentTextFindings.capped(unit)
+            findings.extend(gap)
         if AgentPaths._paths_match(path, INSTRUCTION_PATHS):
             findings.extend(InstructionFileFindings.instructions(unit, ctx))
         if AgentPaths._paths_match(path, AGENT_SETTINGS_PATHS):
@@ -175,8 +203,7 @@ class AgentChainDetector(BaseDetector):
                 )
         if path == VSIX_MANIFEST and ".vsix!" in unit.content.path.lower():
             findings.extend(ExtensionFileFindings.vsix_manifest(unit, ctx))
-        if path.endswith(SERVER_SOURCE_SUFFIXES) and MCP_SDK.search(unit.content.text):
-            findings.extend(McpServerFindings.server_source(unit, ctx))
+        findings.extend(self._mcp_server_files(path, unit, ctx))
         if path.lower().endswith(_SKILL_SCRIPT_SUFFIXES) and SkillScripts.in_skill(
             unit.content.path, ctx
         ):
@@ -191,7 +218,7 @@ class AgentChainDetector(BaseDetector):
                 # In code, a detector's own sample of the attack -- a scanner's test string.
                 or not _DETECTOR_VOCABULARY.search(unit.content.text)
             ):
-                start, end = InstructionText._byte_span(unit.content.text, found)
+                start, end = InstructionText._byte_span(unit.content.text, found, unit.content)
                 findings.append(
                     AgentFinding.finding(
                         "SUSPECT.AGENT.HIDDEN_DIRECTIVE.001", unit, ctx, start, end
@@ -203,7 +230,7 @@ class AgentChainDetector(BaseDetector):
                 else None
             )
             if redirect is not None:
-                start, end = InstructionText._byte_span(unit.content.text, redirect)
+                start, end = InstructionText._byte_span(unit.content.text, redirect, unit.content)
                 findings.append(
                     AgentFinding.finding(
                         "SUSPECT.AGENT.INSTALL_REDIRECT.001", unit, ctx, start, end
@@ -211,7 +238,7 @@ class AgentChainDetector(BaseDetector):
                 )
             claim = _PRIORITY_CLAIM.search(unit.content.text)
             if claim is not None:
-                start, end = InstructionText._byte_span(unit.content.text, claim)
+                start, end = InstructionText._byte_span(unit.content.text, claim, unit.content)
                 findings.append(
                     AgentFinding.finding(
                         "SUSPECT.AGENT.TOOL_PRIORITY_CLAIM.001", unit, ctx, start, end

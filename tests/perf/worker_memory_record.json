@@ -1,0 +1,53 @@
+{
+  "jobs": 4,
+  "exit": 1,
+  "seconds": 14.2,
+  "corpus": "tests/conformance/cases",
+  "parent": {
+    "command": "/usr/local/bin/python -m cordon_scanner scan /tmp/tmpgr590jgw/tree --jobs 4 --of",
+    "rss_kb": 676292,
+    "pss_kb": 665710,
+    "uss_kb": 664824
+  },
+  "processes": 6,
+  "workers": [
+    {
+      "command": "/usr/local/bin/python -m cordon_scanner scan /tmp/tmpgr590jgw/tree --jobs 4 --of",
+      "rss_kb": 88700,
+      "pss_kb": 59858,
+      "uss_kb": 54676
+    },
+    {
+      "command": "/usr/local/bin/python -m cordon_scanner scan /tmp/tmpgr590jgw/tree --jobs 4 --of",
+      "rss_kb": 85316,
+      "pss_kb": 56473,
+      "uss_kb": 51340
+    },
+    {
+      "command": "/usr/local/bin/python -m cordon_scanner scan /tmp/tmpgr590jgw/tree --jobs 4 --of",
+      "rss_kb": 77308,
+      "pss_kb": 49339,
+      "uss_kb": 44500
+    },
+    {
+      "command": "/usr/local/bin/python -m cordon_scanner scan /tmp/tmpgr590jgw/tree --jobs 4 --of",
+      "rss_kb": 83464,
+      "pss_kb": 56000,
+      "uss_kb": 44316
+    },
+    {
+      "command": "/usr/local/bin/python -m cordon_scanner scan /tmp/tmpgr590jgw/tree --jobs 4 --of",
+      "rss_kb": 76996,
+      "pss_kb": 48536,
+      "uss_kb": 43552
+    },
+    {
+      "command": "/usr/local/bin/python -m cordon_scanner scan /tmp/tmpgr590jgw/tree --jobs 4 --of",
+      "rss_kb": 55684,
+      "pss_kb": 37547,
+      "uss_kb": 23688
+    }
+  ],
+  "uss_mb_max": 53.4,
+  "rss_mb_max": 86.6
+}

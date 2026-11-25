@@ -36,6 +36,9 @@ value sets it with `monkeypatch.setenv`, which then means something.
 class SharedFixtures:
     """Fixtures for every test in the suite, registered as a plugin below."""
 
+    #: The bundled code-reuse index as `_bundled_reuse_index_without_its_age` gives it, read on first use.
+    _REUSE_INDEX: tuple | None = None
+
     @pytest.fixture(autouse=True)
     def _clean_environment(self, monkeypatch, tmp_path_factory: pytest.TempPathFactory) -> None:
         for name in AMBIENT:
@@ -45,6 +48,29 @@ class SharedFixtures:
         # express 4.18.2 as vulnerable and failed a VEX test the bundled data passes. Each test
         # starts from an empty cache of its own; one that wants another sets it.
         monkeypatch.setenv("CORDON_CACHE_DIR", str(tmp_path_factory.mktemp("cordon-cache")))
+
+    @pytest.fixture(autouse=True)
+    def _bundled_reuse_index_without_its_age(self, monkeypatch) -> None:
+        """The bundled index of known malware code, judged with its age check off. Its age is the build date against
+        today's date, so a test that read it as shipped passed for seven days after the index was built and failed from
+        the eighth (main's suite, 19 days after its index, failed every scan expected to be clean). The age rules have
+        their own tests (`tests/unit/intel/malware/test_reuse_index.py`), which set the day and the index they judge;
+        a test that wants the shipped one as shipped sets `ReuseIndex._SHIPPED` itself, as those do."""
+        from cordon_scanner.intel.malware.reuse_index import ReuseIndex
+
+        if SharedFixtures._REUSE_INDEX is None:
+            # Read once per run: the file is the same for every test.
+            SharedFixtures._REUSE_INDEX = ReuseIndex._load(0)
+        monkeypatch.setattr(ReuseIndex, "_SHIPPED", SharedFixtures._REUSE_INDEX)
+
+    @pytest.fixture(autouse=True)
+    def _delivered_packs_need_no_signature_unless_a_test_says_so(self, monkeypatch) -> None:
+        """The release requires two signatures on every delivered rule pack (`FeedFloor.REQUIRE_PACK_SIGNATURES`) and pins no
+        key yet; the many tests that install a hand-made pack read it unsigned. The tests of the signatures (`test_pack_signatures.py`,
+        `test_rule_lane.py`) switch it on and pin their own test keys."""
+        from cordon_scanner.rules.feed_floor import FeedFloor
+
+        monkeypatch.setattr(FeedFloor, "REQUIRE_PACK_SIGNATURES", False)
 
     @pytest.fixture(autouse=True)
     def _fresh_advisory_database(self) -> None:

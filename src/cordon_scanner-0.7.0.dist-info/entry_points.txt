@@ -39,11 +39,13 @@ vcs = cordon_scanner.detect.source.vcs:VcsDetector
 
 [cordon_scanner.reporters]
 codeclimate = cordon_scanner.report.codeclimate:CodeClimateReporter
+facts = cordon_scanner.report.facts:FactsReporter
 github = cordon_scanner.report.github:GithubReporter
 json = cordon_scanner.report.json_:JsonReporter
 junit = cordon_scanner.report.junit:JunitReporter
 markdown = cordon_scanner.report.markdown:MarkdownReporter
 sarif = cordon_scanner.report.sarif:SarifReporter
+statement = cordon_scanner.report.statement:StatementReporter
 text = cordon_scanner.report.text:TextReporter
 vex = cordon_scanner.report.vex:VexReporter
 

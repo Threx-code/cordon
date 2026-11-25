@@ -6,21 +6,30 @@ checks on the release as a whole, the dependency graph and what the archive is, 
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.analysis.javascript.unparsed_source import JsRunning, JsUnparsed
+from cordon_scanner.analysis.python.flows.cross_file import CrossFileMaps
+from cordon_scanner.analysis.python.unparsed_source import UnparsedSource
 from cordon_scanner.analysis.shared.languages import LanguageRegistry
+from cordon_scanner.analysis.shared.source_paths import SourcePaths
 from cordon_scanner.decide.code_model import CodeModelPass
+from cordon_scanner.decide.package_rules import PackageRules
+from cordon_scanner.decide.reach import FileReach
+from cordon_scanner.decide.remote_control import RemoteControl
 from cordon_scanner.detect.base import (
     FileUnit,
     GraphUnit,
     ScanContext,
 )
-from cordon_scanner.detect.registry import ComposerPluginHooks, ServerSources
+from cordon_scanner.detect.registry import ComposerPluginHooks, InstallFacts
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
-from cordon_scanner.engine.closure import ImportClosure
+from cordon_scanner.engine.closure import ImportClosure, StartupClosure
+from cordon_scanner.engine.detector_clock import DetectorClock
 from cordon_scanner.engine.entries import PackageEntries
 from cordon_scanner.engine.package_format import PackageFormat
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
@@ -28,21 +37,25 @@ from cordon_scanner.engine.pipeline.archives import ArchiveMembers
 from cordon_scanner.engine.pipeline.ceilings import Ceilings
 from cordon_scanner.engine.pipeline.constants import (
     ARCHIVE_SLICE,
+    DEPENDENCY_BUILD_FILENAMES,
     HONOURED_PINS,
     REPOSITORY_SCOPE,
 )
 from cordon_scanner.engine.pipeline.facts import TreeFacts
-from cordon_scanner.engine.pipeline.graph import Graph
+from cordon_scanner.engine.pipeline.graph import Graph, ParsedManifests
 from cordon_scanner.engine.pipeline.history import History
-from cordon_scanner.engine.pipeline.hooks import Hooks
+from cordon_scanner.engine.pipeline.hooks import BuildRoots, Hooks
 from cordon_scanner.engine.pipeline.images import Images
 from cordon_scanner.engine.pipeline.publisher import Publisher
 from cordon_scanner.engine.pipeline.releases import ReleaseChecks
+from cordon_scanner.engine.window_pass import WindowPass
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.errors import ArchiveError
 from cordon_scanner.foundation.formats.served_json import ServedJson
-from cordon_scanner.foundation.models import Scope, Severity
-from cordon_scanner.foundation.results import Dependency, OperationalFinding
+from cordon_scanner.foundation.models import Confidence, Hook, Scope, Severity
+from cordon_scanner.foundation.paths import ContainerPaths
+from cordon_scanner.foundation.results import Dependency, OperationalFinding, Repository, ScanStats
+from cordon_scanner.foundation.text.confusion_versions import ConfusionVersions
 from cordon_scanner.sources.registry import ArchiveReader
 
 if TYPE_CHECKING:
@@ -170,7 +183,7 @@ class ArchiveStages:
                         import_library=member_path in (import_library or ()),
                     )
                 )
-                acc.files_scanned += 1
+                acc.scanned(member_path, member_content)
                 acc.bytes_scanned += len(member_data)
                 acc.ledger_tree.append(member_path)
         except ArchiveError as exc:
@@ -205,36 +218,31 @@ class ArchiveStages:
         units.extend(self.engine.units.content_readings(units))
         units.extend(self.engine.units.deobfuscated(units))
         hook_paths, consumer_hooks, ci_scripts = Hooks.manifest_hook_paths(units, acc)
-        # The same install-time picture a directory scan builds: filename hooks (`setup.py`, a
-        # `.pth`), and everything the hooks import or run. A downloaded sdist or tarball is the
-        # commonest thing to vet, and it was the one target that skipped all three.
-        hook_paths |= {
-            unit.path
-            for unit in units
-            if not Hooks.under_fixture_directory(unit.path)
-            and any(
-                hook.kind not in ("ci", "projectbuild")
-                for hook in Hooks.hooks_for(unit.path.rpartition("!")[2])
-            )
-        }
-        hook_paths |= Hooks.nuget_hooks(units)
-        hook_paths |= Hooks.gem_extension_hooks(units)
-        hook_paths |= ComposerPluginHooks.paths(units)
-        skill_scripts = TreeFacts.skill_scripts(units)
-        agent_run = skill_scripts | ServerSources.of(units)
+        registry = PackageFormat.of(units)
+        hook_paths = self._without_foreign_npm_hooks(units, hook_paths, registry)
+        foreign_package = self._foreign_package(registry)
+        hook_paths |= self._filename_hooks(units)
+        skill_scripts, skill_named, agent_run = TreeFacts.skill_surface(units)
         agent_tools = self.engine._agent_tool_paths(units, agent_run, hook_paths)
         # Only a skill's scripts take the install grade. An MCP server runs when the agent calls
         # a tool the user asked it to use: downloading a browser, starting a detached emulator or
         # writing its config is the tool's work, and graded as install code it blocked 40 of 863
-        # real MCP packages (review 98). What a server's handlers do with the agent's input is
+        # real MCP packages. What a server's handlers do with the agent's input is
         # read by `detect/mcp_code.py` instead -- a shell behind a secret prefix, a hidden copy of
         # every argument, a gate that turns the tool later, secrets gathered by name.
-        hook_paths |= skill_scripts
+        # A skill's scripts run unasked when an agent uses the skill. A SKILL.md in a registry
+        # package's source (a PyPI sdist's root, beside its PKG-INFO) is guidance for whoever
+        # works on that repository: the package manager installs none of it where an agent loads
+        # skills, so the scripts beside it are scanned as what they are, not as install code
+        # (pypi-benign F472: barangay, browser-automation-cli, moregan). npm is left out: skills
+        # are also distributed as npm packages, and that was not measured.
+        if not foreign_package:
+            hook_paths |= skill_scripts
         entries = frozenset(hook_paths)
         unshipped: list[tuple[str, str]] = []
         python_closure = Hooks.hook_import_closure(units, hook_paths, unshipped)
         ImportClosure.unshipped_gaps(acc, unshipped)
-        # A file that closure runs by its path is Python whatever its name (item 39's suite).
+        # A file that closure runs by its path is Python whatever its name.
         Hooks.executed_as_python(units, python_closure)
         hook_paths |= python_closure
         hook_paths |= Hooks.hook_js_closure(units, hook_paths)
@@ -244,10 +252,13 @@ class ArchiveStages:
         ctx = replace(
             ctx,
             install_hook_paths=frozenset(hook_paths),
+            startup_closure_paths=(startup := StartupClosure.of(units, entries))[0],
+            startup_deferred_lines=startup[1],
             tree_paths=frozenset(unit.path for unit in units),
-            shipped_native_paths=TreeFacts.shipped_native(units),
+            **TreeFacts.file_roles(units),
             install_entry_paths=entries,
             agent_run_paths=agent_tools,
+            skill_named_paths=skill_named,
             consumer_install_paths=frozenset(consumer_hooks),
             ci_hook_paths=ctx.ci_hook_paths | frozenset(ci_scripts),
             install_deferred_lines=TreeFacts.entry_points_reached(
@@ -260,24 +271,209 @@ class ArchiveStages:
             # typosquat grading asks which format it is.
             package_distribution=bool(early_format := PackageFormat.of(units)),
             distribution=early_format,
-            # What the package's own dev, build and start scripts run is used code too (item 72).
+            # What the package's own dev, build and start scripts run is used code too.
             import_entry_paths=(used := PackageEntries.of(units, early_format))
             | (project := PackageEntries.project_run(units, early_format)),
             library_entry_paths=PackageEntries.of(units, early_format, with_bin=False),
-            # Seeded from every entry, `bin` included: a command's relative requires run when it
-            # does (5E-1: the closure was seeded from the library entries only, so a bin script's
-            # helper was in no reach set). And from what the project scripts run.
+            # Seeded from every entry, `bin` included (a command's relative requires run when it
+            # does), and from what the project scripts run.
             library_closure_paths=frozenset(Hooks.hook_js_closure(units, set(used | project))),
             declared_dependencies=EcosystemRegistry.declared_dependencies(units, early_format),
             package_repository=PackageEntries.repository(units, early_format),
+            package_name=PackageEntries.name(units, early_format),
+            confusion_version=ConfusionVersions.reason(PackageEntries.version(units, early_format))
+            or "",
+            package_code_bytes=(name_facts := InstallFacts.of(units))[0],
+            package_install_message=name_facts[1],
         )
-        ctx = replace(ctx, verdict_dependency_names=Ceilings.verdict_dependency_names(units))
+        ctx = replace(
+            ctx,
+            verdict_dependency_names=Ceilings.verdict_dependency_names(units),
+            **CrossFileMaps.of(units),
+        )
+        ctx = self.unparsed(units, acc, ctx, python_closure)
+        ctx = self.import_context(units, ctx, early_format)
         return Hooks.lifted_inherit(ctx)
+
+    @staticmethod
+    def _filename_hooks(units: list[FileUnit]) -> set[str]:
+        """The same install-time picture a directory scan builds: filename hooks (`setup.py`, a
+        `.pth`), NuGet's, a gem's extension, a Composer plugin. A downloaded sdist or tarball is
+        the commonest thing to vet, and it was the one target that skipped them. A `setup.py` is
+        the build script only where a directory scan would take it as one (`Hooks.hook_executes`):
+        beside the sdist's `PKG-INFO`, never inside a package or below the root. Read by the
+        member's path in its archive, as the hook names it."""
+        directories: set[str] = set()
+        for unit in units:
+            BuildRoots.note(unit.path.rpartition("!")[2], directories)
+        paths = {
+            unit.path
+            for unit in units
+            if not Hooks.under_fixture_directory(unit.path)
+            and any(
+                hook.kind not in ("ci", "projectbuild") and Hooks.hook_executes(hook, directories)
+                for hook in Hooks.hooks_for(unit.path.rpartition("!")[2])
+            )
+        }
+        return (
+            paths
+            | Hooks.nuget_hooks(units)
+            | Hooks.gem_extension_hooks(units)
+            | ComposerPluginHooks.paths(units)
+        )
+
+    @staticmethod
+    def _foreign_package(registry: str) -> bool:
+        """A registry package whose installer runs no bundled npm script and loads no skill."""
+        return bool(registry) and not EcosystemRegistry.runs_bundled_scripts(registry)
+
+    #: A build step that runs npm, and with it the lifecycle scripts of what node_modules holds.
+    _RUNS_NPM: ClassVar[re.Pattern[str]] = re.compile(r"\b(?:npm|yarn|pnpm|bun)\b")
+
+    @classmethod
+    def _without_foreign_npm_hooks(
+        cls, units: list[FileUnit], hook_paths: set[str], registry: str
+    ) -> set[str]:
+        """An npm tree vendored inside another registry's package (a Python front end's
+        node_modules): pip runs no npm lifecycle script, so esbuild's install.js there is not
+        install code -- unless the package's own build runs npm (`npm rebuild`), which would run
+        them. npm's own tarballs run their bundled dependencies' scripts and keep them."""
+        if not cls._foreign_package(registry):
+            return hook_paths
+        foreign = {p for p in hook_paths if "/node_modules/" in f"/{p.rpartition('!')[2]}"}
+        if not foreign:
+            return hook_paths
+        builds = [
+            u
+            for u in units
+            if ContainerPaths.basename(u.path.rpartition("!")[2]) in DEPENDENCY_BUILD_FILENAMES
+            and not u.content.is_binary
+        ]
+        if any(cls._RUNS_NPM.search(u.content.text) for u in builds):
+            return hook_paths
+        return hook_paths - foreign
+
+    def unparsed(
+        self,
+        units: list[FileUnit],
+        acc: Accumulator,
+        ctx: ScanContext,
+        python_closure: set[str],
+        entries: frozenset[str] = frozenset(),
+    ) -> ScanContext:
+        """What runs at install or import and does not parse is read as Python 2, or is a gap,
+        fail closed (09 3a). A reading runs where its file runs (`lifted_inherit`)."""
+        python_entries = {p for p in ctx.import_entry_paths if p.endswith(".py")}
+        from cordon_scanner.engine.entries import PythonScripts
+
+        # A command's module runs on every invocation, imported by `__init__` or not (S2).
+        python_entries |= PythonScripts.targets(units)
+        python_entries |= entries  # a directory scan's own (`PythonScripts.directory`)
+        running = python_closure | python_entries | Hooks.hook_import_closure(units, python_entries)
+        readings: list[FileUnit] = []
+        for unit in list(units):
+            if unit.content.is_binary or not UnparsedSource.runs_as_source(unit.path, running):
+                continue
+            decision = WindowPass.unparsed_decision(unit, ctx.copy_budget) or UnparsedSource.decide(
+                unit.content.text
+            )
+            if decision.kind == "gap":
+                acc.incomplete(UnparsedSource.gap(unit.path))
+                if not SourcePaths.is_test_material(unit.path.rpartition("!")[2]):
+                    risk = ctx.scorer.score(Severity.HIGH, Confidence.HIGH)
+                    acc.append(UnparsedSource.running(unit.path, risk))
+            elif decision.kind == "broken":
+                acc.append(UnparsedSource.broken(unit.path))
+            elif decision.reading is not None:
+                where = ContainerPaths.reading(unit.path, "python")
+                raw = decision.reading.encode("utf-8")
+                content = FileContent.from_bytes(where, raw, self.config.limits)
+                readings.append(FileUnit(content=content, language="python", project=unit.project))
+        self.unparsed_javascript(units, acc, ctx)
+        if not readings:
+            return ctx
+        units.extend(readings)
+        return replace(ctx, tree_paths=ctx.tree_paths | {r.path for r in readings})
+
+    def unparsed_directory(
+        self, units: list[FileUnit], acc: Accumulator, ctx: ScanContext
+    ) -> ScanContext:
+        """What a plain directory scan (a cloned repository, an MCP server checked out from git) reads as running, for both languages: the JavaScript its
+        package.json names, and for Python the install closure, the top-level packages' `__init__` and the modules the manifests name."""
+        from cordon_scanner.engine.entries import PythonScripts
+
+        self.unparsed_javascript(units, acc, ctx)
+        return self.unparsed(
+            units,
+            acc,
+            ctx,
+            {p for p in ctx.install_hook_paths if p.endswith(".py")},
+            PythonScripts.directory(units),
+        )
+
+    @staticmethod
+    def unparsed_javascript(units: list[FileUnit], acc: Accumulator, ctx: ScanContext) -> None:
+        """A JavaScript file that runs when the package is loaded and whose brackets do not close is a gap (it names something that could run
+        its pieces) or is said (it names nothing): the same decision as for Python, never silence."""
+        running = {
+            u.path for u in units if u.path in ctx.import_entry_paths or ctx.in_install_hook(u.path)
+        }
+        running |= JsRunning.of(
+            units
+        )  # a directory scan: what package.json names, and what those files require
+        for unit in units:
+            if (
+                unit.content.is_binary
+                or unit.content.truncated
+                or not JsUnparsed.runs_as_source(unit.path, running)
+            ):
+                continue
+            decision = JsUnparsed.decide(unit.content.text)
+            if decision.kind == "gap":
+                acc.incomplete(UnparsedSource.gap(unit.path))
+                if not SourcePaths.is_test_material(unit.path.rpartition("!")[2]):
+                    acc.append(
+                        UnparsedSource.running(
+                            unit.path, ctx.scorer.score(Severity.HIGH, Confidence.HIGH)
+                        )
+                    )
+            elif decision.kind == "broken":
+                acc.append(JsUnparsed.broken(unit.path))
+
+    @staticmethod
+    def import_context(units: list[FileUnit], ctx: ScanContext, distribution: str) -> ScanContext:
+        """What runs when a consumer imports a published Python package: every importable module and
+        what it imports, and the bodies importing never runs (`LoadReach`, reviews/pypi-98/10)."""
+        from cordon_scanner.analysis.python.reachability import LoadReach
+
+        modules = PackageEntries.importable_modules(units, distribution)
+        if not modules:
+            return ctx
+        closure = set(modules) | Hooks.hook_import_closure(units, set(modules))
+        sources = {
+            unit.path: unit.content.text
+            for unit in units
+            if unit.path in closure and unit.path.endswith(".py") and not unit.content.is_binary
+        }
+        deferred = LoadReach.deferred_lines(sorted(sources), sources)
+        has_main = any(path.rpartition("/")[2] == "__main__.py" for path in sources)
+        return replace(
+            ctx,
+            import_closure_paths=frozenset(closure),
+            import_deferred_lines=deferred,
+            # What `import pkg` runs without `python -m pkg` (reviews/pypi-98/19); the same set
+            # where the package has no `__main__.py`.
+            import_deferred_lines_without_main=(
+                LoadReach.deferred_lines(sorted(sources), sources, without_main=True)
+                if has_main
+                else deferred
+            ),
+        )
 
     def parallel(
         self, units: list[FileUnit], deadline: float, acc: Accumulator, path: Path, ctx: ScanContext
     ) -> list[Detector]:
-        """Every member, read by the detectors in supervised workers (item 28)."""
+        """Every member, read by the detectors in supervised workers."""
         detectors = [d for d in self.detectors if self.engine.detection.enabled(d, ctx)]
         self.progress.phase("scanning", total=len(units))
         # An image or a large archive is thousands of members (a Grafana image adds eleven
@@ -286,7 +482,7 @@ class ArchiveStages:
         content_detectors = [
             d for d in detectors if not (d.requires.dependencies and d.requires.content is False)
         ]
-        # Always in supervised workers, one as readily as many (item 28): a member that kills or
+        # Always in supervised workers, one as readily as many: a member that kills or
         # hangs its worker costs that member; this process never inspects one.
         from cordon_scanner.engine.cache import CacheSignature
 
@@ -302,7 +498,7 @@ class ArchiveStages:
                         severity=Severity.MEDIUM,
                     )
                 )
-                # Every member of the slices never started, by path (item 38's review, change 2).
+                # Every member of the slices never started, by path.
                 acc.ledger_unstarted.update(unit.path for unit in units[start:])
                 break
             found = self.engine.detection.parallel(
@@ -321,18 +517,62 @@ class ArchiveStages:
                 break  # the pool stopped at the budget and said so; no slice after it
         return detectors
 
+    @staticmethod
+    def repository(path: Path, acc: Accumulator, ctx: ScanContext) -> Repository:
+        """What an archive scan reports of its target: where it is, how many files it held, and the lifecycle hooks the context worker read from its manifests."""
+        hooks = ctx.repository.hooks if ctx.repository is not None else ()
+        return Repository(root=str(path), file_count=acc.files_scanned, hooks=hooks)
+
+    @staticmethod
+    def manifest_hooks(units: list[FileUnit]) -> tuple[Hook, ...]:
+        """The lifecycle hooks the archive's manifests declare, read as a directory scan reads them (the same parser, the same test of which of them execute), so a published package
+        and the same files as a directory give the same hooks."""
+        package_directories: set[str] = set()
+        for unit in units:
+            BuildRoots.note(unit.path, package_directories)
+        tree = frozenset(unit.path for unit in units)
+        found: list[Hook] = []
+        for unit in units:
+            ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
+            ecosystem = EcosystemRegistry.get(ecosystem_id) if ecosystem_id is not None else None
+            if ecosystem is None or SourcePaths.is_vendored(unit.path):
+                continue  # a directory scan does not walk vendored trees, so their manifests are not the package's own
+            try:
+                manifest = ecosystem.parse_manifest(unit.content)
+                from_tree = getattr(ecosystem, "hooks_from_tree", None)
+                if from_tree is not None:
+                    manifest = from_tree(manifest, tree)
+                found.extend(manifest.hooks)
+            except Exception as exc:  # noqa: BLE001  # S2: a manifest that does not parse is said once by the manifest reader
+                ParsedManifests.record_raised(unit.path, exc)
+        return tuple(hook for hook in found if Hooks.hook_executes(hook, package_directories))
+
     def release_checks(self, acc: Accumulator, ctx: ScanContext, units: list[FileUnit]) -> None:
         """The checks on the release as a whole, after every member was read in the workers. There
-        is no per-member pass here: this process never inspects a member (item 28; item 55 deleted
-        the loop that was left for one, which no member reached)."""
+        is no per-member pass here: this process never inspects a member."""
         if acc.out_of_time(ctx, REPOSITORY_SCOPE, "the release checks"):
             return
         acc.add(ReleaseChecks.unexamined_install_code(acc.findings, ctx))
         acc.add(ReleaseChecks.native_code_in_a_pure_wheel(units, ctx))
+        acc.add(ReleaseChecks.native_program_in_a_pure_wheel(units, ctx))
         acc.add(ReleaseChecks.known_malicious_release(units, ctx))
         acc.add(ReleaseChecks.known_vulnerable_release(units, ctx))
         acc.add(ReleaseChecks.placeholder_release(units, ctx))
         acc.add(ReleaseChecks.borrowed_server_name(units, ctx))
+
+    @staticmethod
+    def stats(acc: Accumulator, started: float, rules: int, dependencies: int) -> ScanStats:
+        """What an archive scan counted: files and bytes read, dependencies, rules, and the time spent."""
+        return ScanStats(
+            files_scanned=acc.files_scanned,
+            bytes_scanned=acc.bytes_scanned,
+            dependencies=dependencies,
+            rules_evaluated=rules,
+            duration_ms=int((time.monotonic() - started) * 1000),
+            detector_cpu_ms=DetectorClock.milliseconds(),
+            view_files=DetectorClock.counts(),
+            **Ceilings.delivered_gaps(),
+        )
 
     def deferred(
         self,
@@ -373,8 +613,7 @@ class ArchiveStages:
         self.progress.phase("dependencies")
         package = PackageFormat.of(units)
         # A published package's inventory is its root manifest and lockfile (`DependencyScope`):
-        # built in the context worker with the rest of what the archive's manifests say (item 56
-        # (b)), and applied here, where it was built before, so its findings keep their place.
+        # built in the context worker with the rest of what the archive's manifests say, and applied here, where it was built before, so its findings keep their place.
         dependencies = self.engine.context_stage.archive_dependencies(acc)
         self._hold_not_installed_files(acc, dependencies, ctx)
         if image is not None:
@@ -385,7 +624,7 @@ class ArchiveStages:
             # lockfile shipped inside it: those pins are the maintainers' own environment. The
             # exception is a file that installer reads and obeys (`HONOURED_PINS`): what it pins
             # is what installing the package brings in. An archive that may be a repository
-            # snapshot instead is graded both ways (`PackageFormat.union`, review 98 #18).
+            # snapshot instead is graded both ways (`PackageFormat.union`).
             both = PackageFormat.renamed_npm(units)
             repository = Ceilings.person_run_ceiling(list(acc.findings), units, ctx) if both else []
             ctx = replace(ctx, package_distribution=True, distribution=package)
@@ -508,8 +747,9 @@ class ArchiveStages:
         from cordon_scanner.engine.pipeline.results import ResultFolding
 
         acc.findings[:], code_model = CodeModelPass.decide(self.engine, acc.findings, ctx)
+        acc.findings[:], remote_control = RemoteControl.decide(acc.findings)
         acc.findings[:] = ResultFolding.settled(self.config, acc)
-        # The package's JSON these read is the context worker's (item 56 (b)), never decoded here.
+        # The package's JSON these read is the context worker's, never decoded here.
         with ServedJson.serving(REPOSITORY_SCOPE):
             acc.findings[:], verdict = Ceilings.verdict(
                 Ceilings.hardening_tier(
@@ -523,6 +763,14 @@ class ArchiveStages:
                 facts=acc.facts,
             )
         acc.findings.extend(code_model)
+        acc.findings.extend(remote_control)
+        # Package-scope composites, over everything the rules and the verdict left (`package_rules.py`).
+        acc.reach, read = FileReach.guarded(units, ctx)
+        if not read:
+            acc.incomplete(FileReach.gap())
+        acc.findings.extend(
+            PackageRules.decide(self.engine.rules, acc.findings, ctx, acc.facts, acc.reach)
+        )
         dependencies = self.engine.detection.annotated(dependencies, acc.findings, ctx, units)
         return dependencies, verdict
 

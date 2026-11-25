@@ -33,7 +33,9 @@ class Reference:
 
     @staticmethod
     def ours(text: str) -> tuple[int, int] | None:
-        hits = CredentialSweep.hits(FileContent.from_bytes("x.py", text.encode()))
+        # Not a Python path: the sweep skips the data literals of a Python file, and this test is
+        # about the prefilter reading every pattern.
+        hits = CredentialSweep.hits(FileContent.from_bytes("x.js", text.encode()))
         return (hits[0].byte_start, hits[0].line) if hits else None
 
     #: Every store's path, near misses of them, and the separators between.

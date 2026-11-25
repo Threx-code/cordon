@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, TypedDict
 
 from cordon_scanner.detect.base import (
     FileUnit,
@@ -40,6 +40,13 @@ if TYPE_CHECKING:
     from cordon_scanner.detect.base import CapabilityLabelling, CapabilityMark
     from cordon_scanner.engine.engine import Engine
     from cordon_scanner.engine.pipeline.accumulator import Accumulator
+
+
+class FileRoles(TypedDict):
+    """The context fields that say what kind of file a path is."""
+
+    shipped_native_paths: frozenset[str]
+    data_only_paths: frozenset[str]
 
 
 class TreeFacts:
@@ -104,13 +111,35 @@ class TreeFacts:
         return frozenset(t for t in deferred if t[0] not in agent_run)
 
     @staticmethod
-    def skill_scripts(units: Sequence[FileUnit]) -> set[str]:
+    def file_roles(units: Sequence[FileUnit]) -> FileRoles:
+        """What kind of file each path is, for the context fields that say so: the binaries a package
+        ships (`shipped_native`) and the data files only a parser ever reads (`DataRoles`)."""
+        from cordon_scanner.analysis.shared.data_roles import DataRoles
+
+        return {
+            "shipped_native_paths": TreeFacts.shipped_native(units),
+            "data_only_paths": DataRoles.only_parsed(units),
+        }
+
+    @staticmethod
+    def skill_surface(units: Sequence[FileUnit]) -> tuple[set[str], frozenset[str], set[str]]:
+        """What an agent runs unasked: a skill's scripts, the scripts a skill that is also a package
+        names (`LoadPath.named_scripts`, kept in the context for `LoadPath.skill_script`), and with
+        an MCP server's own sources, every file the agent runs."""
+        from cordon_scanner.detect.registry import LoadPath, ServerSources
+
+        named = LoadPath.named_scripts(units)
+        scripts = TreeFacts.skill_scripts(units, named)
+        return scripts, named, scripts | ServerSources.of(units)
+
+    @staticmethod
+    def skill_scripts(units: Sequence[FileUnit], named: frozenset[str] = frozenset()) -> set[str]:
         """Scripts an agent skill ships (`LoadPath.skill_script`)."""
         from types import SimpleNamespace
 
         from cordon_scanner.detect.registry import LoadPath
 
-        tree = SimpleNamespace(tree_paths=frozenset(u.path for u in units))
+        tree = SimpleNamespace(tree_paths=frozenset(u.path for u in units), skill_named_paths=named)
         return {
             u.path
             for u in units
@@ -176,10 +205,20 @@ class CrossFileFlows:
         # Where the join is incomplete, a finding lowered on the join's word is graded again
         # without it (note 78; rule 3: unknown is never "no caller passes a reply").
         lowered = CrossFileJoin.lowered(acc.findings) if unresolved else set()
-        if not flows and not lowered:
+        # The files that carry a REMOTE_CODE composite are graded again with what the whole package says of
+        # where its requests go: reported below the gate when none goes to an external literal host
+        # and nothing decoded is run, with every file read; unchanged otherwise.
+        unexternal = CrossFileJoin.unexternal(acc.facts, acc.findings, flows)
+        carriers = CrossFileJoin.carriers(acc.findings) if unexternal else set()
+        if not flows and not lowered and not carriers:
             return
-        callers = [u for u in units if u.path in flows or u.path in lowered]
-        graded = replace(ctx, cross_file_flows=flows, cross_file_unresolved=unresolved)
+        callers = [u for u in units if u.path in flows or u.path in lowered or u.path in carriers]
+        graded = replace(
+            ctx,
+            cross_file_flows=flows,
+            cross_file_unresolved=unresolved,
+            remote_code_unexternal=unexternal,
+        )
         signature = CacheSignature.scan_signature(capability, graded, engine.config)
         again = engine.detection.parallel(
             callers, root, graded, acc, capability, signature, carry_content=carry_content,

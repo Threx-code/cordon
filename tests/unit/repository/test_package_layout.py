@@ -35,6 +35,7 @@ class Layout:
         "version": 0,
         "foundation": 0,
         "_native": 0,
+        "contracts": 0,
         "analysis": 1,
         "detect": 2,
         "ecosystems": 2,
@@ -225,10 +226,10 @@ class Structure:
     #: fits one of these, or a home inside one of them.
     REPOSITORY_ROOT: ClassVar[frozenset[str]] = frozenset(
         {
-            # What GitHub, PyPI and the citation tools read at the root.
-            ".github",
-            # The funding manifest's proof that this repository belongs to it (fundingjson.org's `wellKnown`).
+            # What GitHub, PyPI, the citation tools and FLOSS/fund read at the root; `.well-known` holds the
+            # funding manifest's proof that this repository belongs to it (fundingjson.org's `wellKnown`).
             ".well-known",
+            ".github",
             "CITATION.cff",
             "CODE_OF_CONDUCT.md",
             "CONTRIBUTING.md",

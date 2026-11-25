@@ -99,7 +99,11 @@ class FeedKit:
         )
 
     @staticmethod
-    def rule_packs(packs: dict[str, tuple[str, str]], disabled: tuple[str, ...] = ()) -> bytes:
+    def rule_packs(
+        packs: dict[str, tuple[str, str]],
+        disabled: tuple[str, ...] = (),
+        tombstones: tuple[str, ...] = (),
+    ) -> bytes:
         """A delivered rule-pack set: {pack file: (yaml, enforcement)} plus the index."""
         files = {name: text.encode() for name, (text, _) in packs.items()}
         files["rulepacks.json"] = json.dumps(
@@ -109,8 +113,22 @@ class FeedKit:
                     for name, (_, enforcement) in packs.items()
                 ],
                 "disabled_rules": list(disabled),
+                "tombstones": list(tombstones),
             }
         ).encode()
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+            for name, data in files.items():
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+        return buffer.getvalue()
+
+    @staticmethod
+    def model_set(models: dict[str, bytes]) -> bytes:
+        """A delivered model set: {model file: bytes} plus the index that lists them."""
+        files = dict(models)
+        files["models.json"] = json.dumps({"models": [{"file": name} for name in models]}).encode()
         buffer = io.BytesIO()
         with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
             for name, data in files.items():
@@ -186,6 +204,7 @@ class SignedFeed:
         deltas: dict[int, bytes] | None = None,
         full: tuple[int, bytes] | None = None,
         rules: tuple[int, bytes] | None = None,
+        models: tuple[int, bytes] | None = None,
         expires: str = FAR,
         issued: str = ISSUED,
         version: int | None = None,
@@ -213,6 +232,10 @@ class SignedFeed:
             path = f"rules/{rules[0]}.tar.gz"
             self.files[path] = rules[1]
             targets_body["rules"] = FeedKit.meta_of(rules[1], path=path, version=rules[0])
+        if models is not None:
+            path = f"models/{models[0]}.tar.gz"
+            self.files[path] = models[1]
+            targets_body["models"] = FeedKit.meta_of(models[1], path=path, version=models[0])
         targets = FeedRoles.canonical(FeedKit.signed(targets_body, self.targets_key))
         snapshot = FeedRoles.canonical(
             FeedKit.signed(

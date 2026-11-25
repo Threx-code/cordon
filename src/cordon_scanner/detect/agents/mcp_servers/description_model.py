@@ -90,7 +90,19 @@ class LinearTextModel:
         except OSError:
             return None
         data["weights"] = {int(k): float(v) for k, v in data["weights"].items()}
+        # A channel may carry its own weights and bias (`channels.<name>`); one without a block
+        # scores from the top-level ones, so a file without any block reads as it always did.
+        for own in data.get("channels", {}).values():
+            own["weights"] = {int(k): float(v) for k, v in own["weights"].items()}
         return data
+
+    @staticmethod
+    def parameters(model: dict[str, Any], channel: str) -> tuple[dict[int, float], float]:
+        """The weights and bias that score `channel`."""
+        own = model.get("channels", {}).get(channel)
+        if own is not None:
+            return own["weights"], float(own["bias"])
+        return model["weights"], float(model["bias"])
 
     def windows(self, text: str) -> list[str]:
         """The text as the model reads it: whole when it fits the limit it was trained on, else
@@ -117,10 +129,10 @@ class LinearTextModel:
         model = self.model
         if model is None or not text.strip():
             return None
-        weights = model["weights"]
+        weights, bias = self.parameters(model, channel)
         best = -60.0
         for window in self.windows(text):
-            z = model["bias"] + sum(
+            z = bias + sum(
                 weights.get(index, 0.0) * value
                 for index, value in self.features(window, channel).items()
             )

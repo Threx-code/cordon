@@ -1,0 +1,262 @@
+"""Package-scope composite rules: a conjunction of facts about the whole scanned package (learning loop LL-3).
+
+A file-scope composite asks what one file does. A package-scope composite asks what the package is: "a file nothing
+the package runs reaches, which both spawns a process and reaches the network", "an install entry that reads a
+credential, in a package with a preinstall hook". Its terms are `rules/fact_terms.py`'s, the same the learning
+loop's distiller learns in, so a detector it makes can ship as an ordinary rule in a signed pack.
+
+```
+  match:
+    kind: composite
+    scope: package
+    all:    [ {file: {where: unreached, capabilities: [spawn, egress]}} ]
+    any:    [ ... ]          at least one, when present
+    unless: [ ... ]          none
+```
+
+It runs once per scan, after the verdict, over what the rules and the verdict left: each file's capabilities (from
+its findings), the places the scan computed (`ScanContext.places`), the package-level findings and the lifecycle
+hooks. It adds findings and never lowers or removes one; the one exception is a pack whose signed warning list holds its rules at warn for this package's publisher (`rules/warn_list.py`). A suppressed finding is no fact."""
+
+from __future__ import annotations
+
+from collections import defaultdict
+from dataclasses import replace
+from typing import TYPE_CHECKING, Any
+
+from cordon_scanner.foundation.capabilities import MatchKind
+from cordon_scanner.foundation.models import (
+    Category,
+    Confidence,
+    Evidence,
+    EvidenceKind,
+    Explanation,
+    Finding,
+    Location,
+    RedactionMode,
+    Severity,
+)
+from cordon_scanner.foundation.results import NO_RISK
+from cordon_scanner.rules.fact_terms import UNREACHED, FactTerms, Term
+from cordon_scanner.rules.learned import LearnedBlock
+from cordon_scanner.rules.warn_list import WarnList
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Mapping, Sequence
+
+    from cordon_scanner.detect.base import ScanContext
+    from cordon_scanner.rules.loader import RuleSet
+    from cordon_scanner.rules.pack import CompiledRule
+
+PACKAGE_SCOPE = "."
+DETECTOR = "package_rules"
+
+
+class PackageFacts:
+    """The terms one scan's package satisfies, each with the files that satisfy it."""
+
+    def __init__(
+        self,
+        findings: Sequence[Finding],
+        ctx: ScanContext,
+        names: Mapping[str, Iterable[str]],
+        reach: Mapping[str, tuple[str, int]] | None = None,
+    ) -> None:
+        places: dict[str, set[str]] = defaultdict(set)
+        for place, paths in ctx.places().items():
+            for path in paths:
+                places[path].add(place)
+        capabilities: dict[str, set[str]] = defaultdict(set)
+        for path, held in names.items():
+            capabilities[path].update(held)
+        package_rules: set[str] = set()
+        for f in findings:
+            if f.is_suppressed:
+                continue
+            path = f.location.path
+            if not path or path == PACKAGE_SCOPE:
+                package_rules.add(f.rule_id)
+            elif f.capabilities:
+                capabilities[path].update(str(c) for c in f.capabilities)
+        self._places = places
+        self._reach = reach or {}
+        self._capabilities = capabilities
+        self._paths = sorted(set(capabilities) | set(places))
+        self._matched: dict[Term, list[str]] = {}
+        hooks = (h.kind for h in (ctx.repository.hooks if ctx.repository is not None else ()))
+        self.package = FactTerms.of_package(package_rules, hooks) | self._target(ctx)
+
+    @staticmethod
+    def _target(ctx: ScanContext) -> set[Term]:
+        """The `target` term the scan can say of itself: an image, or a published package. A source tree and a plain archive
+        are not told apart here, so a rule naming them is not satisfied by a live scan (the facts record says them)."""
+        if ctx.image is not None:
+            return {("target", "image")}
+        return {("target", "package")} if ctx.package_distribution else set()
+
+    def _files(self, term: Term) -> list[str]:
+        """The files that satisfy a file term, in path order; worked out once per term asked."""
+        if term not in self._matched:
+            self._matched[term] = [
+                p
+                for p in self._paths
+                if FactTerms.file_satisfies(
+                    bool(self._places.get(p)),
+                    self._places.get(p, ()),
+                    self._capabilities.get(p, ()),
+                    term,
+                    self._reach.get(p, ("", 0))[0],
+                )
+            ]
+        return self._matched[term]
+
+    def has(self, term: Term) -> bool:
+        if term[0] == "file":
+            return bool(self._files(term))
+        return term in self.package
+
+    def where(self, term: Term) -> str:
+        """The first file (in path order) that satisfies a file term; the package for any other term."""
+        paths = self._files(term) if term[0] == "file" else []
+        return paths[0] if paths else PACKAGE_SCOPE
+
+
+class PackageRules:
+    """`decide(rules, findings, ctx)`: the findings of every package-scope composite the package satisfies."""
+
+    @staticmethod
+    def selected(rules: RuleSet) -> tuple[CompiledRule, ...]:
+        return tuple(r for r in rules.by_kind(MatchKind.COMPOSITE) if r.match.scope == "package")
+
+    @staticmethod
+    def decide(
+        rules: RuleSet,
+        findings: Sequence[Finding],
+        ctx: ScanContext,
+        facts: Mapping[str, Mapping[str, Sequence[object]]],
+        reach: Mapping[str, tuple[str, int]] | None = None,
+    ) -> list[Finding]:
+        selected = PackageRules.selected(rules)
+        if not selected:
+            return []
+        warned = PackageRules.warned(rules, ctx)
+        names = {path: [str(n) for n in held.get("cap.all", ())] for path, held in facts.items()}
+        known = PackageFacts(findings, ctx, names, reach)
+        out = []
+        for compiled in selected:
+            satisfied = PackageRules.satisfied(compiled, known.has)
+            if satisfied is None:
+                continue
+            file_terms = [t for t in satisfied if t[0] == "file"]
+            path = known.where(file_terms[0]) if file_terms else PACKAGE_SCOPE
+            made = PackageRules.finding(compiled, path, satisfied)
+            out.append(
+                PackageRules.held(made, warned[compiled.rule.id])
+                if compiled.rule.id in warned
+                else made
+            )
+        return out
+
+    @staticmethod
+    def learned_basis(raw: Mapping[str, Any], said: str) -> tuple[str, ...]:
+        """What a learned rule's finding shows of where the rule came from, as stable codes: the families it was learned from, how often legitimate packages fire it with the interval, the batch, and the
+        facts the package satisfied. Nothing for a rule that declares no `learned` block."""
+        learned = raw.get("learned")
+        if not isinstance(learned, dict):
+            return ()
+        low, high = learned["interval"]
+        return (
+            f"families={learned['families']}",
+            f"legit_rate={learned['legit_rate']:.4f}",
+            f"interval={low:.4f}-{high:.4f}",
+            f"batch={learned['batch']}",
+            *((f"n={learned['n']}",) if "n" in learned else ()),
+            f"facts={said}",
+        )
+
+    @staticmethod
+    def warned(rules: RuleSet, ctx: ScanContext) -> dict[str, str]:
+        """The rules of packs whose warning list holds the scanned package now, by rule id with the time they are held until."""
+        held: dict[str, str] = {}
+        for pack in rules.packs:
+            if pack.warn and WarnList.holds(pack.warn, ctx.distribution, ctx.package_name):
+                until = min(
+                    u
+                    for e, p, u in pack.warn
+                    if e == ctx.distribution
+                    and p == WarnList.publisher_key(ctx.distribution, ctx.package_name)
+                )
+                held.update({c.rule.id: until for c in pack.rules})
+        return held
+
+    @staticmethod
+    def held(found: Finding, until: str) -> Finding:
+        """The finding as a warning: an open appeal holds the rule at warn for this publisher until `until`."""
+        return replace(
+            found,
+            severity=Severity.LOW,
+            confidence=Confidence.LOW,
+            category=Category.POLICY,
+            message=f"[held at warn for this publisher until {until}] {found.message}",
+        )
+
+    @staticmethod
+    def confidence_of(rule: Any) -> Confidence:
+        """A learned rule's confidence is the one its measured rate earns; any other rule keeps the one it declares."""
+        learned = rule.raw.get("learned")
+        return LearnedBlock.confidence(learned) if isinstance(learned, dict) else rule.confidence
+
+    @staticmethod
+    def satisfied(compiled: CompiledRule, has: Callable[[Term], bool]) -> list[Term] | None:
+        """The terms of a package-scope rule that hold when it fires, or None when it does not: every `all` term, one of the `any` terms when there are some, and none of the `unless` terms.
+        The one place a rule is judged, for a scan and for a recorded fact vector alike."""
+        if not FactTerms.fires(compiled.match, has):
+            return None
+        held = [FactTerms.of_spec(t) for t in (*compiled.match.all_of, *compiled.match.any_of)]
+        return [t for t in held if has(t)]
+
+    @staticmethod
+    def fires(rules: RuleSet, record: Mapping[str, Any]) -> list[str]:
+        """The ids of the package-scope rules a facts record satisfies, judged by the same logic a scan applies: a pack's self-test over a fact vector runs through here, not through a second reading of the rule."""
+        terms = FactTerms.of_facts(record)
+        return [
+            compiled.rule.id
+            for compiled in PackageRules.selected(rules)
+            if PackageRules.satisfied(compiled, terms.__contains__) is not None
+        ]
+
+    @staticmethod
+    def finding(compiled: CompiledRule, path: str, satisfied: Sequence[Term]) -> Finding:
+        rule = compiled.rule
+        said = "; ".join(" ".join(t) for t in satisfied)
+        unreached = any(t[0] == "file" and t[1] == UNREACHED for t in satisfied)
+        return Finding(
+            rule_id=rule.id,
+            category=rule.category,
+            severity=rule.severity,
+            confidence=PackageRules.confidence_of(rule),
+            message=rule.message,
+            location=Location(path=path),
+            evidence=Evidence(
+                kind=EvidenceKind.METADATA,
+                match_hash=Evidence.hash_bytes(
+                    f"{rule.id}:{compiled.predicate_digest()}:{path}:{said}".encode()
+                ),
+                redaction=RedactionMode.NONE,
+                metadata=(("facts", said), ("unreached", "yes" if unreached else "no")),
+            ),
+            remediation=rule.remediation,
+            explanation=Explanation(
+                summary=rule.title,
+                matched_rule=rule.id,
+                basis=PackageRules.learned_basis(rule.raw, said),
+            ),
+            risk=NO_RISK,
+            detector=DETECTOR,
+            rule_version=rule.version,
+            rulepack=rule.rulepack,
+            references=rule.references,
+        )
+
+
+__all__ = ["PackageFacts", "PackageRules"]

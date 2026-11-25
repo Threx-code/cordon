@@ -731,6 +731,17 @@ class FileContent(LineIndex, ContentKind):
         """Whether a byte offset lies in one of the file's `/* ... */` blocks (`TextColumns`)."""
         return TextColumns.in_block_comment(self, byte_offset, language)
 
+    def byte_offset(self, char_index: int, text: str | None = None) -> int:
+        """The byte offset in `raw` of character `char_index` of `text` (the file's own text when omitted).
+
+        `text` is decoded past a UTF-8 byte-order mark (so a pattern's `^` is not stopped by it) and `raw`
+        keeps it. The encoded length of the text before the character is therefore three bytes short of
+        its offset in `raw` in a file that carries a mark, and a span built from that length began three
+        bytes early: the same file written with a mark reported other evidence. Use this, not
+        `len(text[:i].encode("utf-8"))`, wherever a position in `text` becomes a byte span. Another string
+        (a decoded or normalised view) is re-encoded as it is: the mark belongs only to the file's own text."""
+        return TextColumns.byte_offset(self, char_index, self.text if text is None else text)
+
     # -- Construction ----------------------------------------------------
 
     @classmethod

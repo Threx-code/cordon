@@ -117,6 +117,7 @@ PARENT_ONLY_SETTINGS: dict[str, str] = {
     "provenance": "where each setting came from, for `config show`",
     "cache_dir": "the parent reads and writes the cache",
     "use_cache": "the parent reads and writes the cache",
+    "facts_export": "what a scan queues about itself is the parent's, after the scan; a worker sends nothing",
     "constraints": "the organisation ceiling, already applied to the carried values",
     "org_limits": "the organisation ceiling, already applied to the carried limits",
     "untrusted_exclusions": "exclusions are applied by the parent's walk",
@@ -751,14 +752,27 @@ class ParallelScanner:
             active.append(detector)
             produced.extend(inspect(detector, unit))
         # The rest of an oversized file, a window at a time: the call the serial path makes.
-        windowed, intact = WindowPass.run(unit, active, inspect, produced)
+        windowed, intact = WindowPass.run(
+            unit,
+            active,
+            inspect,
+            produced,
+            budget=ctx.copy_budget,
+            gap=acc.gap,
+            deadline=ctx.deadline,
+        )
         ParallelScanner._verdict_facts(unit, ctx)
         # What the parent's profile, intent and reached-flow steps read of the file (item 56, sites
         # 9 and 10), with the engine's labelling detector as the parent picks it, enabled or not.
-        from cordon_scanner.engine.isolation.analysis_facts import WorkerAnalysis, WorkerSummaries
+        from cordon_scanner.engine.isolation.analysis_facts import (
+            CapabilityNames,
+            WorkerAnalysis,
+            WorkerSummaries,
+        )
 
         WorkerAnalysis.produce(unit, ctx, tuple(engine.detectors))
         WorkerSummaries.produce(unit)
+        CapabilityNames.produce(unit)
         return produced, windowed, intact, (acc.complete, tuple(acc.content_gaps))
 
     @staticmethod

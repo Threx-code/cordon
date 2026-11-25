@@ -643,7 +643,7 @@ rules:
     match:
       kind: regex
       patterns:
-        - '\bos\s*\.\s*(?:hostname|userInfo|homedir|networkInterfaces)\s*\('
+        - '\bos\s*\.\s*(?:hostname|userInfo|networkInterfaces)\s*\('
         - '\bprocess\s*\.\s*env\s*(?:\.\s*|\[\s*["''])(?:USERNAME|COMPUTERNAME|USERPROFILE|USERDOMAIN|HOSTNAME|LOGNAME)\b'
         # The module under another name: `const o = require('os')` and then `o.hostname()`, or
         # the calls destructured out of it. One letter was enough to hide the recon half of an
@@ -661,6 +661,12 @@ rules:
         # Imported by name, only once called: a module that imports `hostname` to type a value
         # or pass it on reads nothing (review 98 after4 A/B).
         - 'import\s{0,4}\{[^}]{0,120}\b(?:hostname|userInfo|networkInterfaces)\b[^}]{0,120}\}\s{0,4}from\s{0,4}["''](?:node:)?os["''][\s\S]{0,4000}?(?<![\w$.])(?:hostname|userInfo|networkInterfaces)\s{0,4}\('
+        # The home directory is identity only where its value is kept or passed on. As the base
+        # of a path (`path.join(os.homedir(), ".cache")`, `os.homedir() + "/.cache"`,
+        # `${os.homedir()}/.cache`) it says where a file goes, as a cache directory does in every
+        # release downloader; a credential file under it is the credential capability's. Last, so
+        # that the patterns above keep the numbers `tests/kits/regexkit.py` lists them by.
+        - '(?<!join\()(?<!resolve\()\bos\s*\.\s*homedir\s*\(\s*\)(?!\s*(?:\+\s*["''`]\s*[/\\]|\}\s*[/\\]))'
         # `os.platform()`, `os.arch()` and `process.cwd()` are deliberately absent.
         # Every bundler, test runner and postinstall build step in the ecosystem
         # calls them, and they say what kind of machine this is rather than which
@@ -674,7 +680,13 @@ rules:
         - "const { hostname, userInfo } = require('os');"
         - "import sys from 'node:os';\nconst who = sys.userInfo().username;"
         - "import { hostname, homedir } from 'os';\nconst h = hostname();"
+        - "const home = os.homedir();"
+        - "send(JSON.stringify({ home: os.homedir() }));"
       negative:
+        - "const p = path.join(os.homedir(), '.cache', 'tool');"
+        - "const p = path.resolve(os.homedir(), 'tool');"
+        - "const p = os.homedir() + '/.cache/tool';"
+        - "const p = `${os.homedir()}/.cache/tool`;"
         - "const p = os.platform();"
         - "const o = require('os');\nconst a = o.arch();"
         - "const u = new URL(x);\nconst h = u.hostname;"

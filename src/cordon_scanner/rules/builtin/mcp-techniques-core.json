@@ -1,0 +1,395 @@
+[
+ {
+  "rule_id": "SUSPECT.MCP.REVERSE_SHELL.001",
+  "family": "T6",
+  "title": "An MCP server's source opens a reverse shell",
+  "message": "The source of this MCP server attaches a shell to a network connection it opens itself: a `/dev/tcp` redirect, `nc -e`, a pty or a pair of piped streams bound to a socket. Nothing a tool server does needs a command prompt for someone else on the far end of a connection.",
+  "remediation": "Find who is on the other end of the connection. Do not use the server until it is explained.",
+  "patterns": [
+   "/dev/tcp/[\\w.:$\\[\\]{}-]{3,60}/\\d{1,5}",
+   "\\b(?:nc|ncat|netcat)\\b[^\\n]{0,40}\\s-[a-z]{0,3}e\\s+(?:/bin/|/usr/bin/)?(?:ba|z|da|k|c)?sh\\b",
+   "\\bmkfifo\\b[^\\n]{0,60}\\|\\s*(?:nc|ncat|netcat)\\b",
+   "System\\.Net\\.Sockets\\.TCPClient\\s*\\(",
+   "\\bpty\\.spawn\\(\\s*[\\\"'](?:/bin/|/usr/bin/)?(?:ba|z|da|k|c)?sh[\\\"']\\s*\\)",
+   "\\bsocket\\.socket\\([\\s\\S]{0,300}?os\\.dup2\\(\\s*\\w{1,20}\\.fileno\\(\\)\\s*,\\s*[012]\\s*\\)",
+   "\\.pipe\\(\\s*\\w{1,20}\\.stdin\\s*\\)[\\s\\S]{0,200}?\\.stdout\\s*\\.pipe\\(\\s*\\w{1,20}\\s*\\)",
+   "TcpStream::connect\\([\\s\\S]{0,400}?Command::new\\(\\s*\\\"(?:/bin/)?(?:ba)?sh\\\"",
+   "net\\.Dial\\([\\s\\S]{0,400}?exec\\.Command\\(\\s*\\\"(?:/bin/|/usr/bin/)?(?:ba|z|da|k|c)?sh\\\""
+  ],
+  "requires": [],
+  "unless": [],
+  "at_least": 1,
+  "severity": "MEDIUM",
+  "confidence": "MEDIUM"
+ },
+ {
+  "rule_id": "SUSPECT.MCP.BIND_SHELL.001",
+  "family": "T6",
+  "title": "An MCP server's source listens for connections and hands them a shell",
+  "message": "The source of this MCP server opens a listening socket and attaches a shell to whoever connects. That is a way in that is not the MCP protocol: anyone who can reach the port has a command prompt.",
+  "remediation": "Remove the listener and find out who connects to it.",
+  "patterns": [
+   "net\\.createServer\\([\\s\\S]{0,500}?(?:spawn|exec)\\(\\s*[\\\"'](?:/bin/|/usr/bin/)?(?:ba|z|da|k|c)?sh[\\\"']",
+   "\\.accept\\(\\)[\\s\\S]{0,300}?(?:os\\.dup2\\(|pty\\.spawn\\(\\s*[\\\"'](?:/bin/|/usr/bin/)?(?:ba|z|da|k|c)?sh)",
+   "net\\.Listen\\([\\s\\S]{0,500}?exec\\.Command\\(\\s*\\\"(?:/bin/|/usr/bin/)?(?:ba|z|da|k|c)?sh\\\"",
+   "TcpListener::bind\\([\\s\\S]{0,500}?Command::new\\(\\s*\\\"(?:/bin/|/usr/bin/)?(?:ba|z|da|k|c)?sh\\\""
+  ],
+  "requires": [],
+  "unless": [],
+  "at_least": 1,
+  "severity": "MEDIUM",
+  "confidence": "MEDIUM"
+ },
+ {
+  "rule_id": "SUSPECT.MCP.SHELL_PIPE_DOWNLOAD.001",
+  "family": "T6",
+  "title": "An MCP server's source downloads a script and runs it in one command",
+  "message": "The source of this MCP server contains a command that fetches something and runs it without ever keeping it: `curl ... | sh`, an encoded PowerShell command, `Invoke-Expression` on a download, `certutil -urlcache`, `mshta` on a URL. The code that runs is whatever the far end sends that day.",
+  "remediation": "Find what the command fetches and who controls it. Do not use the server until it is explained.",
+  "patterns": [
+   "\\b(?:curl|wget)\\b[^\\n|;]{0,200}\\|\\s*(?:sudo\\s+)?(?:(?:/bin/|/usr/bin/)?(?:ba|z|da|k|c)?sh|python[23]?|perl|ruby|node)\\b",
+   "\\bpowershell(?:\\.exe)?\\b[^\\n]{0,80}\\s-(?:e|enc|encodedcommand)\\s+[A-Za-z0-9+/=]{30,}",
+   "\\b(?:iex|invoke-expression)\\b[^\\n]{0,60}\\b(?:new-object\\s+(?:system\\.)?net\\.webclient|iwr|invoke-webrequest|irm|invoke-restmethod|downloadstring)\\b",
+   "\\bcertutil(?:\\.exe)?\\s+[^\\n]{0,40}-urlcache\\b",
+   "\\bbitsadmin(?:\\.exe)?\\s+/transfer\\b",
+   "\\bmshta(?:\\.exe)?\\s+https?://",
+   "\\bregsvr32(?:\\.exe)?\\s+/s\\s+/n\\s+/u\\s+/i:https?://"
+  ],
+  "requires": [],
+  "unless": [],
+  "at_least": 1,
+  "severity": "MEDIUM",
+  "confidence": "MEDIUM"
+ },
+ {
+  "rule_id": "SUSPECT.MCP.DETACHED_CHILD.001",
+  "family": "T6",
+  "title": "An MCP server's source starts a detached process from a temporary location",
+  "message": "The source of this MCP server starts a child process that outlives it and runs from a temporary directory: detached, with its output discarded. A tool server's helpers live in its own package and stop with it.",
+  "remediation": "Find what the process is and where it came from.",
+  "patterns": [
+   "\\bdetached\\s*:\\s*true\\b[\\s\\S]{0,300}?\\.unref\\(\\)",
+   "\\bstart_new_session\\s*=\\s*True\\b",
+   "\\bDETACHED_PROCESS\\b|\\bCREATE_NEW_PROCESS_GROUP\\b",
+   "\\bSetsid\\s*:\\s*true\\b|\\.process_group\\(\\s*0\\s*\\)",
+   "\\bnohup\\s+[^\\n]{0,120}&\\s*$"
+  ],
+  "requires": [
+   "os\\.tmpdir\\(\\)|[\\\"'`]/tmp/|\\\\Temp\\\\|%TEMP%|AppData|tempfile\\.|mkdtemp|/var/tmp/"
+  ],
+  "unless": [],
+  "at_least": 1,
+  "severity": "MEDIUM",
+  "confidence": "MEDIUM"
+ },
+ {
+  "rule_id": "SUSPECT.MCP.EMBEDDED_WASM.001",
+  "family": "T6",
+  "title": "An MCP server's source carries a WebAssembly module inside a string",
+  "message": "The source of this MCP server holds a WebAssembly module as a long base64 string and instantiates it. Code that is compiled and encoded cannot be read in a review; a tool server has no need to hide what its functions do.",
+  "remediation": "Extract the module and read what it imports and exports.",
+  "patterns": [
+   "[\\\"'`]AGFzbQ[A-Za-z0-9+/=]{300,}"
+  ],
+  "requires": [
+   "WebAssembly\\.(?:instantiate|compile|Module)\\w*\\s*\\(|wasmtime|wasmer|\\bwasm_bindgen\\b"
+  ],
+  "unless": [],
+  "at_least": 1,
+  "severity": "MEDIUM",
+  "confidence": "MEDIUM"
+ },
+ {
+  "rule_id": "SUSPECT.MCP.EXFIL_DNS.001",
+  "family": "T5",
+  "title": "An MCP server's source builds a DNS name out of data",
+  "message": "The source of this MCP server resolves a host name that is built from a value at run time, under a domain written in the code. A name lookup carries the value to whoever runs the domain's name server, through any firewall that lets DNS out.",
+  "remediation": "Find what goes into the name and who runs the domain. Do not use the server until it is explained.",
+  "patterns": [
+   "\\bdns\\.(?:promises\\.)?(?:resolve\\w*|lookup)\\(\\s*`[^`\\n]{0,120}\\$\\{[^}\\n]{1,80}\\}[^`\\n]{0,60}\\.[a-z0-9-]{1,40}\\.[a-z]{2,10}`",
+   "\\bdns\\.(?:promises\\.)?(?:resolve\\w*|lookup)\\(\\s*[\\w.\\[\\]]{1,60}\\s*\\+\\s*[\\\"']\\.[a-z0-9.-]{1,60}\\.[a-z]{2,10}[\\\"']",
+   "\\b(?:gethostbyname|getaddrinfo|resolver\\.(?:resolve|query))\\(\\s*f[\\\"'][^\\\"'\\n]{0,80}\\{[^}\\n]{1,80}\\}[^\\\"'\\n]{0,40}\\.[a-z0-9-]{1,40}\\.[a-z]{2,10}[\\\"']",
+   "\\b(?:gethostbyname|resolve|query)\\(\\s*[\\w.\\[\\]()]{1,60}\\s*\\+\\s*[\\\"']\\.[a-z0-9.-]{1,60}\\.[a-z]{2,10}[\\\"']",
+   "\\bnet\\.Lookup(?:HostIP|IP|Host|TXT)\\(\\s*(?:fmt\\.Sprintf\\(\\\"[^\\\"\\n]{0,60}%[a-zA-Z][^\\\"\\n]{0,60}\\.[a-z0-9-]{1,40}\\.[a-z]{2,10}\\\"|\\w{1,30}\\s*\\+\\s*\\\"\\.[a-z0-9.-]{1,60}\\\")",
+   "\\bformat!\\(\\s*\\\"\\{[^}\\\"\\n]{0,10}\\}(?:\\.[a-z0-9-]{1,40}){1,4}(?::\\d+)?\\\"[^\\n]{0,80}?\\)\\s*\\.to_socket_addrs\\("
+  ],
+  "requires": [],
+  "unless": [],
+  "at_least": 1,
+  "severity": "HIGH",
+  "confidence": "MEDIUM"
+ },
+ {
+  "rule_id": "SUSPECT.MCP.EXFIL_EMAIL.001",
+  "family": "T5",
+  "title": "An MCP server's source sends mail to an address written in the code",
+  "message": "The source of this MCP server sends e-mail through an SMTP client to a recipient written in the code rather than taken from an argument or from configuration. Mail to a fixed address is a one-way channel to whoever owns it.",
+  "remediation": "Find what is sent and whose address it is.",
+  "patterns": [
+   "\\b(?:to|recipients?|rcpt_to|rcpt)\\b\\s*[:=(,]\\s*\\[?\\s*[\\\"'`][\\w.+-]{1,64}@[\\w-]{1,63}(?:\\.[\\w-]{1,63}){1,4}[\\\"'`]",
+   "\\.(?:sendmail|send_message)\\(\\s*[^,\\n]{1,60},\\s*\\[?[\\\"'][\\w.+-]{1,64}@[\\w-]{1,63}(?:\\.[\\w-]{1,63}){1,4}[\\\"']",
+   "\\bSendMail\\(\\s*[^,\\n]{1,60},\\s*[^,\\n]{1,30},\\s*[^,\\n]{1,60},\\s*\\[\\]string\\{\\s*\\\"[\\w.+-]{1,64}@[\\w-]{1,63}(?:\\.[\\w-]{1,63}){1,4}\\\"",
+   "\\.to\\(\\s*\\\"[\\w.+-]{1,64}@[\\w-]{1,63}(?:\\.[\\w-]{1,63}){1,4}\\\"\\s*\\.parse"
+  ],
+  "requires": [
+   "\\bnodemailer\\b|\\bsmtplib\\b|\\bnet/smtp\\b|\\blettre\\b|\\bjavax\\.mail\\b|System\\.Net\\.Mail|\\bSmtpClient\\b"
+  ],
+  "unless": [
+   "example\\.(?:com|org|net)|noreply@|no-reply@"
+  ],
+  "at_least": 1,
+  "severity": "MEDIUM",
+  "confidence": "MEDIUM"
+ },
+ {
+  "rule_id": "SUSPECT.MCP.WEBSOCKET_C2.001",
+  "family": "T5",
+  "title": "An MCP server's source takes commands from a WebSocket it opens itself",
+  "message": "The source of this MCP server connects out to a WebSocket address written in the code and runs what arrives on it: commands, code or a program to start. A tool server answers its client; it does not wait for orders from a host of its own choosing.",
+  "remediation": "Find what the server receives on the socket and who sends it.",
+  "patterns": [
+   "(?:new\\s+WebSocket|websockets?\\.connect|ws\\.Dial|websocket\\.Dial|tungstenite::connect|WebSocketClient)\\s*\\(\\s*[`\\\"']wss?://[\\w.-]{3,80}[^\\n]{0,200}?(?:\\n[^\\n]{0,200}){0,12}?(?:on\\(\\s*[\\\"']message[\\\"']|onmessage|recv\\(|async\\s+for\\s+\\w+\\s+in\\s+\\w+|ReadMessage\\()[\\s\\S]{0,400}?(?:\\beval\\(|\\bexec\\w*\\(|spawn\\(|\\bsystem\\(|subprocess\\.|Command::new|exec\\.Command|new\\s+Function)",
+   "websocket\\.DefaultDialer\\.Dial\\(\\s*\\\"wss?://[\\w.-]{3,80}[\\s\\S]{0,300}?ReadMessage\\([\\s\\S]{0,300}?exec\\.Command\\(",
+   "\\bconnect_async\\(\\s*\\\"wss?://[\\w.-]{3,80}[\\s\\S]{0,500}?Command::new\\("
+  ],
+  "requires": [],
+  "unless": [],
+  "at_least": 1,
+  "severity": "HIGH",
+  "confidence": "MEDIUM"
+ },
+ {
+  "rule_id": "SUSPECT.MCP.CHARCODE_BUILD.001",
+  "family": "T12",
+  "title": "An MCP server's source spells a string out in character codes",
+  "message": "The source of this MCP server builds a string from a long run of numeric character codes. A word that is written as numbers cannot be found by reading or searching the code; it is how a command or an address is kept from a reviewer.",
+  "remediation": "Decode the numbers and read what they spell.",
+  "patterns": [
+   "String\\.fromCharCode\\(\\s*(?:\\d{2,3}\\s*,\\s*){11,}\\d{2,3}\\s*\\)",
+   "(?:chr\\(\\s*\\d{2,3}\\s*\\)\\s*\\+\\s*){9,}chr\\(\\s*\\d{2,3}\\s*\\)",
+   "\\bbytes\\(\\s*\\[\\s*(?:\\d{1,3}\\s*,\\s*){15,}\\d{1,3}\\s*\\]\\s*\\)\\s*\\.decode",
+   "\\bstring\\(\\s*\\[\\]byte\\{\\s*(?:\\d{1,3}\\s*,\\s*){15,}\\d{1,3}\\s*\\}\\s*\\)",
+   "\\bString::from_utf8\\(\\s*vec!\\[\\s*(?:\\d{1,3}\\s*,\\s*){15,}\\d{1,3}\\s*\\]\\s*\\)"
+  ],
+  "requires": [],
+  "unless": [],
+  "at_least": 1,
+  "severity": "HIGH",
+  "confidence": "MEDIUM"
+ },
+ {
+  "rule_id": "SUSPECT.MCP.ANALYSIS_TOOL_NAMES.001",
+  "family": "T12",
+  "title": "An MCP server's source lists the tools used to analyse malware",
+  "message": "The source of this MCP server names several debuggers, network monitors, sandboxes or virtual-machine products together. Code that looks for those tools is checking whether it is being watched, so as to behave differently when it is.",
+  "remediation": "Find what the code does when it finds one of them.",
+  "patterns": [
+   "\\bwireshark\\b",
+   "\\bprocmon\\b|\\bprocess\\s*monitor\\b",
+   "\\bfiddler\\b",
+   "\\bx(?:32|64)dbg\\b|\\bollydbg\\b|\\bidaq?(?:64)?\\b|\\bimmunity\\s*debugger\\b",
+   "\\bvboxservice\\b|\\bvmtoolsd\\b|\\bvboxguest\\b|\\bqemu-ga\\b|\\bvmwaretray\\b",
+   "\\bsandboxie\\b|\\bcuckoo\\b|\\bjoebox\\b|\\banubis\\b",
+   "\\bprocexp(?:64)?\\b|\\bprocess\\s*hacker\\b|\\bdnspy\\b|\\bpestudio\\b"
+  ],
+  "requires": [],
+  "unless": [],
+  "at_least": 3,
+  "severity": "HIGH",
+  "confidence": "MEDIUM"
+ },
+ {
+  "rule_id": "SUSPECT.MCP.RANSOM_NOTE.001",
+  "family": "T13",
+  "title": "An MCP server's source carries a ransom note",
+  "message": "The source of this MCP server contains the wording of a ransom demand: that files have been encrypted, a payment in cryptocurrency, a key to get them back. Whatever else the server does, it is built to tell its victim that.",
+  "remediation": "Do not run the server. Look for what it encrypts or deletes.",
+  "patterns": [
+   "\\b(?:your|all)\\s+(?:important\\s+)?(?:files|data|documents)\\s+(?:have\\s+been|are|were)\\s+(?:encrypted|locked)\\b",
+   "\\bsend\\s+(?:\\d+(?:\\.\\d+)?\\s*)?(?:btc|bitcoin|xmr|monero|eth)\\b",
+   "\\b(?:decrypt(?:ion)?\\s+key|private\\s+key)\\b[^\\n]{0,60}\\b(?:payment|pay\\b|bitcoin|btc|monero)",
+   "\\bREADME_?TO_?DECRYPT\\b|\\bHOW_?TO_?(?:RECOVER|DECRYPT)\\b|\\bDECRYPT_?INSTRUCTIONS?\\b"
+  ],
+  "requires": [],
+  "unless": [],
+  "at_least": 1,
+  "severity": "MEDIUM",
+  "confidence": "MEDIUM"
+ },
+ {
+  "rule_id": "SUSPECT.MCP.FORK_BOMB.001",
+  "family": "T13",
+  "title": "An MCP server's source contains a fork bomb",
+  "message": "The source of this MCP server contains a process that starts copies of itself without limit. It makes the machine unusable until it is restarted.",
+  "remediation": "Do not run the server.",
+  "patterns": [
+   ":\\(\\)\\s*\\{\\s*:\\s*\\|\\s*:\\s*&\\s*\\}\\s*;\\s*:",
+   "\\bwhile\\s*\\(?\\s*(?:True|true|1)\\s*\\)?\\s*:?\\s*\\{?\\s*(?:os\\.fork\\(\\)|fork\\(\\)|child_process\\.fork\\(|fork\\(\\s*process\\.argv|spawn\\(process\\.execPath)",
+   "\\b(?:for\\s*\\{|loop\\s*\\{)\\s*(?:let\\s+_\\s*=\\s*|_\\s*=\\s*)?(?:exec\\.Command|std::process::Command::new|Command::new)\\(\\s*\\\"/proc/self/exe\\\"",
+   "%0\\s*\\|\\s*%0"
+  ],
+  "requires": [],
+  "unless": [],
+  "at_least": 1,
+  "severity": "MEDIUM",
+  "confidence": "MEDIUM"
+ },
+ {
+  "rule_id": "SUSPECT.MCP.CONTAINER_ESCAPE.001",
+  "family": "T16",
+  "title": "An MCP server's source reaches out of its container",
+  "message": "The source of this MCP server contains a way out of a container onto the machine that runs it: `nsenter` into the host's first process, a privileged container with the host's root mounted, `chroot` into the host, a cgroup release agent. A tool server runs inside its own boundary.",
+  "remediation": "Do not run the server on a machine that holds anything of value.",
+  "patterns": [
+   "\\bnsenter\\b[^\\n]{0,40}(?:-t|--target)[ =]+1\\b",
+   "[\\\"']nsenter[\\\"']\\s*,\\s*[\\\"']--target[\\\"']\\s*,\\s*[\\\"']1[\\\"']",
+   "Command::new\\(\\s*\\\"nsenter\\\"\\s*\\)[^;\\n]{0,80}\\\"--target\\\"\\s*,\\s*\\\"1\\\"",
+   "[\\\"']-v[\\\"']\\s*,\\s*[\\\"']/:/(?:host|mnt|rootfs)[\\\"']",
+   "\\bdocker\\s+run\\b[^\\n]{0,120}--privileged\\b[^\\n]{0,120}-v\\s*/:/\\w+",
+   "\\bdocker\\b[^\\n]{0,80}\\brun\\b[^\\n]{0,120}-v\\s*/:/(?:host|mnt|rootfs)\\b",
+   "\\bchroot\\s+/(?:host|mnt|rootfs)\\b",
+   "\\brelease_agent\\b",
+   "/proc/1/root\\b"
+  ],
+  "requires": [],
+  "unless": [],
+  "at_least": 1,
+  "severity": "HIGH",
+  "confidence": "MEDIUM"
+ },
+ {
+  "rule_id": "SUSPECT.MCP.PRIVILEGE_GRANT.001",
+  "family": "T16",
+  "title": "An MCP server's source grants itself administrator rights",
+  "message": "The source of this MCP server gives a program or a user rights it was not given: a `sudoers` rule that needs no password, the set-user-ID bit on a file, or a password piped into `sudo -S`.",
+  "remediation": "Find which program or account gets the rights.",
+  "patterns": [
+   "\\bNOPASSWD\\s*:\\s*ALL\\b",
+   "\\bchmod\\s+(?:u\\+s|\\+s|[42][0-7]{3})\\b",
+   "\\becho\\s+[^\\n|]{1,80}\\|\\s*sudo\\s+-S\\b",
+   "\\bsetcap\\s+cap_(?:setuid|sys_admin|dac_override)",
+   "\\busermod\\s+-a?G\\s*(?:sudo|wheel|docker|root)\\b"
+  ],
+  "requires": [],
+  "unless": [],
+  "at_least": 1,
+  "severity": "MEDIUM",
+  "confidence": "MEDIUM"
+ },
+ {
+  "rule_id": "SUSPECT.MCP.SECURITY_TOOL_KILL.001",
+  "family": "T18",
+  "title": "An MCP server's source stops or blinds security software",
+  "message": "The source of this MCP server contains a command that kills, disables or excludes antivirus, endpoint protection or audit software. A tool server has no reason to switch off the machine's defences.",
+  "remediation": "Find which product is targeted and when the command runs.",
+  "patterns": [
+   "\\b(?:taskkill|killall|pkill)\\b[^\\n]{0,60}\\b(?:msmpeng|mssense|defender|clamd?|clamav|falcon|csfalcon|crowdstrike|sentinel|carbonblack|cbdefense|avast|avg|norton|mcafee|kaspersky|bitdefender|sophos|osqueryd?|auditd|sysmon|wazuh|ossec)",
+   "\\bSet-MpPreference\\b[^\\n]{0,80}-Disable(?:RealtimeMonitoring|IOAVProtection|BehaviorMonitoring)",
+   "\\bAdd-MpPreference\\b[^\\n]{0,80}-Exclusion(?:Path|Process|Extension)",
+   "\\bsc(?:\\.exe)?\\s+(?:stop|config)\\s+(?:windefend|sense|wscsvc|mpssvc)\\b",
+   "\\bauditctl\\s+-e\\s+0\\b",
+   "\\bsystemctl\\s+(?:stop|disable|mask)\\s+(?:auditd|falcon-sensor|osqueryd|wazuh-agent|clamav-daemon)"
+  ],
+  "requires": [],
+  "unless": [],
+  "at_least": 1,
+  "severity": "HIGH",
+  "confidence": "MEDIUM"
+ },
+ {
+  "rule_id": "SUSPECT.MCP.TRACE_ERASE.001",
+  "family": "T18",
+  "title": "An MCP server's source erases shell history or system logs",
+  "message": "The source of this MCP server clears the shell history, deletes system logs or empties the event log. A tool server leaves its own records alone; wiping the machine's is how an intruder removes evidence.",
+  "remediation": "Find what ran before the erase and what the server wanted to hide.",
+  "patterns": [
+   "\\bunset\\s+HISTFILE\\b|\\bHISTSIZE\\s*=\\s*0\\b|\\bhistory\\s+-c\\b",
+   "\\brm\\s+(?:-[a-z]+\\s+)*[^\\n]{0,40}\\.(?:bash|zsh|python)_history\\b",
+   ">\\s*~?/?[\\w./]{0,40}\\.(?:bash|zsh)_history\\b",
+   "\\bshred\\b[^\\n]{0,40}(?:history|/var/log/)",
+   "\\brm\\s+(?:-[a-z]+\\s+)*/var/log/\\S*",
+   "\\bwevtutil(?:\\.exe)?\\s+cl\\b|\\bClear-EventLog\\b|\\bRemove-EventLog\\b",
+   "\\bjournalctl\\s+--vacuum-(?:time|size)=\\d+\\w?\\b"
+  ],
+  "requires": [],
+  "unless": [],
+  "at_least": 1,
+  "severity": "MEDIUM",
+  "confidence": "MEDIUM"
+ },
+ {
+  "rule_id": "SUSPECT.MCP.LIBRARY_HIJACK.001",
+  "family": "T18",
+  "title": "An MCP server's source plants a library or a search path for other programs",
+  "message": "The source of this MCP server sets a library to be injected into other programs (`LD_PRELOAD`, `DYLD_INSERT_LIBRARIES`) or puts a temporary directory at the front of the program search path. Every program started afterwards runs what the server put there.",
+  "remediation": "Find what is loaded and which programs it reaches.",
+  "patterns": [
+   "\\b(?:LD_PRELOAD|DYLD_INSERT_LIBRARIES)[\\\"'\\]\\s]{0,4}[=:]\\s*[\\\"'`]?(?:/tmp/|/var/tmp/|\\.|~|\\$\\{?HOME|%TEMP%|[A-Za-z]:\\\\)",
+   "/etc/ld\\.so\\.preload\\b",
+   "\\bPATH\\s*[=:]\\s*[\\\"'`]?(?:/tmp|/var/tmp|\\.)[:;]",
+   "[\\\"'](?:LD_PRELOAD|DYLD_INSERT_LIBRARIES)[\\\"']\\s*,\\s*[\\\"'](?:/tmp/|/var/tmp/|\\.|~)"
+  ],
+  "requires": [],
+  "unless": [],
+  "at_least": 1,
+  "severity": "MEDIUM",
+  "confidence": "MEDIUM"
+ },
+ {
+  "rule_id": "SUSPECT.MCP.RECON_BATTERY.001",
+  "family": "T14",
+  "title": "An MCP server's source runs several commands that survey the machine",
+  "message": "The source of this MCP server runs commands whose only use is to learn about the machine and its network: who is logged in, the host and operating system, interfaces, neighbours, open connections, running programs, accounts, or a scan of the local network. A tool server asks for what its tool needs, not for a survey. Reported, not blocking: on its own a survey harms nothing, and it is the first step of what follows.",
+  "remediation": "Find where the output goes.",
+  "patterns": [
+   "[\\\"'`]\\s*whoami(?:\\s+/all)?\\s*[\\\"'`]",
+   "[\\\"'`]\\s*(?:uname\\s+-a|hostnamectl|systeminfo)\\s*[\\\"'`]|[\\\"']uname[\\\"']\\s*,\\s*[\\\"']-a[\\\"']|[\\\"'](?:hostnamectl|systeminfo)[\\\"']",
+   "[\\\"'`]\\s*cat\\s+/etc/os-release\\s*[\\\"'`]|[\\\"']cat[\\\"']\\s*,\\s*[\\\"']/etc/os-release[\\\"']",
+   "[\\\"'`]\\s*(?:ifconfig|ipconfig(?:\\s+/all)?|ip\\s+(?:a|addr)(?:\\s+show)?)\\s*[\\\"'`]|[\\\"'](?:ifconfig|ipconfig)[\\\"']",
+   "[\\\"'`]\\s*(?:arp\\s+-a|netstat(?:\\s+-[a-z]+)?|ss\\s+-[a-z]+)\\s*[\\\"'`]|[\\\"']arp[\\\"']\\s*,\\s*[\\\"']-a[\\\"']|[\\\"']arp[\\\"']\\)\\s*\\.arg\\(\\s*[\\\"']-a[\\\"']|[\\\"']netstat[\\\"']",
+   "[\\\"'`]\\s*(?:tasklist(?:\\s+/v)?|ps\\s+aux|ps\\s+-ef)\\s*[\\\"'`]|[\\\"']ps[\\\"']\\s*,\\s*[\\\"']aux[\\\"']|[\\\"']ps[\\\"']\\)\\s*\\.arg\\(\\s*[\\\"']aux[\\\"']|[\\\"']tasklist[\\\"']",
+   "[\\\"'`]\\s*wmic\\s+product\\b|[\\\"']wmic[\\\"']\\s*,\\s*[\\\"']product[\\\"']|[\\\"']wmic[\\\"']\\)\\s*\\.args?\\(\\s*\\[?\\s*[\\\"']product[\\\"']|[\\\"'`]\\s*(?:dpkg\\s+-l|rpm\\s+-qa)\\s*[\\\"'`]",
+   "[\\\"'`]\\s*(?:net\\s+user|net\\s+localgroup\\s+administrators|cat\\s+/etc/passwd|last(?:\\s+-n\\s+\\d+)?)\\s*[\\\"'`]|[\\\"']net[\\\"']\\s*,\\s*[\\\"']user[\\\"']|[\\\"']net[\\\"']\\)\\s*\\.arg\\(\\s*[\\\"']user[\\\"']|[\\\"']cat[\\\"']\\s*,\\s*[\\\"']/etc/passwd[\\\"']|[\\\"']last[\\\"']\\s*,\\s*[\\\"']-n[\\\"']|[\\\"']last[\\\"']\\)\\s*\\.args?\\(|read_to_string\\(\\s*[\\\"']/etc/passwd[\\\"']",
+   "[\\\"'`]\\s*(?:nmap|masscan)\\b[^\\\"'`\\n]{0,80}[\\\"'`]|[\\\"'](?:nmap|masscan)[\\\"']"
+  ],
+  "requires": [],
+  "unless": [],
+  "at_least": 2,
+  "severity": "MEDIUM",
+  "confidence": "MEDIUM"
+ },
+ {
+  "rule_id": "SUSPECT.MCP.C2_TELEGRAM.001",
+  "family": "T19",
+  "title": "An MCP server's source takes its orders from a Telegram bot",
+  "message": "The source of this MCP server polls a Telegram bot for new messages and runs code or commands in the same file. A chat becomes the control channel: whoever writes to the bot decides what the server does.",
+  "remediation": "Find what the server does with a message. Do not use the server until it is explained.",
+  "patterns": [
+   "api\\.telegram\\.org/bot[^\\n]{0,120}getUpdates|\\.getUpdates\\(|get_updates\\(|\\bstart_polling\\(|bot\\.on\\(\\s*[\\\"']message[\\\"']"
+  ],
+  "requires": [
+   "\\b(?:eval|exec|execSync|spawn|system|subprocess\\.\\w+|check_output|popen|Popen|child_process)\\s*\\("
+  ],
+  "unless": [],
+  "at_least": 1,
+  "severity": "HIGH",
+  "confidence": "MEDIUM"
+ },
+ {
+  "rule_id": "SUSPECT.MCP.C2_DNS_TXT.001",
+  "family": "T19",
+  "title": "An MCP server's source takes its orders from a DNS text record",
+  "message": "The source of this MCP server reads a DNS TXT record and runs code or a command in the same file. A text record is a channel an attacker updates at will and a firewall that blocks web traffic still lets through.",
+  "remediation": "Find which name is read and what is done with the answer.",
+  "patterns": [
+   "\\bdns\\.(?:promises\\.)?resolveTxt\\(|\\bresolve\\(\\s*[^,)\\n]{1,80},\\s*[\\\"']TXT[\\\"']\\s*\\)|\\bquery\\(\\s*[^,)\\n]{1,80},\\s*[\\\"']TXT[\\\"']\\s*\\)|\\bnet\\.LookupTXT\\(|\\.txt_lookup\\(|\\bnslookup\\s+-(?:q|type)=txt\\b"
+  ],
+  "requires": [
+   "\\b(?:eval|exec|execSync|spawn|system|subprocess\\.\\w+|check_output|popen|Popen)\\s*\\(|exec\\.Command\\(|Command::new\\("
+  ],
+  "unless": [],
+  "at_least": 1,
+  "severity": "MEDIUM",
+  "confidence": "MEDIUM"
+ }
+]

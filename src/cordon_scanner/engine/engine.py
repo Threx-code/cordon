@@ -43,13 +43,14 @@ from cordon_scanner.engine.isolation.documents import Documents, PendingHooks
 from cordon_scanner.engine.isolation.expander import ArchiveExpander
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.archive_stages import ArchiveStages
+from cordon_scanner.engine.pipeline.ceilings import Ceilings
 from cordon_scanner.engine.pipeline.constants import REPOSITORY_SCOPE
 from cordon_scanner.engine.pipeline.coverage import Coverage, CoverageLedger
 from cordon_scanner.engine.pipeline.dependencies import Dependencies
 from cordon_scanner.engine.pipeline.detection import Detection
 from cordon_scanner.engine.pipeline.facts import TreeFacts
 from cordon_scanner.engine.pipeline.graph import Graph, ParsedManifests
-from cordon_scanner.engine.pipeline.hooks import Hooks
+from cordon_scanner.engine.pipeline.hooks import BuildRoots, Hooks
 from cordon_scanner.engine.pipeline.images import Images
 from cordon_scanner.engine.pipeline.stages import ScanStages
 from cordon_scanner.engine.pipeline.units import Units
@@ -63,7 +64,6 @@ from cordon_scanner.foundation.files.walk import (
     Walker,
 )
 from cordon_scanner.foundation.models import Hook, Severity
-from cordon_scanner.foundation.paths import ContainerPaths
 from cordon_scanner.foundation.results import (
     LanguageStat,
     OperationalFinding,
@@ -74,6 +74,7 @@ from cordon_scanner.foundation.results import (
 )
 from cordon_scanner.foundation.scoring import RiskScorer
 from cordon_scanner.rules.loader import RuleLoader, RuleSet
+from cordon_scanner.rules.pack_signatures import PackSignatures
 from cordon_scanner.sources.base import FileSource, WorkingTreeSource
 from cordon_scanner.sources.registry import ArchiveReader
 from cordon_scanner.version import SCHEMA_VERSION, __version__
@@ -277,6 +278,8 @@ class Engine:
                 rules_evaluated=len(self.rules),
                 duration_ms=int((time.monotonic() - started) * 1000),
                 detector_cpu_ms=DetectorClock.milliseconds(),
+                view_files=DetectorClock.counts(),
+                **Ceilings.delivered_gaps(),
             ),
             **acc.coverage(),
             schema_version=SCHEMA_VERSION,
@@ -340,7 +343,13 @@ class Engine:
         findings, verdict, dependencies = self.stages.fold_and_judge(acc, units, ctx, dependencies)
         result = ScanResult(
             findings=findings,
+            unfiltered=tuple(findings),
+            capabilities=acc.capability_names(),
             verdict=verdict,
+            places=ctx.places(),
+            reach=acc.reach,
+            destinations=acc.destinations(),
+            **acc.collected(),
             repository=inventory,
             dependencies=dependencies,
             sources=Graph.configured_sources(units),
@@ -358,6 +367,8 @@ class Engine:
                 rules_evaluated=len(self.rules),
                 duration_ms=int((time.monotonic() - started) * 1000),
                 detector_cpu_ms=DetectorClock.milliseconds(),
+                view_files=DetectorClock.counts(),
+                **Ceilings.delivered_gaps(),
             ),
             **acc.coverage(),
             schema_version=SCHEMA_VERSION,
@@ -430,18 +441,34 @@ class Engine:
                 )
             )
         self._reuse_status(acc)
-        return status.to_dict()
+        return {**status.to_dict(), "delivered_packs": PackSignatures.delivered_status()}
 
     def _reuse_status(self, acc: Accumulator) -> None:
         """The code-reuse index (item 54), when this build ships one: an index that is malformed,
         unsorted or past its age is not used, and that is an advisory gap, as stale intel is. A build
-        with none has no reuse check and nothing to say, as a build with no feed has no age check."""
+        with none has no reuse check and nothing to say, as a build with no feed has no age check.
+        Past its age in a build with no feed it is used, and its age is a low note, not a gap: there
+        is nothing newer to fetch (`ReuseIndex._load`, owner 2026-11-14)."""
         from cordon_scanner.intel.registry import ReuseIndex
 
         if self.config.max_intel_age == 0:
             return
         _, problem = ReuseIndex.shipped()
         if not problem:
+            return
+        if problem.startswith("aged"):
+            acc.append(
+                OperationalFinding.build(
+                    path=REPOSITORY_SCOPE,
+                    rule_id="OPERATIONAL.INTEL.REUSE_AGED",
+                    message=(
+                        f"The index of known malware code files was used, but {problem.split(': ', 1)[-1]}"
+                        ": a file copied from a campaign seen since it was built would not be matched."
+                    ),
+                    remediation="Upgrade Cordon: each release ships a current index.",
+                    severity=Severity.LOW,
+                )
+            )
             return
         acc.advisory_complete = False
         stale = problem.startswith("stale")
@@ -530,22 +557,22 @@ class Engine:
         ContextStage.report_unread(acc)
         acc.ended_late(ctx, path.name)
         acc.explain_incomplete()
+        findings = tuple(acc.findings)
         result = ScanResult(
-            findings=tuple(acc.findings),
+            findings=findings,
+            unfiltered=findings,
+            capabilities=acc.capability_names(),
             verdict=verdict,
+            places=ctx.places(),
+            reach=acc.reach,
+            destinations=acc.destinations(),
+            **acc.collected(),
             # What installing it installs, then what only files outside that set record.
             dependencies=(*dependencies, *acc.not_installed),
-            repository=Repository(root=str(path), file_count=acc.files_scanned),
+            repository=ArchiveStages.repository(path, acc, ctx),
             target_kind=target_kind,
             image=image.identity.to_dict() if image is not None else None,
-            stats=ScanStats(
-                files_scanned=acc.files_scanned,
-                bytes_scanned=acc.bytes_scanned,
-                dependencies=len(dependencies),
-                rules_evaluated=len(self.rules),
-                duration_ms=int((time.monotonic() - started) * 1000),
-                detector_cpu_ms=DetectorClock.milliseconds(),
-            ),
+            stats=ArchiveStages.stats(acc, started, len(self.rules), len(dependencies)),
             **acc.coverage(),
             schema_version=SCHEMA_VERSION,
             engine_version=__version__,
@@ -722,8 +749,7 @@ class Engine:
                     else entry.rel_path
                 )
 
-            if ContainerPaths.basename(entry.rel_path) == "__init__.py":
-                package_directories.add(entry.rel_path.rpartition("/")[0])
+            BuildRoots.note(entry.rel_path, package_directories)
 
             hooks.extend(Hooks.hooks_for(entry.rel_path))
 

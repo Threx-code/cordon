@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import ast
 import re
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.analysis.python.pyast import CREDENTIAL_VARIABLE
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
@@ -22,8 +22,12 @@ from cordon_scanner.detect.base import (
 )
 from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.detect.code.capability.load_path import LoadPath
+from cordon_scanner.detect.code.store_flow import BoundClient
 from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
+from cordon_scanner.foundation.once import OneOff
+from cordon_scanner.foundation.paths import PackagePaths
 
 if TYPE_CHECKING:
     from cordon_scanner.foundation.content import FileContent
@@ -150,6 +154,26 @@ class LegitimateUse:
         ".chroot",
     )
 
+    TEMPLATE_OR_MARKUP_SUFFIXES: ClassVar[tuple[str, ...]] = (
+        ".html",
+        ".htm",
+        ".j2",
+        ".jinja",
+        ".jinja2",
+        ".tmpl",
+        ".mustache",
+        ".hbs",
+    )
+    """Text a template engine or a browser renders: never executed as code at scan time, even when
+    what it renders is a script run later (reviews/pypi-98/20, shape C). Read only for
+    `SUSPECT.EXFIL.CREDENTIAL_STORE.001`; executable formats (`.sh`, `.ps1`, `.bat`, Makefile,
+    Dockerfile, CI steps) are not in it."""
+
+    @staticmethod
+    def is_template_or_markup(path: str) -> bool:
+        name = path.rpartition("!")[2].rpartition("/")[2].lower()
+        return name.endswith(LegitimateUse.TEMPLATE_OR_MARKUP_SUFFIXES)
+
     @staticmethod
     def is_hand_run_provisioning(path: str, language: str | None) -> bool:
         name = path.rpartition("!")[2].rpartition("/")[2].lower()
@@ -197,6 +221,7 @@ class LegitimateUse:
         try:
             tree = PythonSyntax.shared(content.text)
         except (SyntaxError, ValueError, RecursionError):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return False
 
         parents: dict[int, ast.AST] = {}
@@ -356,6 +381,31 @@ class LegitimateUse:
             return False
         return DownloadFlow.runs_download(content.text, unit.language) == []
 
+    @staticmethod
+    def reaches_no_sink(unit: FileUnit, ctx: ScanContext, hits: list[CapabilityHit]) -> bool:
+        """A Python module a consumer imports (no install hook, no consumer install) in which nothing
+        downloaded is run and no downloaded value leaves the file, and no received command is run
+        (reviews/pypi-98/22, shape A). Unresolved is False: the package's calls not all known, a file that
+        does not parse, another language. A decoded payload or an unpacked one that is then run is not
+        "nothing downloaded runs": a window with a decode, or a spawn beside an unpack, keeps its grade."""
+        from cordon_scanner.detect.code.download_flow import DownloadFlow
+
+        path, present = unit.content.path, {hit.capability for hit in hits}
+        return (
+            not ctx.in_install_hook(path)
+            and not ctx.in_consumer_install(path)
+            and not ctx.cross_file_unresolved
+            and not any("RECEIVED_RUN" in hit.rule_id for hit in hits)
+            and Capability.DECODE not in present
+            and not {Capability.SPAWN, Capability.DECOMPRESS} <= present
+            and Capability.FETCH_EXEC not in present
+            and DownloadFlow.nothing_reaches_a_sink(
+                unit.content.text,
+                unit.language,
+                frozenset(hit.line for hit in hits if hit.capability is Capability.EGRESS),
+            )
+        )
+
     _SETTING_READ: ClassVar[re.Pattern[str]] = re.compile(
         r"""^\s{0,8}(?:
             process\.env\.(?P<dotted>[A-Za-z_][A-Za-z0-9_]{0,80})\b(?!\s{0,4}[\[(])
@@ -396,7 +446,21 @@ class LegitimateUse:
         if hit.rule_id.endswith("_SENT") or "PUBLIC_IP" in hit.rule_id:
             return False
         end = min(hit.byte_end, hit.byte_start + 240)
-        text = content.raw[hit.byte_start : max(end, hit.byte_start + 1)].decode("utf-8", "replace")
+        own = content.raw[hit.byte_start : max(end, hit.byte_start + 1)].decode("utf-8", "replace")
+        if cls._names_a_setting(own):
+            return True
+        # The read's name is the literal after the call's opening quote, and a pattern may stop before it
+        # (`std::env::var("`, `GetEnvironmentVariable("`): it is read from the rest of the hit's line.
+        # A rule reports the FIRST match of a file as its hit and the file's other matches are not hits,
+        # so the first read being a setting says nothing of the second: every match of the rule must be one.
+        if not cls._names_a_setting(cls._line_from(content.raw, hit.byte_start)):
+            return False
+        return cls._every_match_names_a_setting(content, hit)
+
+    @classmethod
+    def _names_a_setting(cls, text: str) -> bool:
+        """The text begins with a read of one environment variable by its literal name that is not another
+        service's credential, or with a lookup of what the machine is (`_PLATFORM_LOOKUP`)."""
         if cls._PLATFORM_LOOKUP.match(text):
             return True
         read = cls._SETTING_READ.match(text)
@@ -406,6 +470,36 @@ class LegitimateUse:
 
         name = read.group("dotted") or read.group("quoted") or ""
         return not any(pattern.match(name) for pattern, _ in CREDENTIAL_HOMES)
+
+    @staticmethod
+    def _line_from(raw: bytes, start: int) -> str:
+        """The rest of the line from `start`, at most 240 bytes."""
+        return raw[start : start + 240].split(b"\n", 1)[0].decode("utf-8", "replace")
+
+    #: How many matches of a rule are read for `_every_match_names_a_setting`; more is not a notifier.
+    MATCH_LIMIT: ClassVar[int] = 400
+
+    @staticmethod
+    @OneOff.cache
+    def _builtin_rules() -> dict[str, Any]:
+        from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+        return {rule.id: rule for rule in RuleSet(RuleLoader.load_builtin()).rules}
+
+    @classmethod
+    def _every_match_names_a_setting(cls, content: FileContent, hit: CapabilityHit) -> bool:
+        """Whether every match of the hit's rule in the file begins a read of a named setting. A rule
+        that is not a bundled one, or has no pattern, or matches too often, is not read: loot."""
+        rule = cls._builtin_rules().get(hit.rule_id)
+        regex = rule.match.regex if rule is not None else None
+        if regex is None:
+            return False
+        for number, found in enumerate(regex.finditer(content.raw)):
+            if number >= cls.MATCH_LIMIT or not cls._names_a_setting(
+                cls._line_from(content.raw, found.start())
+            ):
+                return False
+        return True
 
     #: Credentials whose issuer is known, and the hosts that issue them.
     #:
@@ -424,6 +518,35 @@ class LegitimateUse:
     )
 
     HOST_IN_URL = re.compile(rb"https?://([A-Za-z0-9._-]{4,253})")
+
+    @staticmethod
+    @OneOff.cache
+    def issuer_vocabulary() -> tuple[tuple[tuple[bytes, ...], tuple[bytes, ...]], ...]:
+        """Services that issue an API key, and the hosts that key is for (`detect/data/credential-issuers.json`):
+        a variable named `DEEPSEEK_API_KEY` is sent to `api.deepseek.com` to call that service, and that is
+        all a key like it is for. Data, not code: a row is a vocabulary change. Code-hosting and package
+        registry tokens are not in it (a token against its own forge is how a worm creates repositories and
+        publishes), and neither is any chat or webhook endpoint (`chat-endpoints.json`: the standard drop
+        points of stolen data, which a `.env` shipped in a package can name); a test pins both."""
+        rows = ScannedJson.loads(
+            (PackagePaths.data("detect") / "credential-issuers.json").read_text(encoding="utf-8")
+        )
+        return tuple(
+            (
+                tuple(str(name).encode() for name in row["names"]),
+                tuple(str(host).encode() for host in row["hosts"]),
+            )
+            for row in rows
+        )
+
+    #: Reads of the whole environment: a key sent with these beside it is not a key sent alone.
+    WHOLE_ENVIRONMENT = re.compile(
+        rb"\bdict\s*\(\s*os\s*\.\s*environ\s*\)|\bos\s*\.\s*environ\s*\.\s*(?:copy|items|keys|values)\s*\("
+        rb"|\bjson\s*\.\s*dumps\s*\(\s*(?:dict\s*\(\s*)?os\s*\.\s*environ|\*\*\s*os\s*\.\s*environ"
+        rb"|\.\.\.\s*process\s*\.\s*env\b|\bprocess\s*\.\s*env\s*[),]"
+        rb"|Object\s*\.\s*(?:entries|keys|values|assign)\s*\([^)]{0,20}process\s*\.\s*env\b"
+        rb"|JSON\s*\.\s*stringify\s*\(\s*process\s*\.\s*env\b"
+    )
 
     #: A credential store, and the clients that store exists to serve.
     STORE_CLIENTS: ClassVar[tuple[tuple[re.Pattern[bytes], re.Pattern[bytes]], ...]] = (
@@ -460,7 +583,7 @@ class LegitimateUse:
     ) -> bool:
         """Whether a credential store here is read only by the client it belongs to.
 
-        A deploy tool loads `~/.ssh/id_ed25519` into paramiko and connects; an S3 helper lets
+        A deploy tool loads an SSH private key into paramiko and connects; an S3 helper lets
         boto3 read `~/.aws/credentials`. The key goes where it authenticates, which is what it
         is for (review 98: SSH and cloud tools blocked by `SUSPECT.EXFIL.CREDENTIAL_STORE.001`).
         Every store named must belong to a family here, and EVERY outbound call in the window
@@ -482,6 +605,7 @@ class LegitimateUse:
         return all(
             any(
                 client.search(content.raw[hit.byte_start : hit.byte_end + 40])
+                or BoundClient.configured(content.text, hit.line, client)
                 for client in families
             )
             for hit in egress
@@ -532,6 +656,10 @@ class LegitimateUse:
         for names, owned in cls.ISSUER_HOSTS:
             if any(name in text for name in names):
                 issuers.append(owned)
+        if not cls._holds_more_than_a_key(text):
+            for names, owned in cls.issuer_vocabulary():
+                if any(name in text for name in names):
+                    issuers.append(owned)
         if not issuers:
             return False
 
@@ -541,6 +669,17 @@ class LegitimateUse:
             )
 
         return all(owned_by_some_issuer(host) for host in hosts)
+
+    @classmethod
+    def _holds_more_than_a_key(cls, text: bytes) -> bool:
+        """Whether the window also reads the whole environment or a credential store on disk: what is sent
+        is then more than the one key, and the vocabulary of issuers does not excuse it."""
+        from cordon_scanner.analysis.shared.credential_homes import SecretFlow
+
+        if cls.WHOLE_ENVIRONMENT.search(text):
+            return True
+        decoded = text.decode("utf-8", "replace")
+        return any(pattern.search(decoded) for pattern in SecretFlow.STORES.values())
 
 
 __all__ = ["LegitimateUse"]

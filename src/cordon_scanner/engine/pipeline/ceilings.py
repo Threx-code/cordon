@@ -69,6 +69,39 @@ class Ceilings:
         return path.rsplit("!", 1)[-1].lower().endswith(Ceilings._VERDICT_SOURCES)
 
     @staticmethod
+    def rule_gaps() -> dict[str, str] | None:
+        """The delivered rules a scan could not evaluate, by rule id and reason, for its stats (`FeedGaps.skipped`)."""
+        from cordon_scanner.rules.feed_gaps import FeedGaps
+
+        return FeedGaps.skipped() or None
+
+    @staticmethod
+    def rules_demoted() -> dict[str, str] | None:
+        """The delivered rules a scan ran as warnings, by rule id and reason, for its stats (`FeedGaps.demoted`)."""
+        from cordon_scanner.rules.feed_gaps import FeedGaps
+
+        return FeedGaps.demoted() or None
+
+    @staticmethod
+    def delivered_gaps() -> dict[str, Any]:
+        """What the scan could not use of what the feed delivered, as the stats fields that carry it: the models it turned down and the rules it could not evaluate."""
+        from cordon_scanner.rules.feed_gaps import FeedGaps
+
+        return {
+            "model_refusals": Ceilings.model_refusals(),
+            "rule_gaps": Ceilings.rule_gaps(),
+            "rules_demoted": Ceilings.rules_demoted(),
+            "feed": FeedGaps.feed(),
+        }
+
+    @staticmethod
+    def model_refusals() -> dict[str, str] | None:
+        """The delivered models a scan turned down and why, for its stats (`Verdict.model_refusals`)."""
+        from cordon_scanner.decide.verdict import Verdict
+
+        return Verdict.model_refusals()
+
+    @staticmethod
     def verdict_manifests(units: Sequence[FileUnit]) -> dict[str, bytes]:
         """The manifests the package verdict reads, by path."""
         return {
@@ -97,6 +130,8 @@ class Ceilings:
         """The package verdict over everything this scan found (`core/verdict.py`), then the
         intent layer over what the package's code does (`core/intent.py`). `repository`: the
         target is no published package, so a MALICIOUS finding keeps its grade."""
+        from cordon_scanner.decide.code_and_instructions import CodeAndInstructions
+        from cordon_scanner.decide.composites import PackageComposites
         from cordon_scanner.decide.intent import Intent
         from cordon_scanner.decide.verdict import Verdict
 
@@ -133,6 +168,19 @@ class Ceilings:
         area = str(verdict.get("area", ""))
         review = Intent.review(verdict.get("package", {}), area, intent)
         Ceilings.review_verdict(review, verdict, graded, area)
+        # After everything else, over what the rules left: a package that publishes itself, decodes
+        # data to run it and fetches code to run it spreads (`decide/composites.py`).
+        worm = PackageComposites.worm(graded)
+        if worm is not None:
+            graded.append(worm)
+        # An injection phrase and the learned reading of the skill's instructions agreeing: two weak
+        # readers, neither blocking alone (`decide/composites.py`, reviews/mcp-98/21 lever A(1)).
+        injection = PackageComposites.corroborated_injection(graded)
+        if injection is not None:
+            graded.append(injection)
+        # An agent-family finding in code and an order in an instruction file of the same package: two
+        # readings of different files agreeing (`decide/code_and_instructions.py`).
+        graded.extend(CodeAndInstructions.places(graded))
         return graded, verdict
 
     @staticmethod
@@ -546,7 +594,7 @@ class Ceilings:
 
         A shell, PowerShell or batch script runs only when something starts it. No installer
         starts one on its own: a hook that does is in `runs` (the install-hook paths), and code
-        or a manifest that does names it. A script that is neither -- a `curl | sh` release
+        or a manifest that does names it. A script that is neither -- a pipe-to-shell release
         installer, a CI helper -- is the maintainers' (review 98: 103 of 293 benign units
         blocked by a dropper alone, against 0 of 44 malware samples). A conda link script runs at
         install and keeps its grade.

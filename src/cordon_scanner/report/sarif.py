@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Any
 from cordon_scanner.foundation.models import Category, Severity
 from cordon_scanner.foundation.scoring import RiskScorer
 from cordon_scanner.report.base import BaseReporter, Escape, ReportOptions
+from cordon_scanner.report.claims import Claims
 from cordon_scanner.version import __version__
 
 if TYPE_CHECKING:
@@ -124,6 +125,7 @@ class SarifReporter(BaseReporter):
                 "rulepackHash": result.rulepack_hash,
                 "configHash": result.config_hash,
                 "complete": result.complete,
+                **self._rule_gaps(result),
             },
         }
 
@@ -279,6 +281,15 @@ class SarifReporter(BaseReporter):
         if f.evidence.match_hash:
             entry["properties"]["matchHash"] = f.evidence.match_hash
 
+        if f.assurance:
+            entry["properties"]["assurance"] = f.assurance
+            entry["properties"]["assuranceHint"] = f.assurance_hint
+
+        claim = Claims.of_finding(f)
+        if claim is not None:
+            # What the finding claims: malware, risky behaviour or policy (`report/claims.py`).
+            entry["properties"]["claim"] = str(claim)
+
         if f.is_suppressed and f.suppressed:
             entry["suppressions"] = [
                 {
@@ -293,6 +304,20 @@ class SarifReporter(BaseReporter):
             ]
 
         return entry
+
+    @staticmethod
+    def _rule_gaps(result: ScanResult) -> dict[str, Any]:
+        """The delivered rules the scan could not evaluate, as a count and each rule id with its reason; nothing when there were none."""
+        found: dict[str, Any] = {}
+        for key, record in (
+            ("ruleGaps", result.stats.rule_gaps),
+            ("ruleDemotions", result.stats.rules_demoted),
+        ):
+            if record:
+                found[key] = {"count": len(record), "rules": dict(sorted(record.items()))}
+        if result.stats.feed:
+            found["feed"] = dict(result.stats.feed)
+        return found
 
     @staticmethod
     def _notification(f: Finding) -> dict[str, Any]:

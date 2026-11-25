@@ -19,7 +19,7 @@
 
     docker run --rm -v "$PWD:/s:ro" -v <devset dir>:/o -v <out>:/out python:3.12-slim sh -c \\
       'pip -q install scikit-learn==1.5.2 numpy==2.1.2 scipy==1.14.1 && \\
-       PYTHONPATH=/s/src python /s/bench/mcp_model_train.py /o/devset.jsonl --out /out'
+       PYTHONPATH=/s/src python /s/bench/model/train.py --area mcp /o/devset.jsonl --out /out'
 """
 
 from __future__ import annotations
@@ -174,4 +174,9 @@ class McpModelTrainer:
 
 
 if __name__ == "__main__":
+    try:
+        from bench.model.area import EntryPoint
+    except ImportError:  # run as a script from this directory
+        from area import EntryPoint
+    EntryPoint.require(__file__)
     McpModelTrainer.main()

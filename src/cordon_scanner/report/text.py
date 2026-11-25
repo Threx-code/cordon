@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 
 from cordon_scanner.foundation.models import Category, Severity
 from cordon_scanner.report.base import BaseReporter, Escape, ReportOptions
+from cordon_scanner.report.claims import Claims
 from cordon_scanner.version import __version__
 
 if TYPE_CHECKING:
@@ -209,6 +210,12 @@ class TextReporter(BaseReporter):
         blocking = opts.blocking or frozenset()
         gate = [f for f in findings if f.fingerprint in blocking]
         yield from self._grouped(gate, color)
+        claim = Claims.of_unit(gate)
+        if claim is not None:
+            # What the block means, from the evidence of the findings that cause it: malware,
+            # risky behaviour or policy (`report/claims.py`). Blocked the same way either way.
+            yield b"\n"
+            yield self._line(f"Blocked as: {claim.text}", color)
         review = [
             f for f in findings if f.fingerprint not in blocking and f.severity > Severity.INFO
         ]
@@ -294,6 +301,9 @@ class TextReporter(BaseReporter):
             rest = headline[len(path) :].lstrip(": ")
             headline = (rest[:1].upper() + rest[1:]) if rest else headline
 
+        if f.assurance:
+            headline = f"[{f.assurance}] {headline}"
+
         head = f" {DIM}{where:<{position}}{RESET} {self._badge(f.severity)}"
 
         if room >= MIN_MESSAGE_ROOM:
@@ -350,7 +360,13 @@ class TextReporter(BaseReporter):
 
         yield self._line(f"  {f.location}", color)
         meta = f"  {DIM}{f.category} · confidence {f.confidence} · detector {f.detector}{RESET}"
+        if f.assurance:
+            meta = meta.replace(
+                f" · detector {f.detector}", f" · {f.assurance} · detector {f.detector}"
+            )
         yield self._line(meta, color)
+        if f.assurance_hint:
+            yield self._line(f"  {DIM}{f.assurance_hint}{RESET}", color)
 
         if f.is_suppressed and f.suppressed:
             yield self._line(
@@ -529,6 +545,12 @@ class TextReporter(BaseReporter):
                 f"and the fix for each finding.{RESET}",
                 color,
             )
+            learned = next((f for f in result.findings if f.assurance_hint), None)
+            if learned is not None:
+                # Said once too: what to do with a machine-made finding, as every other surface says it.
+                yield self._line(
+                    f"{DIM}Machine-made findings. {learned.assurance_hint}{RESET}", color
+                )
 
     # -- Helpers ---------------------------------------------------------
 

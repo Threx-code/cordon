@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,503 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,843 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -17,6 +17,14 @@ rule's own samples.
 ```
 
 
+## Abuse Tooling
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `POLICY.ABUSE_TOOLING.PLATFORM_FORGERY.001` | medium | Computes a social platform app's request signature for its API |
+
 ## Account
 
 1 rules.
@@ -27,7 +35,7 @@ rule's own samples.
 
 ## AI agents
 
-51 rules.
+67 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -40,6 +48,9 @@ rule's own samples.
 | `POLICY.AGENT.MCP_BROAD_SCOPE.001` | medium | A filesystem MCP server given the whole disk or home directory |
 | `POLICY.AGENT.WIDE_DIRECTORY.001` | medium | Agent given the whole disk or home directory to work in |
 | `POLICY.AGENT.WILDCARD_PERMISSION.001` | medium | Agent permissions allow any shell command |
+| `SUSPECT.AGENT.AGENCY.AUTO_APPROVE_ALL.001` | medium | Every tool call is approved and confirmation is off |
+| `SUSPECT.AGENT.AGENCY.BROAD_DEFAULT_SCOPE.001` | medium | Grants every scope with every path or every tool by default |
+| `SUSPECT.AGENT.AGENCY.DELETE_WITHOUT_CONFIRM.001` | medium | A tool deletes a whole directory with no confirmation argument |
 | `SUSPECT.AGENT.API_REDIRECT.001` | high | Agent API traffic redirected to a host that is not the provider |
 | `SUSPECT.AGENT.ATR.AGENT_MANIPULATION.001` | medium | Text that impersonates an agent or hijacks the agent's task |
 | `SUSPECT.AGENT.ATR.CONTEXT_EXFILTRATION.001` | medium | Text that asks an agent to move secrets or context off the machine |
@@ -54,6 +65,7 @@ rule's own samples.
 | `SUSPECT.AGENT.AUTH_BYPASS_EDIT.001` | high | Tells the agent to add an access check that one fixed identity always passes |
 | `SUSPECT.AGENT.CI_PROMPT_INJECTION.001` | high | Untrusted event text passed straight into an agent's prompt |
 | `SUSPECT.AGENT.CI_UNTRUSTED_TRIGGER.001` | high | An AI agent in CI reads text an outsider can write |
+| `SUSPECT.AGENT.CODE_AND_INSTRUCTIONS.001` | high | An instruction file and the code of the same package agree on an attack on the agent |
 | `SUSPECT.AGENT.CREDENTIAL_EXFIL.001` | critical | Agent instructions that move credentials somewhere |
 | `SUSPECT.AGENT.DROPPER_PROSE.001` | high | Agent instructions that have the reader run a hidden or pasted payload |
 | `SUSPECT.AGENT.FETCH_EXEC.001` | high | Agent instructions that fetch and execute remote code |
@@ -62,15 +74,27 @@ rule's own samples.
 | `SUSPECT.AGENT.HIDDEN_INSTRUCTION.001` | high | An instruction to the agent that the rendered page does not show |
 | `SUSPECT.AGENT.HIDDEN_TEXT.001` | high | Hidden characters in an agent instruction file |
 | `SUSPECT.AGENT.HOOK.001` | medium | An agent hook committed to the repository |
+| `SUSPECT.AGENT.INJECTION_CORROBORATED.001` | high | An injection phrase and the learned reading of the skill's instructions agree |
 | `SUSPECT.AGENT.INJECTION_TEXT.001` | medium | Instruction-like text aimed at a coding agent |
 | `SUSPECT.AGENT.INSTALL_REDIRECT.001` | high | Code an agent runs points package installs somewhere else |
+| `SUSPECT.AGENT.INSTRUCTION_ADD_REMOTE.001` | high | An agent instruction file tells the agent to add a git remote and push to it |
+| `SUSPECT.AGENT.INSTRUCTION_CONCEAL_ACTIONS.001` | high | An agent instruction file tells the agent to hide what it did from the user |
+| `SUSPECT.AGENT.INSTRUCTION_DISABLE_SAFETY.001` | high | An agent instruction file tells the agent to turn off permission or safety prompts |
+| `SUSPECT.AGENT.INSTRUCTION_EDIT_AGENT_SETTINGS.001` | high | An agent instruction file tells the agent to change its own permissions or hooks |
+| `SUSPECT.AGENT.INSTRUCTION_FETCH_AND_OBEY.001` | high | An agent instruction file tells the agent to fetch a page and follow what it says |
+| `SUSPECT.AGENT.INSTRUCTION_PIPE_TO_SHELL.001` | high | An agent instruction file tells the agent to pipe a download into a shell |
+| `SUSPECT.AGENT.INSTRUCTION_SEND_SECRETS.001` | high | An agent instruction file tells the agent to send secrets to an address |
+| `SUSPECT.AGENT.INSTRUCTION_TRIGGER_PHRASE.001` | high | An agent instruction file arms a quiet action on a trigger phrase |
 | `SUSPECT.AGENT.INTENT.001` | high | Text that tells the agent to act against its user |
 | `SUSPECT.AGENT.INTENT_CHAINED.001` | high | Agent instructions that send the agent to a file that acts against its user |
 | `SUSPECT.AGENT.JUDGED.001` | medium | A language model judges agent-facing text to be subverting the agent |
 | `SUSPECT.AGENT.PHANTOM_PREREQUISITE.001` | high | Agent instructions that require downloading a tool they never use |
+| `SUSPECT.AGENT.PLANTS_INSTRUCTIONS.001` | medium | A package's install or start-up code writes a file into an agent's own instruction place |
 | `SUSPECT.AGENT.PLUGIN_SOURCE.001` | high | Agent plugins installed from an unverified source |
+| `SUSPECT.AGENT.REMOTE_CONTROL.001` | high | A package drives a coding agent or a terminal and listens to a remote service, and reads an agent's history |
 | `SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001` | medium | An agent instruction file tells the agent to fetch and follow remote text |
 | `SUSPECT.AGENT.SENSITIVE_IMPORT.001` | high | An agent instruction file imports a credential file |
+| `SUSPECT.AGENT.SKILL_CLAIM_MISMATCH.001` | high | Shipped agent instructions do what no description claims |
 | `SUSPECT.AGENT.SKILL_DECODE_RUN.001` | high | A skill's script decodes code and runs it |
 | `SUSPECT.AGENT.SKILL_DISGUISED_ARCHIVE.001` | high | A skill ships an archive under a name that says it is something else |
 | `SUSPECT.AGENT.SKILL_HOOK_FETCH.001` | high | A skill script installs an agent hook that runs a download |
@@ -104,6 +128,16 @@ rule's own samples.
 | `SUSPECT.ARCHIVE.PATH_ESCAPE.001` | high | Archive member named to write outside the archive |
 | `SUSPECT.ARCHIVE.POLYGLOT.001` | high | Archive that is a tarball and a zip at once |
 
+## Auth
+
+3 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.AUTH.OAUTH_REDIRECT_ELSEWHERE.001` | medium | Registers an OAuth client that redirects to a remote host |
+| `SUSPECT.AUTH.SESSION_ID_SENT.001` | medium | Sends the MCP session identifier over the network |
+| `SUSPECT.AUTH.TOKEN_PASSTHROUGH.001` | medium | Forwards the token a client sent to another service |
+
 ## Azure
 
 16 rules.
@@ -129,17 +163,19 @@ rule's own samples.
 
 ## Binary
 
-10 rules.
+12 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `POLICY.BINARY.COMMITTED.001` | low | Executable committed to a source repository |
+| `SUSPECT.BINARY.CHAT_ENDPOINT.001` | high | Compiled module names a chat bot's or webhook's API |
 | `SUSPECT.BINARY.CREDENTIAL_THEFT.001` | high | Committed binary imports credential-store and network calls |
 | `SUSPECT.BINARY.EXECUTABLE_PATH.001` | high | Executable committed where a lifecycle step will run it |
 | `SUSPECT.BINARY.HIDDEN_IMPORTS.001` | medium | Committed binary resolves its imports at run time |
 | `SUSPECT.BINARY.IMPLANT.001` | high | Committed binary imports download-and-run calls |
 | `SUSPECT.BINARY.KEYLOGGER.001` | high | Committed binary imports keyboard-capture and network calls |
 | `SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001` | high | A pure-Python wheel loads a native library it carries |
+| `SUSPECT.BINARY.NATIVE_PROGRAM_IN_PURE_WHEEL.001` | high | A pure-Python wheel carries a native program and starts it |
 | `SUSPECT.BINARY.PACKED.001` | medium | Committed binary is packed |
 | `SUSPECT.BINARY.PROCESS_INJECTION.001` | high | Committed binary imports process-injection calls |
 | `SUSPECT.BINARY.STRINGS.001` | medium | Committed binary contains a URL, command or credential path |
@@ -208,15 +244,26 @@ rule's own samples.
 | `OPERATIONAL.CLAMAV.STATUS` | info | ClamAV examined the scan's files |
 | `OPERATIONAL.CLAMAV.UNAVAILABLE` | info | ClamAV was asked for and could not be used |
 
-## CloudFormation
+## Clipper
 
-232 rules.
+1 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
+| `MALWARE.CLIPPER.001` | critical | Replaces what the user copied with a value the package carries |
+
+## CloudFormation
+
+251 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `POLICY.CFN.CMEK.AWS_AGENTREGISTRY_REGISTRY.001` | low | cfn:AWS::AgentRegistry::Registry: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_AIOPS_INVESTIGATIONGROUP.001` | low | cfn:AWS::AIOps::InvestigationGroup: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_AMAZONMQ_BROKER.001` | low | cfn:AWS::AmazonMQ::Broker: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_APPSTREAM_STACK.001` | low | cfn:AWS::AppStream::Stack: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_APS_WORKSPACE.001` | low | cfn:AWS::APS::Workspace: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_ATHENA_SYSTEMTABLES.001` | low | cfn:AWS::Athena::SystemTables: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_BACKUPGATEWAY_HYPERVISOR.001` | low | cfn:AWS::BackupGateway::Hypervisor: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_BEDROCKAGENTCORE_CAPACITYPROVIDER.001` | low | cfn:AWS::BedrockAgentCore::CapacityProvider: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_BEDROCKAGENTCORE_CONFIGURATIONBUNDLE.001` | low | cfn:AWS::BedrockAgentCore::ConfigurationBundle: a customer-managed key |
@@ -234,6 +281,7 @@ rule's own samples.
 | `POLICY.CFN.CMEK.AWS_CLEANROOMS_IDMAPPINGTABLE.001` | low | cfn:AWS::CleanRooms::IdMappingTable: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_CLEANROOMS_INTERMEDIATETABLE.001` | low | cfn:AWS::CleanRooms::IntermediateTable: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_CLOUDTRAIL_EVENTDATASTORE.001` | low | cfn:AWS::CloudTrail::EventDataStore: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_CLOUDWATCH_SPACE.001` | low | cfn:AWS::CloudWatch::Space: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_CODECOMMIT_REPOSITORY.001` | low | cfn:AWS::CodeCommit::Repository: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_COGNITO_USERPOOL.001` | low | cfn:AWS::Cognito::UserPool: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_COMPREHEND_DOCUMENTCLASSIFIER.001` | low | cfn:AWS::Comprehend::DocumentClassifier: a customer-managed key |
@@ -253,6 +301,7 @@ rule's own samples.
 | `POLICY.CFN.CMEK.AWS_DMS_REPLICATIONINSTANCE.001` | low | cfn:AWS::DMS::ReplicationInstance: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_DOCDBELASTIC_CLUSTER.001` | low | cfn:AWS::DocDBElastic::Cluster: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_DOCDB_DBCLUSTER.001` | low | cfn:AWS::DocDB::DBCluster: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_EC2_IMPORTIMAGETASK.001` | low | cfn:AWS::EC2::ImportImageTask: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_EC2_VERIFIEDACCESSENDPOINT.001` | low | cfn:AWS::EC2::VerifiedAccessEndpoint: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_EC2_VERIFIEDACCESSGROUP.001` | low | cfn:AWS::EC2::VerifiedAccessGroup: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_EC2_VERIFIEDACCESSTRUSTPROVIDER.001` | low | cfn:AWS::EC2::VerifiedAccessTrustProvider: a customer-managed key |
@@ -262,6 +311,7 @@ rule's own samples.
 | `POLICY.CFN.CMEK.AWS_ELASTICACHE_REPLICATIONGROUP.001` | low | cfn:AWS::ElastiCache::ReplicationGroup: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_ELASTICACHE_SERVERLESSCACHE.001` | low | cfn:AWS::ElastiCache::ServerlessCache: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_ELASTICACHE_SERVERLESSCACHESNAPSHOT.001` | low | cfn:AWS::ElastiCache::ServerlessCacheSnapshot: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_ELASTICACHE_SNAPSHOT.001` | low | cfn:AWS::ElastiCache::Snapshot: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_ELASTICSEARCH_DOMAIN.001` | low | cfn:AWS::Elasticsearch::Domain: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_EVS_ENVIRONMENT.001` | low | cfn:AWS::EVS::Environment: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_FINSPACE_ENVIRONMENT.001` | low | cfn:AWS::FinSpace::Environment: a customer-managed key |
@@ -288,6 +338,7 @@ rule's own samples.
 | `POLICY.CFN.CMEK.AWS_LAMBDA_CAPACITYPROVIDER.001` | low | cfn:AWS::Lambda::CapacityProvider: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_LAMBDA_EVENTSOURCEMAPPING.001` | low | cfn:AWS::Lambda::EventSourceMapping: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_LAMBDA_FUNCTION.001` | low | cfn:AWS::Lambda::Function: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_LAMBDA_WEBFUNCTIONREVISION.001` | low | cfn:AWS::Lambda::WebFunctionRevision: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_LOCATION_GEOFENCECOLLECTION.001` | low | cfn:AWS::Location::GeofenceCollection: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_LOCATION_TRACKER.001` | low | cfn:AWS::Location::Tracker: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_LOGS_INTEGRATION.001` | low | cfn:AWS::Logs::Integration: a customer-managed key |
@@ -317,6 +368,7 @@ rule's own samples.
 | `POLICY.CFN.CMEK.AWS_REDSHIFTSERVERLESS_NAMESPACE.001` | low | cfn:AWS::RedshiftServerless::Namespace: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_REDSHIFT_CLUSTER.001` | low | cfn:AWS::Redshift::Cluster: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_REDSHIFT_SNAPSHOTCOPYGRANT.001` | low | cfn:AWS::Redshift::SnapshotCopyGrant: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_REKOGNITION_PROJECTVERSION.001` | low | cfn:AWS::Rekognition::ProjectVersion: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_REKOGNITION_STREAMPROCESSOR.001` | low | cfn:AWS::Rekognition::StreamProcessor: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_RESILIENCEHUBV2_POLICY.001` | low | cfn:AWS::ResilienceHubV2::Policy: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_RESILIENCEHUBV2_SERVICE.001` | low | cfn:AWS::ResilienceHubV2::Service: a customer-managed key |
@@ -348,6 +400,7 @@ rule's own samples.
 | `POLICY.CFN.CMEK.AWS_SECRETSMANAGER_ROTATIONSCHEDULE.001` | low | cfn:AWS::SecretsManager::RotationSchedule: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_SECRETSMANAGER_SECRET.001` | low | cfn:AWS::SecretsManager::Secret: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_SECURITYAGENT_AGENTSPACE.001` | low | cfn:AWS::SecurityAgent::AgentSpace: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_SECURITYAGENT_INTEGRATION.001` | low | cfn:AWS::SecurityAgent::Integration: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_SECURITYAGENT_SECURITYREQUIREMENTPACK.001` | low | cfn:AWS::SecurityAgent::SecurityRequirementPack: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_SECURITYHUB_CONNECTORV2.001` | low | cfn:AWS::SecurityHub::ConnectorV2: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_SECURITYLAKE_DATALAKE.001` | low | cfn:AWS::SecurityLake::DataLake: a customer-managed key |
@@ -359,6 +412,8 @@ rule's own samples.
 | `POLICY.CFN.CMEK.AWS_STEPFUNCTIONS_STATEMACHINE.001` | low | cfn:AWS::StepFunctions::StateMachine: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_SYNTHETICS_CANARY.001` | low | cfn:AWS::Synthetics::Canary: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_TIMESTREAM_DATABASE.001` | low | cfn:AWS::Timestream::Database: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_TIMESTREAM_INFLUXDBCLUSTER.001` | low | cfn:AWS::Timestream::InfluxDBCluster: a customer-managed key |
+| `POLICY.CFN.CMEK.AWS_TIMESTREAM_INFLUXDBINSTANCE.001` | low | cfn:AWS::Timestream::InfluxDBInstance: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_TIMESTREAM_SCHEDULEDQUERY.001` | low | cfn:AWS::Timestream::ScheduledQuery: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_TIMESTREAM_TABLE.001` | low | cfn:AWS::Timestream::Table: a customer-managed key |
 | `POLICY.CFN.CMEK.AWS_VOICEID_DOMAIN.001` | low | cfn:AWS::VoiceID::Domain: a customer-managed key |
@@ -370,6 +425,7 @@ rule's own samples.
 | `POLICY.CFN.DELETION_PROTECTION.AWS_DOCDB_GLOBALCLUSTER.001` | low | cfn:AWS::DocDB::GlobalCluster: deletion protection |
 | `POLICY.CFN.DELETION_PROTECTION.AWS_DSQL_CLUSTER.001` | low | cfn:AWS::DSQL::Cluster: deletion protection |
 | `POLICY.CFN.DELETION_PROTECTION.AWS_DYNAMODB_TABLE.001` | low | cfn:AWS::DynamoDB::Table: deletion protection |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_ECS_GATEWAY.001` | low | cfn:AWS::ECS::Gateway: deletion protection |
 | `POLICY.CFN.DELETION_PROTECTION.AWS_EKS_CLUSTER.001` | low | cfn:AWS::EKS::Cluster: deletion protection |
 | `POLICY.CFN.DELETION_PROTECTION.AWS_LOGS_LOGGROUP.001` | low | cfn:AWS::Logs::LogGroup: deletion protection |
 | `POLICY.CFN.DELETION_PROTECTION.AWS_NEPTUNEGRAPH_GRAPH.001` | low | cfn:AWS::NeptuneGraph::Graph: deletion protection |
@@ -379,13 +435,19 @@ rule's own samples.
 | `POLICY.CFN.DELETION_PROTECTION.AWS_RDS_DBCLUSTER.001` | low | cfn:AWS::RDS::DBCluster: deletion protection |
 | `POLICY.CFN.DELETION_PROTECTION.AWS_RDS_DBINSTANCE.001` | low | cfn:AWS::RDS::DBInstance: deletion protection |
 | `POLICY.CFN.DELETION_PROTECTION.AWS_RDS_GLOBALCLUSTER.001` | low | cfn:AWS::RDS::GlobalCluster: deletion protection |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_SMSVOICE_NOTIFYCONFIGURATION.001` | low | cfn:AWS::SMSVOICE::NotifyConfiguration: deletion protection |
 | `POLICY.CFN.DELETION_PROTECTION.AWS_SMSVOICE_PHONENUMBER.001` | low | cfn:AWS::SMSVOICE::PhoneNumber: deletion protection |
 | `POLICY.CFN.DELETION_PROTECTION.AWS_SMSVOICE_POOL.001` | low | cfn:AWS::SMSVOICE::Pool: deletion protection |
 | `POLICY.CFN.DELETION_PROTECTION.AWS_SMSVOICE_PROTECTCONFIGURATION.001` | low | cfn:AWS::SMSVOICE::ProtectConfiguration: deletion protection |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_SMSVOICE_RCSAGENT.001` | low | cfn:AWS::SMSVOICE::RcsAgent: deletion protection |
 | `POLICY.CFN.DELETION_PROTECTION.AWS_SMSVOICE_SENDERID.001` | low | cfn:AWS::SMSVOICE::SenderId: deletion protection |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_WELLARCHITECTED_AGENTORGANIZATIONALPROFILE.001` | low | cfn:AWS::WellArchitected::AgentOrganizationalProfile: deletion protection |
+| `POLICY.CFN.DELETION_PROTECTION.AWS_WELLARCHITECTED_AGENTPROFILE.001` | low | cfn:AWS::WellArchitected::AgentProfile: deletion protection |
 | `POLICY.CFN.ENCRYPT_AT_REST.AWS_BEDROCKAGENTCORE_CAPACITYPROVIDER.001` | high | cfn:AWS::BedrockAgentCore::CapacityProvider: encryption at rest |
 | `POLICY.CFN.ENCRYPT_AT_REST.AWS_DOCDB_DBCLUSTER.001` | high | cfn:AWS::DocDB::DBCluster: storage encryption |
 | `POLICY.CFN.ENCRYPT_AT_REST.AWS_DOCDB_GLOBALCLUSTER.001` | high | cfn:AWS::DocDB::GlobalCluster: storage encryption |
+| `POLICY.CFN.ENCRYPT_AT_REST.AWS_EC2_IMPORTIMAGETASK.001` | high | cfn:AWS::EC2::ImportImageTask: encryption at rest |
+| `POLICY.CFN.ENCRYPT_AT_REST.AWS_EC2_IMPORTSNAPSHOTTASK.001` | high | cfn:AWS::EC2::ImportSnapshotTask: encryption at rest |
 | `POLICY.CFN.ENCRYPT_AT_REST.AWS_EC2_VOLUME.001` | high | cfn:AWS::EC2::Volume: encryption at rest |
 | `POLICY.CFN.ENCRYPT_AT_REST.AWS_NEPTUNE_DBCLUSTER.001` | high | cfn:AWS::Neptune::DBCluster: storage encryption |
 | `POLICY.CFN.ENCRYPT_AT_REST.AWS_NEPTUNE_GLOBALCLUSTER.001` | high | cfn:AWS::Neptune::GlobalCluster: storage encryption |
@@ -415,6 +477,7 @@ rule's own samples.
 | `POLICY.CFN.PATCHING.AWS_RDS_DBINSTANCE.001` | medium | cfn:AWS::RDS::DBInstance: automatic minor version upgrades |
 | `POLICY.CFN.PUBLIC_IP.AWS_AUTOSCALING_LAUNCHCONFIGURATION.001` | low | cfn:AWS::AutoScaling::LaunchConfiguration: a public ip address |
 | `POLICY.CFN.PUBLIC_IP.AWS_EC2_SUBNET.001` | low | cfn:AWS::EC2::Subnet: every instance in the subnet gets a public address |
+| `POLICY.CFN.PUBLIC_IP.AWS_MGN_LAUNCHCONFIGURATIONTEMPLATE.001` | low | cfn:AWS::MGN::LaunchConfigurationTemplate: a public ip address |
 | `POLICY.CFN.RESILIENCE.AWS_DMS_REPLICATIONCONFIG.001` | low | cfn:AWS::DMS::ReplicationConfig: a standby in another availability zone |
 | `POLICY.CFN.RESILIENCE.AWS_DMS_REPLICATIONINSTANCE.001` | low | cfn:AWS::DMS::ReplicationInstance: a standby in another availability zone |
 | `POLICY.CFN.RESILIENCE.AWS_RDS_DBINSTANCE.001` | low | cfn:AWS::RDS::DBInstance: a standby in another availability zone |
@@ -463,6 +526,14 @@ rule's own samples.
 | Rule | Severity | What it catches |
 |---|---|---|
 | `OPERATIONAL.CODE_MODEL.UNAVAILABLE` | info | The code model's weights could not be used |
+
+## Collect
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.COLLECT.EXFIL.001` | medium | Collects what the person sees, types or keeps, and sends data out |
 
 ## Compose files
 
@@ -514,7 +585,7 @@ rule's own samples.
 
 ## Dependencies
 
-38 rules.
+40 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -542,14 +613,16 @@ rule's own samples.
 | `SUSPECT.DEPENDENCY.HALLUCINATED.BUNDLED.001` | info | A dependency the package bundles but does not install is a documented AI hallucination |
 | `SUSPECT.DEPENDENCY.LOCAL_SHADOW.001` | medium | Dependency resolved locally shares a known-malicious name |
 | `SUSPECT.DEPENDENCY.PROVISIONAL.001` | high | Dependency version is held for review |
-| `SUSPECT.DEPENDENCY.REMOTE_TARBALL.001` | high | A published package installs a dependency from an arbitrary URL |
-| `SUSPECT.DEPENDENCY.REMOTE_TARBALL.BUNDLED.001` | info | A published package installs a dependency from an arbitrary URL, in a file installing the package does not read |
+| `SUSPECT.DEPENDENCY.REMOTE_TARBALL.001` | high | A package or project installs a dependency from an arbitrary URL |
+| `SUSPECT.DEPENDENCY.REMOTE_TARBALL.BUNDLED.001` | info | A package or project installs a dependency from an arbitrary URL, in a file installing the package does not read |
 | `SUSPECT.DEPENDENCY.REMOVED_NAME.001` | medium | Dependency names a removed malicious package |
 | `SUSPECT.DEPENDENCY.SOURCE.001` | medium | Dependency resolved from outside the registry |
 | `SUSPECT.DEPENDENCY.SOURCE.BUNDLED.001` | info | A dependency the package bundles but does not install resolves from outside the registry |
 | `SUSPECT.DEPENDENCY.SOURCE_PRIORITY.001` | medium | A private package index merged with a public one |
 | `SUSPECT.DEPENDENCY.TYPOSQUAT.001` | high | Dependency name is one edit from a popular package |
 | `SUSPECT.DEPENDENCY.TYPOSQUAT.BUNDLED.001` | info | A dependency the package bundles but does not install has a lookalike name |
+| `SUSPECT.DEPENDENCY.UNKNOWN_HOST.001` | medium | A dependency is fetched from a host that is neither a registry nor a code host |
+| `SUSPECT.DEPENDENCY.UNKNOWN_HOST.BUNDLED.001` | info | A dependency is fetched from a host that is neither a registry nor a code host, in a file installing the package does not read |
 | `SUSPECT.DEPENDENCY.UNREGISTERED.001` | high | A dependency does not exist on its public registry |
 | `SUSPECT.DEPENDENCY.UNVETTED.001` | medium | A dependency is new, sourceless and unknown: the shape of a slopsquatted package |
 | `SUSPECT.DEPENDENCY.YANKED.001` | high | Dependency pins a version its publisher withdrew |
@@ -598,11 +671,16 @@ rule's own samples.
 
 ## Dropper
 
-5 rules.
+10 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.DROPPER.001` | critical | Install script fetches and executes remote content |
+| `MALWARE.DROPPER.DATA_FILE_CODE.001` | high | Code is loaded from a file named as data |
+| `MALWARE.DROPPER.DECODED.001` | high | Code writes out a payload it carries encoded, then makes it runnable or runs it |
+| `MALWARE.DROPPER.DIRECTORY.001` | high | Files written into a directory are then executed from it |
+| `MALWARE.DROPPER.HIDDEN.001` | high | Code downloads a program and starts it with its window hidden |
+| `MALWARE.DROPPER.MACHINE_REPORT.001` | high | A fingerprint of the machine is sent and the program the answer names is run |
 | `MALWARE.DROPPER.SHIPPED_PAYLOAD.001` | critical | Code decrypts bytes it carries into a program, writes it and runs it |
 | `SUSPECT.DROPPER.001` | high | Content fetched from the network and executed |
 | `SUSPECT.DROPPER.REMOTE_CODE.001` | high | Code runs what a server sends it |
@@ -610,30 +688,49 @@ rule's own samples.
 
 ## Dynamic Dispatch
 
-2 rules.
+3 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.DYNAMIC_DISPATCH.001` | critical | Install-time code reaches a function by a computed name |
 | `SUSPECT.DYNAMIC_DISPATCH.001` | high | A function is reached by a name computed at runtime |
+| `SUSPECT.DYNAMIC_DISPATCH.002` | high | A module or function is reached by a name the code spells so that no literal is it |
+
+## Execute
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.EXECUTE.DECODED_BYTES.001` | high | Bytes handed to the code are decoded to text and executed |
 
 ## Exfiltration
 
-27 rules.
+40 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.EXFIL.001` | critical | Install script reads credentials and transmits them |
 | `MALWARE.EXFIL.BEACON.001` | critical | Install script reports the machine it is installing on |
+| `MALWARE.EXFIL.CLOUD_UPLOAD.001` | critical | Uploads what the machine knows to a cloud store |
 | `MALWARE.EXFIL.COMMAND_OUTPUT.001` | critical | An install script runs a command and sends what it printed |
+| `MALWARE.EXFIL.CONFUSION_BEACON.001` | high | A dependency-confusion package reports the machine it runs on |
+| `MALWARE.EXFIL.CREDENTIALS_TO_FREE_HOST.001` | high | A password is sent to a free-hosting, paste or tunnel host |
 | `MALWARE.EXFIL.CREDENTIAL_STORE.001` | critical | Install-time code reads a credential store and reaches the network |
+| `MALWARE.EXFIL.CREDENTIAL_STORE.002` | high | Code sends a credential store's contents outside the store's own service |
 | `MALWARE.EXFIL.DNS_CALLBACK.001` | critical | Install script resolves a fixed host name |
+| `MALWARE.EXFIL.DNS_TUNNEL.001` | high | Code sends data out encoded in DNS names |
 | `MALWARE.EXFIL.DROP_POINT.001` | critical | Install-time code sends data to a drop point |
 | `MALWARE.EXFIL.FLOW_RAW_CHANNEL.001` | critical | Sends what a command printed, or the user's files, over a channel of its own |
 | `MALWARE.EXFIL.FLOW_TO_DROP.001` | critical | Sends this machine's secrets or identity to a drop point |
 | `MALWARE.EXFIL.HIDDEN_DESTINATION.001` | critical | Install script contacts an address it spells out in character codes |
+| `MALWARE.EXFIL.HIDDEN_DESTINATION.002` | high | Code sends the machine's identity, environment or a credential to a host it hides |
 | `MALWARE.EXFIL.INSTALL_CALLBACK.001` | critical | Install script calls back to a drop point |
+| `MALWARE.EXFIL.IP_LOGGER.001` | critical | Opens a link that logs the address of whoever opens it |
+| `MALWARE.EXFIL.RELAYED_HIDDEN.001` | high | A class stores what its caller hands it and sends it to a destination it hides |
 | `MALWARE.EXFIL.SCRIPT_CALLBACK.001` | high | Package script calls back to an interaction service |
+| `MALWARE.EXFIL.SWEPT_FILES.001` | high | Files gathered by walking the drives or home, sent to a destination the code hides |
+| `MALWARE.EXFIL.SWEPT_TO_HOST.001` | critical | Sweeps files and sends their contents to a host anyone can rent |
 | `MALWARE.EXFIL.TRACKING_CALLBACK.001` | critical | Install script reports to a host named for this install |
 | `SUSPECT.EXFIL.001` | medium | Credential access combined with network egress and execution |
 | `SUSPECT.EXFIL.BEACON.001` | high | Code reports the machine it runs on |
@@ -641,6 +738,7 @@ rule's own samples.
 | `SUSPECT.EXFIL.CALLBACK.001` | high | Code calls an out-of-band interaction service |
 | `SUSPECT.EXFIL.COMMAND_BEACON.001` | high | Code reports the user and host to a URL |
 | `SUSPECT.EXFIL.COMMAND_OUTPUT.001` | high | A package's entry point runs a command and sends what it printed |
+| `SUSPECT.EXFIL.CREDENTIAL_FILE.001` | medium | Reads a credential store and sends data out |
 | `SUSPECT.EXFIL.CREDENTIAL_STORE.001` | high | A credential store is read and the file reaches the network |
 | `SUSPECT.EXFIL.CREDENTIAL_SWEEP.001` | high | Code reads the credential stores of many services and reaches the network |
 | `SUSPECT.EXFIL.DNS.001` | high | Credential access and a hostname assembled for resolution |
@@ -648,8 +746,19 @@ rule's own samples.
 | `SUSPECT.EXFIL.ENVIRONMENT.001` | high | Code sends the whole environment over the network |
 | `SUSPECT.EXFIL.FLOW_IDENTITY.001` | high | Sends who and where this machine is |
 | `SUSPECT.EXFIL.FLOW_SECRET.001` | high | Sends a credential file off the machine |
+| `SUSPECT.EXFIL.MAIL_ON_IMPORT.001` | high | Importing the module sends mail from an account whose password it carries |
 | `SUSPECT.EXFIL.NAMED_SECRET.001` | high | Code sends a named credential to a host outside its service |
+| `SUSPECT.EXFIL.WALLET_KEY.001` | high | Reads a wallet's key file and sends data out |
 | `SUSPECT.EXFIL.WALLET_SECRET.001` | high | Sends a wallet's secret to an outside address |
+
+## Expose
+
+2 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.EXPOSE.ANY_ORIGIN_WITH_CREDENTIALS.001` | medium | Lets any website call this server with the person's credentials |
+| `SUSPECT.EXPOSE.HOME_ON_NETWORK.001` | high | Serves the home directory or a key file on every network interface |
 
 ## Extension
 
@@ -699,6 +808,27 @@ rule's own samples.
 | `OPERATIONAL.IMAGE.UNMATCHED` | info | An image's packages were not all matched against advisories |
 | `VULNERABLE.IMAGE.EXPLOITED.001` | critical | An image's operating-system package has a vulnerability exploited in the wild |
 | `VULNERABLE.IMAGE.PACKAGE.001` | high | An image's operating-system package has a known vulnerability |
+
+## Implant
+
+3 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.IMPLANT.AV_EXCLUSION.001` | high | The code tells the antivirus to stop scanning a folder or a program |
+| `MALWARE.IMPLANT.INSTALL.001` | high | Code downloads and runs something and makes itself start again |
+| `MALWARE.IMPLANT.PERSIST_RUN.001` | critical | Registers itself to run again and runs a program it brings |
+
+## Import
+
+4 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.IMPORT.DECODE_EXEC.001` | critical | Importing the package decodes data and runs it as code |
+| `MALWARE.IMPORT.FETCH_RUN.001` | critical | Importing the package fetches something and runs code or a program |
+| `MALWARE.IMPORT.PERSIST.001` | critical | Code that runs on import plants code that runs again later |
+| `MALWARE.IMPORT.PROGRAM_START.001` | critical | Importing the package starts a program and leaves it running |
 
 ## Infrastructure as code
 
@@ -1528,7 +1658,7 @@ rule's own samples.
 
 ## Install-time code
 
-20 rules.
+29 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -1537,6 +1667,9 @@ rule's own samples.
 | `MALWARE.INSTALL.DECODED_LAUNCH.001` | critical | An install script decodes content and starts a process |
 | `MALWARE.INSTALL.DISGUISED_PROGRAM.001` | critical | Install code turns a file shipped as data into a program |
 | `MALWARE.INSTALL.FETCH_EXEC.001` | critical | Install script fetches and executes remote content |
+| `MALWARE.INSTALL.FETCH_RUN.001` | critical | The install script fetches something and runs code or a program |
+| `MALWARE.INSTALL.FOREIGN_INDEX.001` | critical | Install script installs packages from an index the user did not choose |
+| `MALWARE.INSTALL.FOREIGN_PROGRAM.001` | high | Install code starts a desktop application or an identity command |
 | `MALWARE.INSTALL.GYP_COMMAND.001` | critical | Native-build file runs a script at install |
 | `MALWARE.INSTALL.HIDDEN_ACTION.001` | critical | An install script hides a process, request or credential read inside a string it executes |
 | `MALWARE.INSTALL.NETWORK_PROBE.001` | high | Install script calls a network-probing tool |
@@ -1545,13 +1678,19 @@ rule's own samples.
 | `MALWARE.INSTALL.REMOTE_CODE.001` | critical | Install-time code runs what a server sends it |
 | `MALWARE.INSTALL.SHELL_EVASION.001` | critical | Install script hides the spaces in the command it runs |
 | `MALWARE.INSTALL.SPELLED_CODE.001` | critical | Install script spells its names in character codes |
+| `MALWARE.INSTALL.STARTUP_CODE.001` | high | A .pth file runs code beyond import setup in every Python process |
+| `MALWARE.INSTALL.STARTUP_NETWORK.001` | high | Code a .pth file loads reaches the network in every Python process |
 | `MALWARE.INSTALL.WINDOWS_LOADER.001` | critical | Install script starts a Windows loader |
 | `SUSPECT.INSTALL.AUTOSTART.001` | high | Install-time code makes something start at every login |
+| `SUSPECT.INSTALL.COMPUTED_CODE.001` | high | Code that runs at install executes or starts a program it assembles so that no literal is it |
 | `SUSPECT.INSTALL.DEPENDENCY_CONFUSION.001` | high | A version made to win resolution runs code on install |
+| `SUSPECT.INSTALL.INLINE_PROGRAM.001` | high | Install hook carries its program inline |
 | `SUSPECT.INSTALL.OBFUSCATED_HOOK.001` | high | An install hook runs a file too obfuscated to read |
 | `SUSPECT.INSTALL.SCRIPT.001` | high | Package declares an install-time lifecycle script |
 | `SUSPECT.INSTALL.STRING_CODE.001` | high | An install script runs a program it carries as a string |
+| `SUSPECT.INSTALL.TEMP_COMMAND.001` | high | The install runs a command on a system temp path |
 | `SUSPECT.INSTALL.UNEXAMINED.001` | high | Install-time code too large or slow to examine |
+| `SUSPECT.INSTALL.UNREAD.001` | high | Install hook runs a script this scan does not hold |
 
 ## Intent
 
@@ -1563,13 +1702,22 @@ rule's own samples.
 
 ## Judge
 
-3 rules.
+4 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `OPERATIONAL.JUDGE.BUDGET` | info | The judge's call budget ran out |
 | `OPERATIONAL.JUDGE.STATUS` | info | A language model judged the scan's agent-facing text |
+| `OPERATIONAL.JUDGE.TRUNCATED` | info | Agent-facing text was longer than the judge reads |
 | `OPERATIONAL.JUDGE.UNAVAILABLE` | info | The judge was asked for and could not be used |
+
+## Keylogger
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.KEYLOGGER.001` | critical | Captures keystrokes and writes them down or sends them |
 
 ## Kubernetes
 
@@ -1596,6 +1744,16 @@ rule's own samples.
 | `SUSPECT.K8S.RBAC_WILDCARD.001` | high | Role grants every verb or every resource |
 | `SUSPECT.K8S.RUN_AS_ROOT.001` | medium | Kubernetes workload: a container runs as uid 0 |
 | `SUSPECT.K8S.SECRET_ENV_VALUE.001` | high | Kubernetes workload: a credential is written into the manifest |
+
+## Lateral
+
+3 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.LATERAL.KUBE_EVERY_CONTEXT.001` | high | Acts on every Kubernetes cluster the person can reach |
+| `SUSPECT.LATERAL.PUSH_EVERY_REPOSITORY.001` | high | Commits and pushes to every repository under the home folder |
+| `SUSPECT.LATERAL.SSH_KNOWN_HOSTS.001` | high | Runs commands on the hosts the person connects to over SSH |
 
 ## License
 
@@ -1626,34 +1784,269 @@ rule's own samples.
 
 ## MCP servers
 
-24 rules.
+259 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `OPERATIONAL.MCP.LIVE_UNREAD.001` | info | A remote MCP server could not be read |
 | `OPERATIONAL.MCP.UNRESOLVED` | info | An MCP server package was not examined |
+| `SUSPECT.MCP.ACCOUNT_ENUMERATION.001` | medium | An MCP server's source lists the machine's user accounts and who is logged in |
+| `SUSPECT.MCP.AGENT_SAFETY_OFF.001` | medium | An MCP server's source switches off the permission checks of the agent or the editor |
+| `SUSPECT.MCP.ANALYSIS_TOOL_NAMES.001` | high | An MCP server's source lists the tools used to analyse malware |
 | `SUSPECT.MCP.ARGUMENT_OVERRIDE.001` | high | An MCP tool replaces the argument it was called with |
+| `SUSPECT.MCP.BIND_SHELL.001` | medium | An MCP server's source listens for connections and hands them a shell |
 | `SUSPECT.MCP.BORROWED_NAME.001` | high | MCP server published under a service's name its code never mentions |
+| `SUSPECT.MCP.C2_DNS_TXT.001` | medium | An MCP server's source takes its orders from a DNS text record |
+| `SUSPECT.MCP.C2_TELEGRAM.001` | high | An MCP server's source takes its orders from a Telegram bot |
+| `SUSPECT.MCP.CHARCODE_BUILD.001` | high | An MCP server's source spells a string out in character codes |
+| `SUSPECT.MCP.CLOUD_METADATA.001` | medium | An MCP server's source names a cloud instance's metadata service |
+| `SUSPECT.MCP.CONTAINER_ESCAPE.001` | high | An MCP server's source reaches out of its container |
 | `SUSPECT.MCP.CONTAINER_HOST_ACCESS.001` | high | An MCP server's container is given the host |
+| `SUSPECT.MCP.DECODE_RUN.001` | medium | An MCP server's source decodes or decompresses a value and runs the result as a command or as code |
 | `SUSPECT.MCP.DENIAL_OF_WALLET.001` | medium | An MCP tool's result tells the agent to call it again, deeper or for every item |
+| `SUSPECT.MCP.DESCRIPTION_CONCEALMENT.001` | high | A tool description of an MCP server tells the model to hide what it does from the user |
+| `SUSPECT.MCP.DESCRIPTION_CONSENT_CLAIM.001` | high | A tool description of an MCP server claims that the user already approved, or that no approval is needed |
+| `SUSPECT.MCP.DESCRIPTION_CROSS_TOOL.001` | high | A tool description of an MCP server tells the model how to use other tools or servers |
+| `SUSPECT.MCP.DESCRIPTION_EXFIL_ORDER.001` | high | A tool description of an MCP server tells the model to send what it handles to a web address |
+| `SUSPECT.MCP.DESCRIPTION_FAKE_APPROVAL.001` | high | A tool description of an MCP server poses as an approval prompt and asks the person for a reply |
+| `SUSPECT.MCP.DESCRIPTION_FAKE_BOUNDARY.001` | high | A tool description of an MCP server closes the client's framing of tool text or opens a system block of its own |
+| `SUSPECT.MCP.DESCRIPTION_FAKE_WARNING.001` | high | A tool description of an MCP server poses as a security warning and tells the person to run a command |
+| `SUSPECT.MCP.DESCRIPTION_FETCHED.001` | medium | An MCP server's source takes the description of its own tool from a network answer |
+| `SUSPECT.MCP.DESCRIPTION_HARVEST.001` | high | A tool description of an MCP server asks the model to hand over the conversation or its system prompt |
+| `SUSPECT.MCP.DESCRIPTION_HIDDEN_HTML.001` | high | A tool description of an MCP server hides an order in an HTML comment |
+| `SUSPECT.MCP.DESCRIPTION_LINK_EXFIL.001` | high | A tool description of an MCP server has the model render an image or link with its data in the address |
+| `SUSPECT.MCP.DESCRIPTION_MEMORY_WRITE.001` | high | A tool description of an MCP server tells the model to store an instruction in its memory or settings |
+| `SUSPECT.MCP.DESCRIPTION_MODE_CLAIM.001` | high | A tool description of an MCP server announces a developer, debug or admin mode in which the model's restrictions are off |
+| `SUSPECT.MCP.DESCRIPTION_OTHER_AGENT_ORDER.001` | high | A tool description of an MCP server gives orders to other agents, tells them to skip checks or demands their context |
+| `SUSPECT.MCP.DESCRIPTION_OUTPUT_HIDDEN.001` | high | A tool description of an MCP server tells the model not to show the user this output, note or instruction |
+| `SUSPECT.MCP.DESCRIPTION_OVERRIDE.001` | high | A tool description of an MCP server tells the model to drop its earlier instructions or to follow new ones |
+| `SUSPECT.MCP.DESCRIPTION_RECIPIENT_INJECTION.001` | high | A tool description of an MCP server tells the model to add a fixed address to what it sends |
+| `SUSPECT.MCP.DESCRIPTION_RETRIEVAL_DIRECTIVE.001` | high | A tool description of an MCP server addresses the model that will retrieve it and orders it |
+| `SUSPECT.MCP.DESCRIPTION_ROLE_MARKER.001` | high | A tool description of an MCP server carries a chat-template role marker |
+| `SUSPECT.MCP.DESCRIPTION_SECRET_CALL.001` | high | A tool description of an MCP server sends the model to a tool call on a credential or key file |
+| `SUSPECT.MCP.DESCRIPTION_SECRET_REQUEST.001` | high | A tool description of an MCP server asks for the contents of a credential file or for the user's seed phrase, private key or master password |
+| `SUSPECT.MCP.DESCRIPTION_SETTINGS_EDIT.001` | high | A tool description of an MCP server tells the model to change its own settings, permissions or hooks |
+| `SUSPECT.MCP.DESCRIPTION_TERMINAL_ESCAPE.001` | high | A tool description of an MCP server carries a terminal escape that hides text, sets the clipboard or disguises a link |
+| `SUSPECT.MCP.DESCRIPTION_TOOL_PRIORITY.001` | high | A tool description of an MCP server says this tool must be called first, replaces other tools or is the same as an official one |
+| `SUSPECT.MCP.DESCRIPTION_URGENCY_AUTHORITY.001` | high | A tool description of an MCP server claims authority and threatens a deadline |
+| `SUSPECT.MCP.DESCRIPTION_URL_APPEND.001` | high | A tool description of an MCP server tells the model to add the conversation or a secret to a web address |
+| `SUSPECT.MCP.DESCRIPTION_ZERO_WIDTH.001` | high | A tool description of an MCP server carries a run of zero-width characters |
+| `SUSPECT.MCP.DETACHED_CHILD.001` | medium | An MCP server's source starts a detached process from a temporary location |
+| `SUSPECT.MCP.DOWNLOAD_RUN_TEMP.001` | high | An MCP server's source downloads a program and starts it from a temporary directory |
+| `SUSPECT.MCP.ELICIT_CREDENTIAL.001` | medium | An MCP server asks the user for a credential through the protocol's own prompt |
+| `SUSPECT.MCP.EMBEDDED_WASM.001` | medium | An MCP server's source carries a WebAssembly module inside a string |
 | `SUSPECT.MCP.ENV_INJECTION.001` | high | An MCP server's environment loads code into it before it starts |
+| `SUSPECT.MCP.ERROR_CONCEALMENT.001` | high | An error message of an MCP server tells the model to hide what it does from the user |
+| `SUSPECT.MCP.ERROR_CONSENT_CLAIM.001` | high | An error message of an MCP server claims that the user already approved, or that no approval is needed |
+| `SUSPECT.MCP.ERROR_CROSS_TOOL.001` | high | An error message of an MCP server tells the model how to use other tools or servers |
+| `SUSPECT.MCP.ERROR_EXFIL_ORDER.001` | high | An error message of an MCP server tells the model to send what it handles to a web address |
+| `SUSPECT.MCP.ERROR_FAKE_APPROVAL.001` | high | An error message of an MCP server poses as an approval prompt and asks the person for a reply |
+| `SUSPECT.MCP.ERROR_FAKE_BOUNDARY.001` | high | An error message of an MCP server closes the client's framing of tool text or opens a system block of its own |
+| `SUSPECT.MCP.ERROR_FAKE_WARNING.001` | high | An error message of an MCP server poses as a security warning and tells the person to run a command |
+| `SUSPECT.MCP.ERROR_HARVEST.001` | high | An error message of an MCP server asks the model to hand over the conversation or its system prompt |
+| `SUSPECT.MCP.ERROR_HIDDEN_HTML.001` | high | An error message of an MCP server hides an order in an HTML comment |
+| `SUSPECT.MCP.ERROR_LINK_EXFIL.001` | high | An error message of an MCP server has the model render an image or link with its data in the address |
+| `SUSPECT.MCP.ERROR_MEMORY_WRITE.001` | high | An error message of an MCP server tells the model to store an instruction in its memory or settings |
+| `SUSPECT.MCP.ERROR_MODE_CLAIM.001` | high | An error message of an MCP server announces a developer, debug or admin mode in which the model's restrictions are off |
+| `SUSPECT.MCP.ERROR_OTHER_AGENT_ORDER.001` | high | An error message of an MCP server gives orders to other agents, tells them to skip checks or demands their context |
+| `SUSPECT.MCP.ERROR_OUTPUT_HIDDEN.001` | high | An error message of an MCP server tells the model not to show the user this output, note or instruction |
+| `SUSPECT.MCP.ERROR_OVERRIDE.001` | high | An error message of an MCP server tells the model to drop its earlier instructions or to follow new ones |
+| `SUSPECT.MCP.ERROR_RETRIEVAL_DIRECTIVE.001` | high | An error message of an MCP server addresses the model that will retrieve it and orders it |
+| `SUSPECT.MCP.ERROR_ROLE_MARKER.001` | high | An error message of an MCP server carries a chat-template role marker |
+| `SUSPECT.MCP.ERROR_SECRET_CALL.001` | high | An error message of an MCP server sends the model to a tool call on a credential or key file |
+| `SUSPECT.MCP.ERROR_SECRET_REQUEST.001` | high | An error message of an MCP server asks for the contents of a credential file or for the user's seed phrase, private key or master password |
+| `SUSPECT.MCP.ERROR_SETTINGS_EDIT.001` | high | An error message of an MCP server tells the model to change its own settings, permissions or hooks |
+| `SUSPECT.MCP.ERROR_TERMINAL_ESCAPE.001` | high | An error message of an MCP server carries a terminal escape that hides text, sets the clipboard or disguises a link |
+| `SUSPECT.MCP.ERROR_TOOL_PRIORITY.001` | high | An error message of an MCP server says this tool must be called first, replaces other tools or is the same as an official one |
+| `SUSPECT.MCP.ERROR_URGENCY_AUTHORITY.001` | high | An error message of an MCP server claims authority and threatens a deadline |
+| `SUSPECT.MCP.ERROR_URL_APPEND.001` | high | An error message of an MCP server tells the model to add the conversation or a secret to a web address |
+| `SUSPECT.MCP.ERROR_ZERO_WIDTH.001` | high | An error message of an MCP server carries a run of zero-width characters |
+| `SUSPECT.MCP.EXFIL_DNS.001` | high | An MCP server's source builds a DNS name out of data |
+| `SUSPECT.MCP.EXFIL_DROP.001` | medium | An MCP server's source names an anonymous paste or file-drop service |
+| `SUSPECT.MCP.EXFIL_EMAIL.001` | medium | An MCP server's source sends mail to an address written in the code |
+| `SUSPECT.MCP.EXFIL_LOGGER.001` | high | An MCP server's source names an IP-logging link |
+| `SUSPECT.MCP.EXFIL_PRESIGNED.001` | high | An MCP server's source uploads to a signed storage address written in the code |
+| `SUSPECT.MCP.EXFIL_REPO.001` | medium | An MCP server's source files what it handles as a gist or an issue in a repository written in the code |
+| `SUSPECT.MCP.EXFIL_TUNNEL.001` | medium | An MCP server's source names a tunnel, request-capture or interaction host |
+| `SUSPECT.MCP.EXFIL_WEBHOOK.001` | high | An MCP server's source carries a chat webhook with its secret written in |
+| `SUSPECT.MCP.FORK_BOMB.001` | medium | An MCP server's source contains a fork bomb |
+| `SUSPECT.MCP.GATED_PAYLOAD.001` | medium | An MCP server's source holds a fetch-and-run or a send behind a call count, a date or a check for CI |
 | `SUSPECT.MCP.HANDLER_SHELL.001` | high | An MCP tool runs its own input as a command |
+| `SUSPECT.MCP.HOME_WIPE.001` | medium | An MCP server's source deletes the user's whole home directory |
+| `SUSPECT.MCP.IDENTITY_GATE.001` | medium | An MCP server's source acts only on the machines whose host name or locale it checks |
+| `SUSPECT.MCP.INPUT_DROPPED.001` | medium | An MCP tool posts what it is asked to an address written in its code |
 | `SUSPECT.MCP.INPUT_FORWARDED.001` | high | An MCP tool sends what it is asked to a second host |
 | `SUSPECT.MCP.INPUT_MIRROR.001` | high | An MCP tool copies what it is asked into a hidden file |
+| `SUSPECT.MCP.INPUT_PROGRAM.001` | medium | An MCP tool starts the program its input names |
+| `SUSPECT.MCP.INPUT_SHELL.001` | medium | An MCP tool hands its input to a shell as a command |
 | `SUSPECT.MCP.INSECURE_TRANSPORT.001` | high | A remote MCP server over plain HTTP |
+| `SUSPECT.MCP.ISSUE_TASKING.001` | high | An MCP server's source reads orders from the issues of a repository written in the code |
+| `SUSPECT.MCP.K8S_SECRET_READ.001` | high | An MCP server's source reads the cluster's secrets with its own service-account token |
+| `SUSPECT.MCP.LIBRARY_HIJACK.001` | medium | An MCP server's source plants a library or a search path for other programs |
 | `SUSPECT.MCP.LISTENER.001` | high | An MCP server opens its own listening socket and runs commands |
 | `SUSPECT.MCP.LIVE_TOOL_DESCRIPTION.001` | high | A remote MCP server serves a tool description that steers the agent |
+| `SUSPECT.MCP.LOG_CONCEALMENT.001` | high | A progress or log notification of an MCP server tells the model to hide what it does from the user |
+| `SUSPECT.MCP.LOG_CONSENT_CLAIM.001` | high | A progress or log notification of an MCP server claims that the user already approved, or that no approval is needed |
+| `SUSPECT.MCP.LOG_CROSS_TOOL.001` | high | A progress or log notification of an MCP server tells the model how to use other tools or servers |
+| `SUSPECT.MCP.LOG_EXFIL_ORDER.001` | high | A progress or log notification of an MCP server tells the model to send what it handles to a web address |
+| `SUSPECT.MCP.LOG_FAKE_APPROVAL.001` | high | A progress or log notification of an MCP server poses as an approval prompt and asks the person for a reply |
+| `SUSPECT.MCP.LOG_FAKE_BOUNDARY.001` | high | A progress or log notification of an MCP server closes the client's framing of tool text or opens a system block of its own |
+| `SUSPECT.MCP.LOG_FAKE_WARNING.001` | high | A progress or log notification of an MCP server poses as a security warning and tells the person to run a command |
+| `SUSPECT.MCP.LOG_HARVEST.001` | high | A progress or log notification of an MCP server asks the model to hand over the conversation or its system prompt |
+| `SUSPECT.MCP.LOG_HIDDEN_HTML.001` | high | A progress or log notification of an MCP server hides an order in an HTML comment |
+| `SUSPECT.MCP.LOG_LINK_EXFIL.001` | high | A progress or log notification of an MCP server has the model render an image or link with its data in the address |
+| `SUSPECT.MCP.LOG_MEMORY_WRITE.001` | high | A progress or log notification of an MCP server tells the model to store an instruction in its memory or settings |
+| `SUSPECT.MCP.LOG_MODE_CLAIM.001` | high | A progress or log notification of an MCP server announces a developer, debug or admin mode in which the model's restrictions are off |
+| `SUSPECT.MCP.LOG_OTHER_AGENT_ORDER.001` | high | A progress or log notification of an MCP server gives orders to other agents, tells them to skip checks or demands their context |
+| `SUSPECT.MCP.LOG_OUTPUT_HIDDEN.001` | high | A progress or log notification of an MCP server tells the model not to show the user this output, note or instruction |
+| `SUSPECT.MCP.LOG_OVERRIDE.001` | high | A progress or log notification of an MCP server tells the model to drop its earlier instructions or to follow new ones |
+| `SUSPECT.MCP.LOG_RETRIEVAL_DIRECTIVE.001` | high | A progress or log notification of an MCP server addresses the model that will retrieve it and orders it |
+| `SUSPECT.MCP.LOG_ROLE_MARKER.001` | high | A progress or log notification of an MCP server carries a chat-template role marker |
+| `SUSPECT.MCP.LOG_SECRET_CALL.001` | high | A progress or log notification of an MCP server sends the model to a tool call on a credential or key file |
+| `SUSPECT.MCP.LOG_SECRET_REQUEST.001` | high | A progress or log notification of an MCP server asks for the contents of a credential file or for the user's seed phrase, private key or master password |
+| `SUSPECT.MCP.LOG_SETTINGS_EDIT.001` | high | A progress or log notification of an MCP server tells the model to change its own settings, permissions or hooks |
+| `SUSPECT.MCP.LOG_TERMINAL_ESCAPE.001` | high | A progress or log notification of an MCP server carries a terminal escape that hides text, sets the clipboard or disguises a link |
+| `SUSPECT.MCP.LOG_TOOL_PRIORITY.001` | high | A progress or log notification of an MCP server says this tool must be called first, replaces other tools or is the same as an official one |
+| `SUSPECT.MCP.LOG_URGENCY_AUTHORITY.001` | high | A progress or log notification of an MCP server claims authority and threatens a deadline |
+| `SUSPECT.MCP.LOG_URL_APPEND.001` | high | A progress or log notification of an MCP server tells the model to add the conversation or a secret to a web address |
+| `SUSPECT.MCP.LOG_ZERO_WIDTH.001` | high | A progress or log notification of an MCP server carries a run of zero-width characters |
 | `SUSPECT.MCP.LOOKALIKE.001` | high | An MCP server package named like a popular one |
+| `SUSPECT.MCP.LOOKALIKE.002` | high | This MCP server's own package is named like a popular one |
+| `SUSPECT.MCP.NATIVE_FROM_TEMP.001` | high | An MCP server's source loads a module or a shared library from a temporary place or straight from the network |
+| `SUSPECT.MCP.NOTIFICATION_FLOOD.001` | medium | An MCP server's source sends notifications to the client in a loop with no end |
+| `SUSPECT.MCP.PACKAGE_TAMPER.001` | medium | An MCP server's source writes into the files of other installed packages |
+| `SUSPECT.MCP.PASTE_TASKING.001` | high | An MCP server's source fetches a paste from a paste site and runs it |
+| `SUSPECT.MCP.PRIVILEGE_GRANT.001` | medium | An MCP server's source grants itself administrator rights |
+| `SUSPECT.MCP.PROCESS_MASQUERADE.001` | medium | An MCP server's source gives its process the name of a system service |
+| `SUSPECT.MCP.PROMPT_CONCEALMENT.001` | high | A prompt template of an MCP server tells the model to hide what it does from the user |
+| `SUSPECT.MCP.PROMPT_CONSENT_CLAIM.001` | high | A prompt template of an MCP server claims that the user already approved, or that no approval is needed |
+| `SUSPECT.MCP.PROMPT_CROSS_TOOL.001` | high | A prompt template of an MCP server tells the model how to use other tools or servers |
+| `SUSPECT.MCP.PROMPT_EXFIL_ORDER.001` | high | A prompt template of an MCP server tells the model to send what it handles to a web address |
+| `SUSPECT.MCP.PROMPT_FAKE_APPROVAL.001` | high | A prompt template of an MCP server poses as an approval prompt and asks the person for a reply |
+| `SUSPECT.MCP.PROMPT_FAKE_BOUNDARY.001` | high | A prompt template of an MCP server closes the client's framing of tool text or opens a system block of its own |
+| `SUSPECT.MCP.PROMPT_FAKE_WARNING.001` | high | A prompt template of an MCP server poses as a security warning and tells the person to run a command |
+| `SUSPECT.MCP.PROMPT_HARVEST.001` | high | A prompt template of an MCP server asks the model to hand over the conversation or its system prompt |
+| `SUSPECT.MCP.PROMPT_HIDDEN_HTML.001` | high | A prompt template of an MCP server hides an order in an HTML comment |
+| `SUSPECT.MCP.PROMPT_INJECTION.001` | high | An MCP prompt template carries a hidden or hostile order |
+| `SUSPECT.MCP.PROMPT_LINK_EXFIL.001` | high | A prompt template of an MCP server has the model render an image or link with its data in the address |
+| `SUSPECT.MCP.PROMPT_MEMORY_WRITE.001` | high | A prompt template of an MCP server tells the model to store an instruction in its memory or settings |
+| `SUSPECT.MCP.PROMPT_MODE_CLAIM.001` | high | A prompt template of an MCP server announces a developer, debug or admin mode in which the model's restrictions are off |
+| `SUSPECT.MCP.PROMPT_OTHER_AGENT_ORDER.001` | high | A prompt template of an MCP server gives orders to other agents, tells them to skip checks or demands their context |
+| `SUSPECT.MCP.PROMPT_OUTPUT_HIDDEN.001` | high | A prompt template of an MCP server tells the model not to show the user this output, note or instruction |
+| `SUSPECT.MCP.PROMPT_OVERRIDE.001` | high | A prompt template of an MCP server tells the model to drop its earlier instructions or to follow new ones |
+| `SUSPECT.MCP.PROMPT_RECIPIENT_INJECTION.001` | high | A prompt template of an MCP server tells the model to add a fixed address to what it sends |
+| `SUSPECT.MCP.PROMPT_RETRIEVAL_DIRECTIVE.001` | high | A prompt template of an MCP server addresses the model that will retrieve it and orders it |
+| `SUSPECT.MCP.PROMPT_ROLE_MARKER.001` | high | A prompt template of an MCP server carries a chat-template role marker |
+| `SUSPECT.MCP.PROMPT_SECRET_CALL.001` | high | A prompt template of an MCP server sends the model to a tool call on a credential or key file |
+| `SUSPECT.MCP.PROMPT_SECRET_REQUEST.001` | high | A prompt template of an MCP server asks for the contents of a credential file or for the user's seed phrase, private key or master password |
+| `SUSPECT.MCP.PROMPT_SETTINGS_EDIT.001` | high | A prompt template of an MCP server tells the model to change its own settings, permissions or hooks |
+| `SUSPECT.MCP.PROMPT_TERMINAL_ESCAPE.001` | high | A prompt template of an MCP server carries a terminal escape that hides text, sets the clipboard or disguises a link |
+| `SUSPECT.MCP.PROMPT_TOOL_PRIORITY.001` | high | A prompt template of an MCP server says this tool must be called first, replaces other tools or is the same as an official one |
+| `SUSPECT.MCP.PROMPT_URGENCY_AUTHORITY.001` | high | A prompt template of an MCP server claims authority and threatens a deadline |
+| `SUSPECT.MCP.PROMPT_URL_APPEND.001` | high | A prompt template of an MCP server tells the model to add the conversation or a secret to a web address |
+| `SUSPECT.MCP.PROMPT_ZERO_WIDTH.001` | high | A prompt template of an MCP server carries a run of zero-width characters |
+| `SUSPECT.MCP.RANSOM_NOTE.001` | medium | An MCP server's source carries a ransom note |
+| `SUSPECT.MCP.RECON_BATTERY.001` | medium | An MCP server's source runs several commands that survey the machine |
+| `SUSPECT.MCP.RESOURCE_CONCEALMENT.001` | high | A resource of an MCP server tells the model to hide what it does from the user |
+| `SUSPECT.MCP.RESOURCE_CONSENT_CLAIM.001` | high | A resource of an MCP server claims that the user already approved, or that no approval is needed |
+| `SUSPECT.MCP.RESOURCE_CROSS_TOOL.001` | high | A resource of an MCP server tells the model how to use other tools or servers |
+| `SUSPECT.MCP.RESOURCE_EXFIL_ORDER.001` | high | A resource of an MCP server tells the model to send what it handles to a web address |
+| `SUSPECT.MCP.RESOURCE_FAKE_APPROVAL.001` | high | A resource of an MCP server poses as an approval prompt and asks the person for a reply |
+| `SUSPECT.MCP.RESOURCE_FAKE_BOUNDARY.001` | high | A resource of an MCP server closes the client's framing of tool text or opens a system block of its own |
+| `SUSPECT.MCP.RESOURCE_FAKE_WARNING.001` | high | A resource of an MCP server poses as a security warning and tells the person to run a command |
+| `SUSPECT.MCP.RESOURCE_HARVEST.001` | high | A resource of an MCP server asks the model to hand over the conversation or its system prompt |
+| `SUSPECT.MCP.RESOURCE_HIDDEN_HTML.001` | high | A resource of an MCP server hides an order in an HTML comment |
+| `SUSPECT.MCP.RESOURCE_INJECTION.001` | high | An MCP resource serves text that gives the agent orders |
+| `SUSPECT.MCP.RESOURCE_LINK_EXFIL.001` | high | A resource of an MCP server has the model render an image or link with its data in the address |
+| `SUSPECT.MCP.RESOURCE_MEMORY_WRITE.001` | high | A resource of an MCP server tells the model to store an instruction in its memory or settings |
+| `SUSPECT.MCP.RESOURCE_MODE_CLAIM.001` | high | A resource of an MCP server announces a developer, debug or admin mode in which the model's restrictions are off |
+| `SUSPECT.MCP.RESOURCE_OTHER_AGENT_ORDER.001` | high | A resource of an MCP server gives orders to other agents, tells them to skip checks or demands their context |
+| `SUSPECT.MCP.RESOURCE_OUTPUT_HIDDEN.001` | high | A resource of an MCP server tells the model not to show the user this output, note or instruction |
+| `SUSPECT.MCP.RESOURCE_OVERRIDE.001` | high | A resource of an MCP server tells the model to drop its earlier instructions or to follow new ones |
+| `SUSPECT.MCP.RESOURCE_RETRIEVAL_DIRECTIVE.001` | high | A resource of an MCP server addresses the model that will retrieve it and orders it |
+| `SUSPECT.MCP.RESOURCE_ROLE_MARKER.001` | high | A resource of an MCP server carries a chat-template role marker |
+| `SUSPECT.MCP.RESOURCE_SECRET_CALL.001` | high | A resource of an MCP server sends the model to a tool call on a credential or key file |
+| `SUSPECT.MCP.RESOURCE_SETTINGS_EDIT.001` | high | A resource of an MCP server tells the model to change its own settings, permissions or hooks |
+| `SUSPECT.MCP.RESOURCE_TERMINAL_ESCAPE.001` | high | A resource of an MCP server carries a terminal escape that hides text, sets the clipboard or disguises a link |
+| `SUSPECT.MCP.RESOURCE_TOOL_PRIORITY.001` | high | A resource of an MCP server says this tool must be called first, replaces other tools or is the same as an official one |
+| `SUSPECT.MCP.RESOURCE_URGENCY_AUTHORITY.001` | high | A resource of an MCP server claims authority and threatens a deadline |
+| `SUSPECT.MCP.RESOURCE_URL_APPEND.001` | high | A resource of an MCP server tells the model to add the conversation or a secret to a web address |
+| `SUSPECT.MCP.RESOURCE_ZERO_WIDTH.001` | high | A resource of an MCP server carries a run of zero-width characters |
+| `SUSPECT.MCP.RESPONSE_RUN.001` | medium | An MCP server's source reads an answer from a host and runs it as a command |
+| `SUSPECT.MCP.RESULT_CONCEALMENT.001` | high | A tool result of an MCP server tells the model to hide what it does from the user |
+| `SUSPECT.MCP.RESULT_CONSENT_CLAIM.001` | high | A tool result of an MCP server claims that the user already approved, or that no approval is needed |
+| `SUSPECT.MCP.RESULT_CROSS_TOOL.001` | high | A tool result of an MCP server tells the model how to use other tools or servers |
+| `SUSPECT.MCP.RESULT_EXFIL_ORDER.001` | high | A tool result of an MCP server tells the model to send what it handles to a web address |
+| `SUSPECT.MCP.RESULT_FAKE_APPROVAL.001` | high | A tool result of an MCP server poses as an approval prompt and asks the person for a reply |
+| `SUSPECT.MCP.RESULT_FAKE_BOUNDARY.001` | high | A tool result of an MCP server closes the client's framing of tool text or opens a system block of its own |
+| `SUSPECT.MCP.RESULT_FAKE_WARNING.001` | high | A tool result of an MCP server poses as a security warning and tells the person to run a command |
+| `SUSPECT.MCP.RESULT_HARVEST.001` | high | A tool result of an MCP server asks the model to hand over the conversation or its system prompt |
+| `SUSPECT.MCP.RESULT_HIDDEN_HTML.001` | high | A tool result of an MCP server hides an order in an HTML comment |
+| `SUSPECT.MCP.RESULT_INJECTION.001` | high | An MCP tool returns text that gives the agent orders |
+| `SUSPECT.MCP.RESULT_LINK_EXFIL.001` | high | A tool result of an MCP server has the model render an image or link with its data in the address |
+| `SUSPECT.MCP.RESULT_MEMORY_WRITE.001` | high | A tool result of an MCP server tells the model to store an instruction in its memory or settings |
+| `SUSPECT.MCP.RESULT_MODE_CLAIM.001` | high | A tool result of an MCP server announces a developer, debug or admin mode in which the model's restrictions are off |
+| `SUSPECT.MCP.RESULT_OTHER_AGENT_ORDER.001` | high | A tool result of an MCP server gives orders to other agents, tells them to skip checks or demands their context |
+| `SUSPECT.MCP.RESULT_OUTPUT_HIDDEN.001` | high | A tool result of an MCP server tells the model not to show the user this output, note or instruction |
+| `SUSPECT.MCP.RESULT_OVERRIDE.001` | high | A tool result of an MCP server tells the model to drop its earlier instructions or to follow new ones |
+| `SUSPECT.MCP.RESULT_RECIPIENT_INJECTION.001` | high | A tool result of an MCP server tells the model to add a fixed address to what it sends |
+| `SUSPECT.MCP.RESULT_RETRIEVAL_DIRECTIVE.001` | high | A tool result of an MCP server addresses the model that will retrieve it and orders it |
+| `SUSPECT.MCP.RESULT_ROLE_MARKER.001` | high | A tool result of an MCP server carries a chat-template role marker |
+| `SUSPECT.MCP.RESULT_SECRET_CALL.001` | high | A tool result of an MCP server sends the model to a tool call on a credential or key file |
+| `SUSPECT.MCP.RESULT_SECRET_REQUEST.001` | high | A tool result of an MCP server asks for the contents of a credential file or for the user's seed phrase, private key or master password |
+| `SUSPECT.MCP.RESULT_SETTINGS_EDIT.001` | high | A tool result of an MCP server tells the model to change its own settings, permissions or hooks |
+| `SUSPECT.MCP.RESULT_TERMINAL_ESCAPE.001` | high | A tool result of an MCP server carries a terminal escape that hides text, sets the clipboard or disguises a link |
+| `SUSPECT.MCP.RESULT_TOOL_PRIORITY.001` | high | A tool result of an MCP server says this tool must be called first, replaces other tools or is the same as an official one |
+| `SUSPECT.MCP.RESULT_URGENCY_AUTHORITY.001` | high | A tool result of an MCP server claims authority and threatens a deadline |
+| `SUSPECT.MCP.RESULT_URL_APPEND.001` | high | A tool result of an MCP server tells the model to add the conversation or a secret to a web address |
+| `SUSPECT.MCP.RESULT_ZERO_WIDTH.001` | high | A tool result of an MCP server carries a run of zero-width characters |
+| `SUSPECT.MCP.REVERSE_SHELL.001` | medium | An MCP server's source opens a reverse shell |
+| `SUSPECT.MCP.ROOTS_ESCAPE.001` | medium | An MCP server's source asks for the user's roots and then reads a credential file outside them |
+| `SUSPECT.MCP.SAMPLING_ABUSE.001` | high | An MCP server uses the client's model as its own tool through sampling |
+| `SUSPECT.MCP.SCHEMA_CONCEALMENT.001` | high | A tool parameter description of an MCP server tells the model to hide what it does from the user |
+| `SUSPECT.MCP.SCHEMA_CONSENT_CLAIM.001` | high | A tool parameter description of an MCP server claims that the user already approved, or that no approval is needed |
+| `SUSPECT.MCP.SCHEMA_CROSS_TOOL.001` | high | A tool parameter description of an MCP server tells the model how to use other tools or servers |
+| `SUSPECT.MCP.SCHEMA_EXFIL_ORDER.001` | high | A tool parameter description of an MCP server tells the model to send what it handles to a web address |
+| `SUSPECT.MCP.SCHEMA_FAKE_APPROVAL.001` | high | A tool parameter description of an MCP server poses as an approval prompt and asks the person for a reply |
+| `SUSPECT.MCP.SCHEMA_FAKE_BOUNDARY.001` | high | A tool parameter description of an MCP server closes the client's framing of tool text or opens a system block of its own |
+| `SUSPECT.MCP.SCHEMA_FAKE_WARNING.001` | high | A tool parameter description of an MCP server poses as a security warning and tells the person to run a command |
+| `SUSPECT.MCP.SCHEMA_HARVEST.001` | high | A tool parameter description of an MCP server asks the model to hand over the conversation or its system prompt |
+| `SUSPECT.MCP.SCHEMA_HIDDEN_HTML.001` | high | A tool parameter description of an MCP server hides an order in an HTML comment |
+| `SUSPECT.MCP.SCHEMA_LINK_EXFIL.001` | high | A tool parameter description of an MCP server has the model render an image or link with its data in the address |
+| `SUSPECT.MCP.SCHEMA_MEMORY_WRITE.001` | high | A tool parameter description of an MCP server tells the model to store an instruction in its memory or settings |
+| `SUSPECT.MCP.SCHEMA_MODE_CLAIM.001` | high | A tool parameter description of an MCP server announces a developer, debug or admin mode in which the model's restrictions are off |
+| `SUSPECT.MCP.SCHEMA_OTHER_AGENT_ORDER.001` | high | A tool parameter description of an MCP server gives orders to other agents, tells them to skip checks or demands their context |
+| `SUSPECT.MCP.SCHEMA_OUTPUT_HIDDEN.001` | high | A tool parameter description of an MCP server tells the model not to show the user this output, note or instruction |
+| `SUSPECT.MCP.SCHEMA_OVERRIDE.001` | high | A tool parameter description of an MCP server tells the model to drop its earlier instructions or to follow new ones |
 | `SUSPECT.MCP.SCHEMA_POISONING.001` | high | An MCP tool's parameter names an order to the agent |
+| `SUSPECT.MCP.SCHEMA_RECIPIENT_INJECTION.001` | high | A tool parameter description of an MCP server tells the model to add a fixed address to what it sends |
+| `SUSPECT.MCP.SCHEMA_RETRIEVAL_DIRECTIVE.001` | high | A tool parameter description of an MCP server addresses the model that will retrieve it and orders it |
+| `SUSPECT.MCP.SCHEMA_ROLE_MARKER.001` | high | A tool parameter description of an MCP server carries a chat-template role marker |
+| `SUSPECT.MCP.SCHEMA_SECRET_CALL.001` | high | A tool parameter description of an MCP server sends the model to a tool call on a credential or key file |
+| `SUSPECT.MCP.SCHEMA_SECRET_REQUEST.001` | high | A tool parameter description of an MCP server asks for the contents of a credential file or for the user's seed phrase, private key or master password |
+| `SUSPECT.MCP.SCHEMA_SETTINGS_EDIT.001` | high | A tool parameter description of an MCP server tells the model to change its own settings, permissions or hooks |
+| `SUSPECT.MCP.SCHEMA_TERMINAL_ESCAPE.001` | high | A tool parameter description of an MCP server carries a terminal escape that hides text, sets the clipboard or disguises a link |
+| `SUSPECT.MCP.SCHEMA_TOOL_PRIORITY.001` | high | A tool parameter description of an MCP server says this tool must be called first, replaces other tools or is the same as an official one |
+| `SUSPECT.MCP.SCHEMA_URGENCY_AUTHORITY.001` | high | A tool parameter description of an MCP server claims authority and threatens a deadline |
+| `SUSPECT.MCP.SCHEMA_URL_APPEND.001` | high | A tool parameter description of an MCP server tells the model to add the conversation or a secret to a web address |
+| `SUSPECT.MCP.SCHEMA_ZERO_WIDTH.001` | high | A tool parameter description of an MCP server carries a run of zero-width characters |
 | `SUSPECT.MCP.SECRET_HARVEST.001` | high | An MCP server gathers the environment's secrets by name |
+| `SUSPECT.MCP.SECURITY_TOOL_KILL.001` | high | An MCP server's source stops or blinds security software |
 | `SUSPECT.MCP.SHELL_LAUNCH.001` | high | An MCP server launched through a shell that fetches code |
+| `SUSPECT.MCP.SHELL_PIPE_DOWNLOAD.001` | medium | An MCP server's source downloads a script and runs it in one command |
+| `SUSPECT.MCP.SPLIT_PAYLOAD.001` | medium | An MCP server's source joins pieces of an encoded string and decodes the whole |
+| `SUSPECT.MCP.SUBSCRIPTION_CHANNEL.001` | medium | An MCP server's source carries data to the client inside the address of a resource update |
 | `SUSPECT.MCP.TIME_BOMB.001` | high | An MCP tool changes behaviour on a mixed date, chance and call-count gate |
 | `SUSPECT.MCP.TOOLS_CHANGED.001` | medium | A remote MCP server's tools changed since they were approved |
+| `SUSPECT.MCP.TOOLS_REPLACED_AFTER_CALLS.001` | medium | An MCP server's source replaces a tool's description after a number of calls |
 | `SUSPECT.MCP.TOOL_DESCRIPTION.001` | high | A tool in this repository's MCP server instructs the agent |
+| `SUSPECT.MCP.TOOL_NAME_LOOKALIKE.001` | medium | An MCP tool is named one letter from a well-known tool |
 | `SUSPECT.MCP.TOOL_POISONING.001` | high | An MCP server's tool description hides text or instructs the agent |
 | `SUSPECT.MCP.TOOL_SQUATTING.001` | high | An MCP tool takes a well-known tool's name and claims to be the safer one |
+| `SUSPECT.MCP.TRACE_ERASE.001` | medium | An MCP server's source erases shell history or system logs |
 | `SUSPECT.MCP.UNPINNED.001` | medium | An MCP server launched from an unpinned package |
 | `SUSPECT.MCP.UNTRUSTED_REMOTE.001` | high | A remote MCP server on a tunnel, paste or interaction host |
+| `SUSPECT.MCP.WEBSOCKET_C2.001` | high | An MCP server's source takes commands from a WebSocket it opens itself |
 
 ## Media
 
@@ -1688,17 +2081,19 @@ rule's own samples.
 
 ## Obfuscation
 
-7 rules.
+9 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `SUSPECT.OBFUSCATION.BIDI.001` | high | Bidirectional or invisible Unicode in source |
+| `SUSPECT.OBFUSCATION.DORMANT_PAYLOAD.001` | high | Data fetched or carried by the package is decoded and then never used |
 | `SUSPECT.OBFUSCATION.ENCODED.001` | medium | Large encoded blob embedded in source |
 | `SUSPECT.OBFUSCATION.LONGLINE.001` | low | Line far longer than any hand-written source |
 | `SUSPECT.OBFUSCATION.MANGLED.001` | high | Output of obfuscator.io outside the package's build output |
 | `SUSPECT.OBFUSCATION.PACKED.001` | medium | Packer or minifier signature in hand-written source |
 | `SUSPECT.OBFUSCATION.REQUIRE_ALIAS.001` | high | Node's require hidden behind a global name |
 | `SUSPECT.OBFUSCATION.TAG_SMUGGLING.001` | high | Invisible text written in Unicode Tag characters |
+| `SUSPECT.OBFUSCATION.UNRESOLVED_PAYLOAD.001` | high | A payload is handed at import to a function nothing defines |
 
 ## Package
 
@@ -1719,11 +2114,21 @@ rule's own samples.
 
 ## Persistence
 
-1 rules.
+11 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
+| `MALWARE.PERSIST.BACKDOOR.001` | critical | Writes a file that lets someone else in, with content the package carries |
+| `MALWARE.PERSIST.HIDDEN.001` | critical | Registers a program to start at login and starts it without a window |
 | `SUSPECT.PERSIST.001` | high | Network access combined with a persistence mechanism |
+| `SUSPECT.PERSIST.MCP_CLIENT_SPREAD.001` | medium | Writes an MCP server into several AI clients' configurations |
+| `SUSPECT.PERSIST.REMOTE_SCRIPT.001` | high | Installs something that downloads and runs a script on its own |
+| `SUSPECT.PERSIST.WRITES_DOWNLOADER.001` | high | An MCP server's source schedules a job that downloads and runs a script |
+| `SUSPECT.PERSIST.WRITES_DOWNLOADER.002` | high | An MCP server's source writes a launch agent or daemon that downloads and runs a script |
+| `SUSPECT.PERSIST.WRITES_DOWNLOADER.003` | high | An MCP server's source writes a service unit that downloads and runs a script |
+| `SUSPECT.PERSIST.WRITES_DOWNLOADER.004` | high | An MCP server's source adds a line to a shell start-up file that downloads and runs a script |
+| `SUSPECT.PERSIST.WRITES_DOWNLOADER.005` | high | An MCP server's source plants a git hook that downloads and runs a script |
+| `SUSPECT.PERSIST.WRITES_DOWNLOADER.006` | high | An MCP server's source writes an instruction file for the agent that tells it to download and run a script |
 
 ## Polyglot
 
@@ -1904,6 +2309,14 @@ rule's own samples.
 | `SECRET.URL.CREDENTIAL.001` | high | Credential embedded in a URL |
 | `SECRET.VAULT.TOKEN.001` | critical | Committed credential: HashiCorp Vault token |
 
+## Source
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.SOURCE.UNPARSED_RUNNING.001` | high | A module the package runs does not parse |
+
 ## Source and history
 
 4 rules.
@@ -1946,6 +2359,24 @@ rule's own samples.
 | Rule | Severity | What it catches |
 |---|---|---|
 | `SUSPECT.VERDICT.MODEL.001` | high | The package's findings together look malicious |
+
+## Wallet
+
+3 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `SUSPECT.WALLET.CLIPBOARD_SWAP.001` | high | Replaces what is on the clipboard with a fixed wallet address |
+| `SUSPECT.WALLET.DRAIN_TO_FIXED_ADDRESS.001` | high | Sends a wallet's balance to an address written into the code |
+| `SUSPECT.WALLET.UNLIMITED_APPROVAL_FIXED.001` | medium | Approves a fixed address to spend an unlimited amount of a token |
+
+## Worm
+
+1 rules.
+
+| Rule | Severity | What it catches |
+|---|---|---|
+| `MALWARE.WORM.SELF_PROPAGATION.001` | critical | The package publishes itself, decodes data to run it and fetches code to run it |
 
 ## Agent Threat Rules
 

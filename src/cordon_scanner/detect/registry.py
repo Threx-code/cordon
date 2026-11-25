@@ -20,10 +20,14 @@ ROLES: dict[str, tuple[str, str]] = {
     ),
     "ComposerPluginHooks": ("cordon_scanner.detect.supply.composer_plugins", "ComposerPluginHooks"),
     "DeclaredSource": ("cordon_scanner.detect.supply.manifests.sources", "DeclaredSource"),
+    "ExecutableRecord": ("cordon_scanner.detect.binary.executable_record", "ExecutableRecord"),
     "CrossFileJoin": ("cordon_scanner.detect.code.reached_flows", "CrossFileJoin"),
     "DownloadFlow": ("cordon_scanner.detect.code.download_flow", "DownloadFlow"),
     "ImportReachability": ("cordon_scanner.detect.supply.reachability", "ImportReachability"),
+    "InstallFacts": ("cordon_scanner.detect.supply.name_risk", "InstallFacts"),
     "JudgeGate": ("cordon_scanner.detect.agents.language_model.detector", "JudgeGate"),
+    "LabelledHosts": ("cordon_scanner.detect.code.capability.memo", "LabelledHosts"),
+    "LabelledNames": ("cordon_scanner.detect.code.capability.memo", "LabelledNames"),
     "LoadPath": ("cordon_scanner.detect.code.capability.load_path", "LoadPath"),
     "NATIVE_FORMATS": ("cordon_scanner.detect.binary.detector", "NATIVE_FORMATS"),
     "PackingFindings": ("cordon_scanner.detect.code.obfuscation.packing", "PackingFindings"),
@@ -43,12 +47,16 @@ if TYPE_CHECKING:
     from cordon_scanner.detect.base import (
         BinaryIdentification,
         CampaignSiblingFacts,
+        CapabilityNameMemo,
         ComposerPluginPaths,
         CrossFileJoining,
         DeclaredSourceKinds,
+        DestinationMemo,
         DownloadRunning,
+        ExecutableRecording,
         ImportReachabilityNotes,
         JudgeScheduling,
+        PackageInstallFacts,
         PackerSignatures,
         ReachedFlowFacts,
         RuleFileInputs,
@@ -57,14 +65,17 @@ if TYPE_CHECKING:
         SubmoduleDependencies,
     )
     from cordon_scanner.detect.binary import detector as _detect_binary_detector
+    from cordon_scanner.detect.binary import executable_record as _detect_binary_executable_record
     from cordon_scanner.detect.binary import rule_files as _detect_binary_rule_files
     from cordon_scanner.detect.code import download_flow as _detect_code_download_flow
     from cordon_scanner.detect.code import reached_flows as _detect_code_reached_flows
     from cordon_scanner.detect.code.capability import load_path as _detect_code_capability_load_path
+    from cordon_scanner.detect.code.capability import memo as _detect_code_capability_memo
     from cordon_scanner.detect.code.obfuscation import packing as _detect_code_obfuscation_packing
     from cordon_scanner.detect.source import submodules as _detect_source_submodules
     from cordon_scanner.detect.supply import campaign_sibling as _detect_supply_campaign_sibling
     from cordon_scanner.detect.supply import composer_plugins as _detect_supply_composer_plugins
+    from cordon_scanner.detect.supply import name_risk as _detect_supply_name_risk
     from cordon_scanner.detect.supply import reachability as _detect_supply_reachability
     from cordon_scanner.detect.supply import sbom as _detect_supply_sbom
     from cordon_scanner.detect.supply.manifests import sources as _detect_supply_manifests_sources
@@ -75,10 +86,14 @@ if TYPE_CHECKING:
     CampaignSiblings: CampaignSiblingFacts = _detect_supply_campaign_sibling.CampaignSiblingDetector
     ComposerPluginHooks: ComposerPluginPaths = _detect_supply_composer_plugins.ComposerPluginHooks
     DeclaredSource: DeclaredSourceKinds = _detect_supply_manifests_sources.DeclaredSource
+    ExecutableRecord: ExecutableRecording = _detect_binary_executable_record.ExecutableRecord
     CrossFileJoin: CrossFileJoining = _detect_code_reached_flows.CrossFileJoin
     DownloadFlow: DownloadRunning = _detect_code_download_flow.DownloadFlow
     ImportReachability: ImportReachabilityNotes = _detect_supply_reachability.ImportReachability
+    InstallFacts: PackageInstallFacts = _detect_supply_name_risk.InstallFacts
     JudgeGate: JudgeScheduling = _detect_agents_language_model_detector.JudgeGate
+    LabelledHosts: DestinationMemo = _detect_code_capability_memo.LabelledHosts
+    LabelledNames: CapabilityNameMemo = _detect_code_capability_memo.LabelledNames
     LoadPath: SkillScripts = _detect_code_capability_load_path.LoadPath
     NATIVE_FORMATS: frozenset[str] = _detect_binary_detector.NATIVE_FORMATS
     PackingFindings: PackerSignatures = _detect_code_obfuscation_packing.PackingFindings
@@ -113,8 +128,12 @@ __all__ = [
     "CrossFileJoin",
     "DeclaredSource",
     "DownloadFlow",
+    "ExecutableRecord",
     "ImportReachability",
+    "InstallFacts",
     "JudgeGate",
+    "LabelledHosts",
+    "LabelledNames",
     "LoadPath",
     "PackingFindings",
     "ReachedFlows",

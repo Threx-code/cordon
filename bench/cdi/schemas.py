@@ -17,8 +17,10 @@ from typing import Any
 SCHEMA_VERSIONS: dict[str, str] = {
     "FeatureSet": "1.0.0",
     "ThreatCluster": "1.0.0",
-    "DetectionMiss": "1.0.0",
+    "DetectionMiss": "1.1.0",  # 1.1.0: no stored dataset_membership, read from the manifests
     "CandidateDetector": "1.0.0",
+    "DetectionBundle": "1.0.0",
+    "DeploymentObservation": "1.0.0",
 }
 
 #: Required top-level keys per schema. Light structural validation only; the gate (a5) does the
@@ -46,7 +48,6 @@ REQUIRED: dict[str, frozenset[str]] = {
             "artifact_id",
             "artifact_digest",
             "label_ref",
-            "dataset_membership",
             "baseline",
             "reproduce",
             "failure_mechanism",
@@ -64,6 +65,31 @@ REQUIRED: dict[str, frozenset[str]] = {
             "train_dataset_digest",
             "compatibility",
             "status",
+        }
+    ),
+    "DetectionBundle": frozenset(
+        {
+            "schema_version",
+            "bundle_id",
+            "candidate_id",
+            "artefacts",
+            "decision_digest",
+            "compatibility",
+            "channel",
+        }
+    ),
+    "DeploymentObservation": frozenset(
+        {
+            "schema_version",
+            "bundle_id",
+            "channel",
+            "window",
+            "scans_seen",
+            "would_change",
+            "fires",
+            "confirmed_fires",
+            "crashes",
+            "timeouts",
         }
     ),
 }

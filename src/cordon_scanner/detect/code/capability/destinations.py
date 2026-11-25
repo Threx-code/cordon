@@ -7,6 +7,7 @@ import re
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.shared.documentation import DocumentationSpans
+from cordon_scanner.analysis.shared.text_gate import TextGate
 from cordon_scanner.detect.code.addresses import PublicAddress
 from cordon_scanner.detect.code.capability.hits import CapabilityHit
 from cordon_scanner.detect.code.capability.text_position import TextPosition
@@ -32,9 +33,156 @@ class DestinationLabels:
     INTERACTION_RULE = "INTEL.EGRESS.INTERACTION.001"
     """Egress to an out-of-band interaction service. See `intel.hosts.INTERACTION_HOSTS`."""
 
+    #: A line that binds a value to one name: `URL = ...`, `const URL = ...`, `URL: str = ...`.
+    _BINDING: ClassVar[re.Pattern[str]] = re.compile(
+        r"^\s*(?:export\s+)?(?:(?:const|let|var|final)\s+)?([A-Za-z_$][\w$]*)\s*(?::[^=]*)?=(?!=)"
+    )
+
+    @classmethod
+    def sent_at_import(
+        cls,
+        hits: list[CapabilityHit],
+        source: str | None = None,
+        sent_elsewhere: frozenset[str] = frozenset(),
+    ) -> list[CapabilityHit]:
+        """The hits, less a destination label on a line where nothing is sent: what import makes
+        of a URL written as a constant or passed to a constructor is a destination named, not a
+        request. A label on a request's own line (`urlopen("http://1.2.3.4", data)`) stays, and so
+        does one whose line binds the URL to a name that a sending line uses (`HOOK = "<drop
+        point>"` then `requests.post(HOOK, ...)`): the request goes there, from another line
+        (sf_th_requests 0.1.0 lost INSTALL_CALLBACK without it). `sent_elsewhere` are the names
+        this file binds that another file of the package imports and sends (`SentNames`): the
+        hook written in `__init__.py` and posted from the modules that import it (loveclose 0.0.1,
+        whose `__init__.py` sends nothing itself)."""
+        labels = (cls.DROP_POINT_RULE, cls.INTERACTION_RULE)
+        sending = {
+            hit.line
+            for hit in hits
+            if hit.capability is Capability.EGRESS and hit.rule_id not in labels
+        }
+        bound = cls._bound_to_a_send(
+            {hit.line for hit in hits if hit.rule_id in labels} - sending,
+            sending,
+            source,
+            sent_elsewhere,
+        )
+        return [
+            hit
+            for hit in hits
+            if hit.rule_id not in labels or hit.line in sending or hit.line in bound
+        ]
+
+    @classmethod
+    def _bound_to_a_send(
+        cls,
+        label_lines: set[int],
+        sending: set[int],
+        source: str | None,
+        sent_elsewhere: frozenset[str] = frozenset(),
+    ) -> set[int]:
+        """Label lines that bind their value to a name a sending line uses, as a whole word, or
+        to a name another file of the package imports and sends."""
+        if not source or not label_lines or not (sending or sent_elsewhere):
+            return set()
+        lines = source.splitlines()
+        if sending:
+            sending = sending | cls._helper_send_lines(source, sending)
+        # Names compared as the parser reads them too (`_readings`): `HOOK = ...` in fullwidth
+        # letters binds the `HOOK` that `requests.post(HOOK)` sends and another file imports.
+        sent_text = [
+            view for n in sending if 0 < n <= len(lines) for view in cls._readings(lines[n - 1])
+        ]
+        elsewhere = {view for name in sent_elsewhere for view in cls._readings(name)}
+        kept: set[int] = set()
+        for line in label_lines:
+            if not 0 < line <= len(lines):
+                continue
+            bindings = [
+                found.group(1)
+                for view in cls._readings(lines[line - 1])
+                if (found := cls._BINDING.match(view)) is not None
+            ]
+            if not bindings:
+                continue
+            names = tuple(dict.fromkeys(n for b in bindings for n in cls._readings(b)))
+            if any(name in elsewhere for name in names):
+                kept.add(line)
+                continue
+            patterns = [re.compile(rf"(?<![\w$.]){re.escape(n)}(?![\w$])") for n in names]
+            if any(p.search(text) for p in patterns for text in sent_text):
+                kept.add(line)
+        return kept
+
+    @staticmethod
+    def _readings(text: str) -> tuple[str, ...]:
+        """`text`, and how Python (NFKC) or JavaScript (escapes decoded) would read it where that
+        differs: the file's language is not known here, and keeping a label is the closed side."""
+        return tuple(
+            dict.fromkeys((*TextGate.views(text, "python"), *TextGate.views(text, "javascript")))
+        )
+
+    #: Rounds of helper followed: `send_to_beacon` -> `post` -> `_make_request` -> `urlopen`.
+    HELPER_HOPS: ClassVar[int] = 3
+
+    @classmethod
+    def _helper_send_lines(cls, source: str, sending: set[int]) -> set[int]:
+        """Lines that call one of the file's own functions whose body sends, directly or through
+        another such function (sf_th_requests 0.1.0: `post(BEACON_URL, creds)` -> `_make_request`
+        -> `urlopen`, run at import). Python only; a file that does not parse adds nothing."""
+        import ast
+
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
+        try:
+            tree = PythonSyntax.shared(source)
+        except (SyntaxError, ValueError, RecursionError):
+            # S2: a file that does not parse is reported as SOURCE.UNPARSED where it runs (its own
+            # analyser); here it keeps the line-only reading of `_bound_to_a_send`, nothing more.
+            return set()
+        functions = list(PythonSyntax.of(tree, ast.FunctionDef, ast.AsyncFunctionDef))
+
+        def called(node: ast.Call) -> str | None:
+            func = node.func
+            if isinstance(func, ast.Name):
+                return func.id
+            return func.attr if isinstance(func, ast.Attribute) else None
+
+        senders = {
+            f.name
+            for f in functions
+            if any(f.lineno <= n <= (f.end_lineno or f.lineno) for n in sending)
+        }
+        for _ in range(cls.HELPER_HOPS):
+            grown = senders | {
+                f.name
+                for f in functions
+                if any(called(c) in senders for c in PythonSyntax.within(f, ast.Call))
+            }
+            if grown == senders:
+                break
+            senders = grown
+        return {c.lineno for c in PythonSyntax.of(tree, ast.Call) if called(c) in senders}
+
+    @staticmethod
+    def _data_literals(
+        content: FileContent, language: str | None, raw: bytes
+    ) -> tuple[tuple[int, int], ...]:
+        """The Python literals holding a candidate host that reach no use (`TextLiterals`): a security
+        tool's list of the drop points it knows. Empty for any other language, a file that does not
+        parse or one that names a way to run a string."""
+        if language != "python":
+            return ()
+        from itertools import islice
+
+        from cordon_scanner.analysis.python.inert_literals import TextLiterals
+        from cordon_scanner.analysis.shared.destinations import Destinations
+
+        offsets = [c.start() for c in islice(Destinations.candidates(raw), 200)]
+        return TextLiterals.spans_at(content.text, raw, offsets) if offsets else ()
+
     @classmethod
     def destination_capabilities(
-        cls, content: FileContent, language: str | None = None
+        cls, content: FileContent, language: str | None = None, *, notifier_exempt: bool = True
     ) -> list[CapabilityHit]:
         """Egress to a destination that means something on its own.
 
@@ -73,17 +221,24 @@ class DestinationLabels:
         # time (a 4 MB API model: 1.6 s of spans, then no candidate; measured 2026-10-31).
         # Block comments are asked of `FileContent.in_block_comment`, indexed once per file.
         ignore: tuple[tuple[int, int], ...] | None = None
+        data: tuple[tuple[int, int], ...] = ()
 
         match = None
         for candidate in Destinations.candidates(raw):
             if ignore is None:
                 ignore = DocumentationSpans.of(raw, language)
+                data = cls._data_literals(content, language, raw)
             offset = candidate.start()
             if SourceComments.inside_spans(ignore, offset) or content.in_block_comment(
                 offset, language
             ):
                 continue
+            if any(start <= offset and candidate.end() <= end for start, end in data):
+                # A host a Python module lists to match text against, never to send to.
+                continue
             if TextPosition.is_comment(content, offset, language):
+                continue
+            if notifier_exempt and cls._token_from_variable(raw, candidate):
                 continue
             match = candidate
             break
@@ -113,6 +268,23 @@ class DestinationLabels:
                 )
             )
         return found
+
+    #: A Telegram bot token as it is written in a file: the bot's numeric id, a colon, thirty-five characters.
+    _TELEGRAM_TOKEN = re.compile(rb"\b\d{8,10}:[A-Za-z0-9_-]{35}\b")
+
+    @classmethod
+    def _token_from_variable(cls, raw: bytes, candidate: re.Match[bytes]) -> bool:
+        """Whether a bot API URL takes its token from a variable: `bot${token}`, `bot{token}`, `bot%s`.
+
+        The bot URL is a drop point because malware posts to it with a token it carries. A client that
+        asks its user for the token is a notifier; it is reported as a drop point only when a literal
+        token is written somewhere in the same file."""
+        if not candidate.group(0).lower().endswith(b"api.telegram.org/bot"):
+            return False
+        following = raw[candidate.end() : candidate.end() + 1]
+        if not following or following.isdigit():
+            return False
+        return cls._TELEGRAM_TOKEN.search(raw) is None
 
     _IP_URL = re.compile(
         rb"\bhttps?://(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?::\d{1,5})?(?:/|[\"'\s]|$)"

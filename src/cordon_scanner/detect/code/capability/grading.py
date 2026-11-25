@@ -55,6 +55,14 @@ class CompositeGrading:
         "with nothing fetched or decoded reaching it in this file; a caller in another file could "
         "inject"
     )
+    #: The nothing-downloaded-runs lowering (`DownloadFlow`), said in the finding.
+    NO_SINK_REASON = "code in which nothing downloaded is run and no downloaded value leaves it"
+    #: The unsourced-sink lowering, said in the finding.
+    UNSOURCED_CODE_REASON = (
+        "code that runs or loads only what this file read locally or was given as a setting: the "
+        "parsed source shows nothing fetched or decoded reaching it, so the request elsewhere in "
+        "the file is not what runs"
+    )
     #: What else completes the dropper's pairing: each makes the window a dropper on its own.
     _RUNS_CODE: ClassVar[frozenset[Capability]] = frozenset(
         {Capability.EXECUTE, Capability.FETCH_EXEC, Capability.DESERIALIZE}
@@ -142,13 +150,19 @@ class CompositeGrading:
             # An agent's tool that never runs what it fetched is not escalated as an install-time
             # dropper; `SUSPECT.DROPPER.001` reports the pair below the gate.
             in_hook = False
-        if verified and rule.id in (
-            CompositeRuleIds.DROPPER_RULE,
-            CompositeRuleIds.REMOTE_CODE_RULE,
+        remote = rule.id == CompositeRuleIds.REMOTE_CODE_RULE
+        self.unexternal = (
+            ctx.remote_code_unexternal and rule.id in CompositeRuleIds.REMOTE_CODE_RULES
+        )
+        if (verified and (remote or rule.id == CompositeRuleIds.DROPPER_RULE)) or (
+            self.unexternal and remote
         ):
             # Not escalated as an install-time dropper either: the hook escalation would put the
             # span straight back at CRITICAL. The ceiling below says why it is still reported.
             in_hook = False
+        self.nothing_downloaded = rule.id in CompositeRuleIds.VERIFIABLE_DROPPERS and (
+            LegitimateUse.reaches_no_sink(unit, ctx, hits)
+        )
         self.verified, self.present, self.in_hook = verified, present, in_hook
         self.no_download_runs = no_download_runs
         self.hand_run_provisioning = self.own_credential_client = self.agent_tool_client = False
@@ -174,7 +188,10 @@ class CompositeGrading:
                     if ceilinged in LoadPath.ON_REQUEST_REASONS
                     or ceilinged in ("the tool's own official installer", PublishReach.REASON)
                     or ceilinged == CompositeGrading.VERIFIED_DOWNLOAD_REASON
+                    or ceilinged == CompositeRuleIds.UNEXTERNAL_REQUEST_REASON
                     or ceilinged == CompositeGrading.PARAMETER_COMMAND_REASON
+                    or ceilinged == CompositeGrading.UNSOURCED_CODE_REASON
+                    or ceilinged == CompositeGrading.NO_SINK_REASON
                     else ", where a pattern like this is usually written to be read rather than run"
                 )
             )
@@ -207,7 +224,23 @@ class CompositeGrading:
             ):
                 category = Category.MALICIOUS
                 escalations.append("reads credentials and reaches the network from an install hook")
+        elif self._at_import(ceilinged):
+            # The same act in a module a consumer imports runs unprompted too, on every machine
+            # that imports the package, as the user (reviews/pypi-98/10). Held at HIGH, not
+            # install's CRITICAL: importing is something the user chose to do.
+            escalations.append("runs when the package is imported, as the user, unprompted")
+            severity = max(severity, Severity.HIGH)
         return self._scored(severity, category, escalations)
+
+    def _at_import(self, ceilinged: str) -> bool:
+        """Whether the anchor's line runs when the published package is imported, for a composite
+        admitted to import grading, and no ceiling but the on-request one applies (a reached body
+        is not one that runs only when called)."""
+        if self.compiled.rule.id not in CompositeRuleIds.IMPORT_GRADED:
+            return False
+        if ceilinged and ceilinged != LoadPath.ON_REQUEST_REASONS[1]:
+            return False
+        return self.ctx.import_reaches(self.unit.content.path, self.anchor.line)
 
     def _withdrawn_for_its_use(self) -> bool:
         """Withdrawn for what the code is for: a credential sent to its own service, an agent's tool calling its API, a dropper that is an extension's or an agent's own tooling or a verified release."""
@@ -230,18 +263,14 @@ class CompositeGrading:
 
         if (
             compiled.rule.id == CompositeRuleIds.BEACON_RULE
-            and content.path in ctx.agent_run_paths
-            and content.path not in ctx.consumer_install_paths
-            and not IntentSignals.identity_in_what_is_sent(
-                unit.language, content, hits if file_hits is None else file_hits
+            and IntentSignals.beacon_withdraws_for_want_of_identity(
+                unit.language,
+                content,
+                hits if file_hits is None else file_hits,
+                agent_tool=content.path in ctx.agent_run_paths
+                and content.path not in ctx.consumer_install_paths,
             )
         ):
-            # An agent's tool is in the install-hook set so that what it does is graded as code
-            # that runs unasked; an API client that names its platform in a User-Agent near its
-            # request is not a beacon. As the import-time beacon `SUSPECT.EXFIL.BEACON.001`
-            # requires, the machine's identity has to be IN what is sent (review 98: Asana,
-            # Notion, search and transcription clients in MalSkillBench were blocked on nearness
-            # alone). Where no flow is read for the language, nearness still decides.
             return True
 
         if (
@@ -262,6 +291,10 @@ class CompositeGrading:
             # the same pair below the gate, and every other rule over the file still applies.
             return True
 
+        no_sink = self.nothing_downloaded and compiled.rule.id == "MALWARE.DROPPER.001"
+        if no_sink and evaluator.suspect_reports(ctx, content.path, hits):
+            return True  # two unrelated acts; `SUSPECT.DROPPER.001` reports the pair at MEDIUM
+
         # Withdrawn for the reason above, and only where `SUSPECT.DROPPER.001` reports the same
         # span, so the file is never left clean. What is withdrawn is the claim that the content
         # is whatever the host serves: the release URL is a literal, and the digest it is held
@@ -269,10 +302,9 @@ class CompositeGrading:
         # is -- whoever owns the repository owns the release and the checksum too (`08` P3) --
         # so it stays reported at MEDIUM, and every other rule over the file still applies.
         return (
-            verified
+            (verified or self.unexternal)
             and compiled.rule.id in CompositeRuleIds.WITHDRAWN_WHEN_VERIFIED
-            and self._suspect_dropper_reports(
-                evaluator,
+            and evaluator.suspect_reports(
                 ctx,
                 content.path,
                 hits,
@@ -282,14 +314,12 @@ class CompositeGrading:
 
     def _withdrawn_for_where_it_runs(self) -> bool:
         """Withdrawn for where it runs or what it reaches: a loopback health check, a Homebrew formula, an editor extension that only names a path or host, a pinned fetch in CI, an agent's tool calling the service it holds a key for."""
-        ctx, hits, rule, content, in_hook = (
-            self.ctx,
+        hits, rule, content, in_hook = (
             self.hits,
             self.compiled.rule,
             self.unit.content,
             self.in_hook,
         )
-        category = self.compiled.rule.category
         if rule.id == "MALWARE.EXFIL.BEACON.001" and LegitimateUse.loopback_only(
             CompositeEvaluator.satisfying_region(content, hits)
         ):
@@ -312,6 +342,16 @@ class CompositeGrading:
             # 27 formulas in one tap). A cask runs unsandboxed and keeps the rule.
             return True
 
+        if (
+            rule.id == CompositeRuleIds.PERSIST_RULE
+            and LoadPath.skill_script(content.path, self.ctx)
+            and IntentSignals.persists_only_a_variable(content, hits)
+        ):
+            # A skill's script that stores its own variable in the shell startup files as
+            # `export NAME=value`: configuration, not a foothold. The file names no fetch, alias,
+            # command, scheduled job, loader, path or proxy variable (note 18).
+            return True
+
         if in_hook and SourcePaths.is_editor_extension(content.path):
             # The same reasoning, for the two rules a coding extension trips by talking: its help
             # text names `~/.zshrc` and its secret redactor names `hooks.slack.com`, megabytes of
@@ -328,25 +368,25 @@ class CompositeGrading:
             ):
                 return True
 
-        # The composite admits `ci_hook` alongside `install_hook`, correctly: a
-        # compromised pipeline running what it downloaded is a real, observed attack.
-        # But an install hook runs on every consumer's machine, unprompted, while a CI
-        # script runs only in the pipeline the project controls -- so for CI the
-        # category rests entirely on the fetch being unreviewable, and a pinned one is
-        # not.
-        #
-        # Withdrawn rather than demoted, and the rule id is why. `MALWARE.DROPPER.001`
-        # reported with `category: suspicious` is self-contradictory: the id namespace
-        # encodes the category, a consumer filtering on `MALWARE.*` gets it anyway, and
-        # the taxonomy derives a threat domain from the prefix. The first attempt at
-        # this demoted the category and left the id, which produced exactly that.
-        #
-        # Nothing is lost by withdrawing it. `SUSPECT.DROPPER.001` fires on the same
-        # span, at a severity the evidence supports, with remediation a maintainer can
-        # act on - copy the script into the repository, or verify a digest. What stops
-        # being said is "treat the host as compromised and report the package to the
-        # registry", which is advice about a package somebody installed and means
-        # nothing to the owner of a `.buildkite` script.
+        return self._withdrawn_in_a_pipeline_or_a_tool()
+
+    def _withdrawn_in_a_pipeline_or_a_tool(self) -> bool:
+        """Withdrawn where a pinned fetch runs in the project's own CI, or where an agent's tool calls the service it holds a key for."""
+        ctx, hits, rule, content, in_hook = (
+            self.ctx,
+            self.hits,
+            self.compiled.rule,
+            self.unit.content,
+            self.in_hook,
+        )
+        category = rule.category
+        # The composite admits `ci_hook` alongside `install_hook`: a compromised pipeline running
+        # what it downloaded is a real attack. But an install hook runs on every consumer's
+        # machine, unprompted, while a CI script runs only in the project's own pipeline, so
+        # there the category rests on the fetch being unreviewable, and a pinned one is not.
+        # Withdrawn rather than demoted, because a `MALWARE.*` id with `category: suspicious`
+        # contradicts itself; `SUSPECT.DROPPER.001` fires on the same span at a severity the
+        # evidence supports, with remediation a maintainer can act on.
         if (
             category is Category.MALICIOUS
             and not in_hook
@@ -417,6 +457,8 @@ class CompositeGrading:
             return "", FIXTURE_CEILING
         self._clients()
         for run in (
+            self._ceiling_for_nothing_downloaded,
+            self._ceiling_for_unsourced_code,
             self._ceiling_for_parameter_command,
             self._ceiling_for_provisioning,
             self._ceiling_for_credentials_and_material,
@@ -514,6 +556,32 @@ class CompositeGrading:
         )
         self.agent_tool_client = agent_tool_client
 
+    def _ceiling_for_nothing_downloaded(self) -> tuple[str, Severity] | None:
+        """`SUSPECT.DROPPER.001` where nothing downloaded is run and no downloaded value leaves the
+        file, outside an install hook: MEDIUM with the reason, never dropped."""
+        if self.nothing_downloaded and self.compiled.rule.id == CompositeRuleIds.DROPPER_RULE:
+            return CompositeGrading.NO_SINK_REASON, Severity.MEDIUM
+        return None
+
+    def _ceiling_for_unsourced_code(self) -> tuple[str, Severity] | None:
+        """`SUSPECT.DROPPER.001` in Python whose running half is only execute or deserialize hits the
+        parsed tree shows were handed nothing fetched or decoded (`CapabilityHit.unsourced`): no
+        fetch-and-run, and no process started beside a decode or an unpack. Reported at MEDIUM with
+        the reason, never dropped. An install hook still escalates it after this ceiling, and where
+        the package's calls are not all known (`ScanContext.cross_file_unresolved`) nothing is
+        lowered."""
+        if self.compiled.rule.id != CompositeRuleIds.DROPPER_RULE or self.ctx.cross_file_unresolved:
+            return None
+        present = {h.capability for h in self.hits}
+        if any(h.capability is Capability.FETCH_EXEC and not h.unsourced for h in self.hits):
+            return None
+        if Capability.SPAWN in present and present & {Capability.DECODE, Capability.DECOMPRESS}:
+            return None
+        sinks = [h for h in self.hits if h.capability in self._RUNS_CODE]
+        if not sinks or not all(h.unsourced for h in sinks):
+            return None
+        return CompositeGrading.UNSOURCED_CODE_REASON, Severity.MEDIUM
+
     def _ceiling_for_parameter_command(self) -> tuple[str, Severity] | None:
         """`SUSPECT.DROPPER.001` whose every spawn is a parameter-built shell command of a data
         program (`CapabilityHit.parameter_command`, note 78), and nothing else in the window runs
@@ -573,22 +641,22 @@ class CompositeGrading:
 
     def _ceiling_for_credentials_and_material(self) -> tuple[str, Severity] | None:
         """An authentication file, a store read that reaches nothing, rule or test material, an inert literal, documentation."""
-        compiled, ctx, hits, content, in_hook = (
-            self.compiled,
-            self.ctx,
-            self.hits,
-            self.unit.content,
-            self.in_hook,
-        )
+        compiled, ctx, hits = self.compiled, self.ctx, self.hits
+        content, in_hook = self.unit.content, self.in_hook
         ceilinged, ceiling = "", FIXTURE_CEILING
-        if (
-            compiled.rule.id == CompositeRuleIds.CREDENTIAL_STORE_RULE
-            and SampleKinds.names_authentication(content.path)
+        authentication = SampleKinds.names_authentication(content.path)
+        if compiled.rule.id == CompositeRuleIds.CREDENTIAL_STORE_RULE and (
+            authentication or LegitimateUse.is_template_or_markup(content.path)
         ):
-            # A file named for authentication, reading a credential store. See
-            # `core.samples.names_authentication`; scoped to this one rule, because
-            # its premise is a store "this component does not own".
-            ceilinged = "a file whose name says it handles authentication"
+            # A file named for authentication reading a credential store (`core.samples.
+            # names_authentication`; this rule only, its premise being a store "this component does
+            # not own"), or an HTML page or Jinja template: text a renderer fills in, not code that
+            # reads or sends anything (reviews/pypi-98/20, shape C).
+            ceilinged = (
+                "a file whose name says it handles authentication"
+                if authentication
+                else "a template or markup file, text rather than code"
+            )
         elif (
             compiled.rule.id == CompositeRuleIds.CREDENTIAL_STORE_RULE
             and not in_hook
@@ -604,6 +672,7 @@ class CompositeGrading:
                 content.text,
                 [h.line for h in hits if h.rule_id == "CAP.CREDENTIAL.STORE.001"],
                 [h.line for h in hits if h.capability is Capability.EGRESS],
+                language=self.unit.language,
             )
         ):
             # Nothing the file reads from the store reaches the call (`detect/store_flow.py`):
@@ -798,6 +867,9 @@ class CompositeGrading:
         ):
             ceilinged = CompositeGrading.VERIFIED_DOWNLOAD_REASON
             ceiling = Severity.MEDIUM
+        elif self.unexternal and compiled.rule.id == CompositeRuleIds.REMOTE_CODE_RULE:
+            ceilinged = CompositeRuleIds.UNEXTERNAL_REQUEST_REASON
+            ceiling = Severity.MEDIUM
         elif (
             compiled.rule.id in CompositeRuleIds.ON_REQUEST_RULES
             and not in_hook
@@ -816,7 +888,8 @@ class CompositeGrading:
             # A command channel -- what arrives on a connection, run -- is not a routine a
             # caller asks for; it is never lowered for running only when called.
             and not any(
-                hit.rule_id in ("CAP.GO.RECEIVED_RUN", "CAP.JS.RECEIVED_RUN") for hit in hits
+                hit.rule_id in ("CAP.GO.RECEIVED_RUN", "CAP.JS.RECEIVED_RUN", "AST.PY.RECEIVED_RUN")
+                for hit in hits
             )
         ):
             # Fetch-and-run is HIGH where it runs on its own: an install hook, a pipeline, a
@@ -921,22 +994,6 @@ class CompositeGrading:
             rulepack=rule.rulepack,
             references=rule.references,
             capabilities=tuple(sorted(matched, key=lambda c: c.value)),
-        )
-
-    def _suspect_dropper_reports(
-        self,
-        evaluator: CompositeEvaluator,
-        ctx: ScanContext,
-        path: str,
-        hits: list[CapabilityHit],
-        rule: str = CompositeRuleIds.DROPPER_RULE,
-    ) -> bool:
-        """Whether the suspect grade (`SUSPECT.DROPPER.001`) fires on the window its malware grade
-        matched: its `unless` excludes test paths, and withdrawing the one where the other does
-        not report would leave the file clean."""
-        suspect, fired = ctx.rules.get(rule), frozenset(hit.rule_id for hit in hits)
-        return suspect is not None and evaluator.evaluate(
-            suspect, {hit.capability for hit in hits}, path, in_hook=True, fired=fired
         )
 
 

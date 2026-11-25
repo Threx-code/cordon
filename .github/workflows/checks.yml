@@ -163,6 +163,26 @@ jobs:
             --format markdown:cordon-reports/summary.md \
             --format json:cordon-reports/scan.json \
             --audit-log cordon-reports/audit.jsonl
+      # The learning loop's code sits in bench/cdi, beside the benchmark's attack samples that the scan
+      # above leaves out: it is scanned on its own, under the same policy, so no attack-shaped fixture
+      # or code can hide in the loop.
+      - run: |
+          cordon-scanner scan bench/cdi \
+            --fail-on medium \
+            --reachability \
+            --clamav tcp://127.0.0.1:3310 \
+            --no-color \
+            --format text
+      # The package as a customer installs it, rule data, models and intelligence included: a
+      # scan of an environment that holds Cordon must not report Cordon itself at a blocking
+      # severity. The source scan above excludes the data directories; this one excludes nothing.
+      - name: cordon scans an installed cordon
+        run: |
+          python -m pip wheel . --no-deps --no-build-isolation -w installed-wheel
+          python -m venv installed-venv
+          installed-venv/bin/pip install --no-deps installed-wheel/*.whl
+          site=$(installed-venv/bin/python -c "import sysconfig; print(sysconfig.get_paths()['purelib'])")
+          cordon-scanner scan "$site/cordon_scanner" --fail-on high --no-color --format text
       - if: always() && hashFiles('cordon-reports/summary.md') != ''
         run: cat cordon-reports/summary.md >> "$GITHUB_STEP_SUMMARY"
       - if: always() && hashFiles('cordon.sarif') != ''

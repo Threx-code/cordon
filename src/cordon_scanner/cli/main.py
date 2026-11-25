@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import argparse
 import functools
+import os
 import sys
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from cordon_scanner.cli.commands.account.login import LoginCommand
@@ -32,10 +34,13 @@ from cordon_scanner.cli.commands.agent import AgentCommand
 from cordon_scanner.cli.commands.baseline import BaselineCommand
 from cordon_scanner.cli.commands.bundle import BundleCommand
 from cordon_scanner.cli.commands.config import ConfigCommand
+from cordon_scanner.cli.commands.decision.decide import DecideCommand
+from cordon_scanner.cli.commands.decision.pr_comment import PrCommentCommand
 from cordon_scanner.cli.commands.guard import GuardCommand
 from cordon_scanner.cli.commands.intel import IntelCommand
 from cordon_scanner.cli.commands.inventory import InventoryCommand
 from cordon_scanner.cli.commands.notify import NotifyCommand
+from cordon_scanner.cli.commands.policy import PolicyCommand
 from cordon_scanner.cli.commands.report import ReportCommand
 from cordon_scanner.cli.commands.rules import RulesCommand
 from cordon_scanner.cli.commands.runner import RunnerCommand
@@ -78,6 +83,20 @@ class CommandLine:
     name, which was already `cordon-scanner` and was already free.
     """
 
+    @staticmethod
+    def _front_end(arguments: list[str]) -> int | None:
+        """A command that takes the rest of the command line whole, before argparse sees it: `npm`
+        and `pip` (the tool's own flags), and any front end a plugin registers (`mcp`)."""
+        from cordon_scanner.cli.commands.install.command import InstallGuardCommand
+
+        if arguments[:1] and arguments[0] in InstallGuardCommand.TOOLS:
+            return InstallGuardCommand.main(arguments[0], arguments[1:])
+        for front in CommandParser.front_ends():
+            if arguments[:1] == [front.NAME]:
+                code: int = front.main(arguments[1:])
+                return code
+        return None
+
     @classmethod
     def run(cls, argv: Sequence[str] | None = None) -> int:
         from cordon_scanner.cli.commands.completion import CompletionCommand
@@ -87,15 +106,12 @@ class CommandLine:
         from cordon_scanner.cli.commands.suppressions import SuppressCommand
         from cordon_scanner.engine.netguard import NetworkGuard
 
-        # Before anything can connect: with CORDON_PUBLIC_NETWORK_ONLY set, no name this process
-        # resolves may lead inside the network (`core.netguard`).
+        # Before anything connects: with CORDON_PUBLIC_NETWORK_ONLY set, no name may lead inside (netguard).
         NetworkGuard.install_if_enabled()
         arguments = list(sys.argv[1:] if argv is None else argv)
-        for front in CommandParser.front_ends():
-            if arguments[:1] == [front.NAME]:
-                code: int = front.main(arguments[1:])
-                return code
-
+        handed = cls._front_end(arguments)
+        if handed is not None:
+            return handed
         parser = CommandParser.build()
         args = parser.parse_args(argv)
 
@@ -116,6 +132,9 @@ class CommandLine:
             "guard": GuardCommand.run,
             "baseline": BaselineCommand.run,
             "bundle": BundleCommand.run,
+            "policy": PolicyCommand.run,
+            "decide": DecideCommand.run,
+            "pr-comment": PrCommentCommand.run,
             "report": ReportCommand.run,
             "advisories": AdvisoriesCommand.run,
             "intel": IntelCommand.run,
@@ -163,11 +182,25 @@ class CommandLine:
             # "findings" would be worse than useless: it would look like the code
             # was bad when the tool was.
             print(f"{cls.PROGRAM}: internal error: {type(exc).__name__}: {exc}", file=sys.stderr)
+            cls._note_error_type(exc)
             print(
                 "  This is a bug in cordon. Please report it with the command you ran.",
                 file=sys.stderr,
             )
             return int(ExitCode.SCANNER_ERROR)
+
+    ERROR_TYPE_FILE = "CORDON_ERROR_TYPE_FILE"
+    """The environment variable naming a file the class name of an internal error is written to, so a harness running many scans can record what ended each one (the message is never written: it can hold a path or a line of the scanned code)."""
+
+    @staticmethod
+    def _note_error_type(exc: BaseException) -> None:
+        target = os.environ.get(CommandLine.ERROR_TYPE_FILE)
+        if not target:
+            return
+        try:
+            Path(target).write_text(type(exc).__name__ + "\n", encoding="utf-8")
+        except OSError:
+            return  # S2: the note is for a harness; a scan that cannot write it still ends as it would
 
     @staticmethod
     def main(argv: Sequence[str] | None = None) -> int:

@@ -19,7 +19,7 @@ import os
 import time
 from typing import TYPE_CHECKING, ClassVar, TypeVar
 
-from cordon_scanner.foundation.collector import ScanCaches
+from cordon_scanner.foundation.collector import ScanCaches, ScanCounts
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping
@@ -64,19 +64,34 @@ class DetectorClock:
             spent = DetectorClock._spent
             spent[detector_id] = spent.get(detector_id, 0.0) + time.process_time() - started
 
+    #: The prefix a worker's counts (`ScanCounts`) travel under beside its times.
+    COUNTED: ClassVar[str] = "#"
+
     @staticmethod
     def add(seconds: Mapping[str, float]) -> None:
-        """A worker process's times, added to this process's."""
+        """A worker process's times, added to this process's, and its counts to `ScanCounts`."""
         spent = DetectorClock._spent
+        counted = DetectorClock.COUNTED
         for detector_id, value in seconds.items():
-            spent[detector_id] = spent.get(detector_id, 0.0) + value
+            if detector_id.startswith(counted):
+                ScanCounts.add(detector_id[len(counted) :], int(value))
+            else:
+                spent[detector_id] = spent.get(detector_id, 0.0) + value
 
     @staticmethod
     def taken() -> dict[str, float]:
-        """This process's times so far, removed: what a worker hands back with each unit."""
+        """This process's times so far, removed, and its counts under `COUNTED`: what a worker
+        hands back with each unit."""
         taken = dict(DetectorClock._spent)
         DetectorClock._spent.clear()
+        for name, n in ScanCounts.taken().items():
+            taken[DetectorClock.COUNTED + name] = float(n)
         return taken
+
+    @staticmethod
+    def counts() -> dict[str, int] | None:
+        """The scan's counts (`ScanCounts`) by name, sorted; None when the clock is off."""
+        return ScanCounts.snapshot() if DetectorClock.enabled() else None
 
     @staticmethod
     def milliseconds() -> dict[str, int] | None:

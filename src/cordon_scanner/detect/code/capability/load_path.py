@@ -22,6 +22,7 @@ from cordon_scanner.foundation.capabilities import Capability
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from cordon_scanner.detect.base import FileUnit
     from cordon_scanner.foundation.content import FileContent
 
 
@@ -68,20 +69,75 @@ class LoadPath:
     )
     """A file inside an agent skill's folder (`.claude/skills/<name>/scripts/x.py` and kin)."""
 
+    PACKAGE_MANIFESTS = frozenset(
+        {"package.json", "pyproject.toml", "setup.py", "setup.cfg", "PKG-INFO"}
+    )
+    """What a published package keeps at its root, where a skill folder has none."""
+
     @staticmethod
     def skill_script(path: str, ctx: ScanContext | None) -> bool:
         """A script an agent skill ships: under a `skills/<name>/` folder, or beside or below a
         `SKILL.md` -- a skill unpacked on its own, from a marketplace or an archive, has no
-        `skills/` parent and is still run by the agent whenever the skill is invoked."""
+        `skills/` parent and is still run by the agent whenever the skill is invoked.
+
+        Where a package manifest stands beside the `SKILL.md`, the document is the package telling
+        an agent how to use it, and its `dist/`, `src/` and entry files are the package's code: read
+        as install-time code, a detached editor launch or a release script is a critical install
+        payload (mcpc: 4 of 71 blocked servers). There a script is the skill's when the document names
+        it -- by path or by file name, the setup it tells the agent to run -- or it sits in the
+        `scripts/` folder where skills ship theirs (`ScanContext.skill_named_paths`)."""
         if LoadPath._SKILL_SCRIPT.search(path.rpartition("!")[2]):
             return True
         if ctx is None or not path.lower().endswith(LoadPath.SKILL_SCRIPT_SUFFIXES):
             return False
         parts = path.split("/")[:-1]
-        return any(
-            "/".join([*parts[:depth], "SKILL.md"]) in ctx.tree_paths
-            for depth in range(len(parts), max(-1, len(parts) - 4), -1)
-        )
+        for depth in range(len(parts), max(-1, len(parts) - 4), -1):
+            if "/".join([*parts[:depth], "SKILL.md"]) not in ctx.tree_paths:
+                continue
+            package = any(
+                "/".join([*parts[:depth], name]) in ctx.tree_paths
+                for name in LoadPath.PACKAGE_MANIFESTS
+            )
+            if (
+                not package
+                or (depth < len(parts) and parts[depth] == "scripts")
+                or path in getattr(ctx, "skill_named_paths", ())
+            ):
+                return True
+        return False
+
+    @staticmethod
+    def named_scripts(units: Sequence[FileUnit]) -> frozenset[str]:
+        """The scripts a skill that is also a package tells the agent to run: where a package
+        manifest stands in a `SKILL.md`'s folder, the files below it (at most three folders down)
+        that the document names, by their path from that folder or by their file name. A name counts
+        as a whole word, not as part of a longer one. Naming only ever keeps a script a skill's
+        (`skill_script`); it never takes one out."""
+        paths = {unit.path for unit in units}
+        named: set[str] = set()
+        for unit in units:
+            root, _, base = unit.path.rpartition("/")
+            if base.lower() != "skill.md":
+                continue
+            prefix = f"{root}/" if root else ""
+            if not any(prefix + name in paths for name in LoadPath.PACKAGE_MANIFESTS):
+                continue
+            text = unit.content.text
+            for path in paths:
+                relative = path[len(prefix) :]
+                if (
+                    path.startswith(prefix)
+                    and relative.count("/") <= 3
+                    and path.lower().endswith(LoadPath.SKILL_SCRIPT_SUFFIXES)
+                    and (
+                        relative in text
+                        or re.search(
+                            rf"(?<![\w./-]){re.escape(relative.rpartition('/')[2])}(?![\w-])", text
+                        )
+                    )
+                ):
+                    named.add(path)
+        return frozenset(named)
 
     SKILL_SCRIPT_SUFFIXES = (".py", ".js", ".mjs", ".cjs", ".ts", ".sh", ".bash", ".ps1", ".rb")
 
@@ -164,10 +220,15 @@ class LoadPath:
                 "AST.PY.ENVIRONMENT_SENT",
                 "AST.PY.SECRET_SENT",
                 "FLOW.JS.SECRET_SENT",
+                "FLOW.GO.SECRET_SENT",
                 "FLOW.JS.IDENTITY_SENT",
                 "FLOW.JS.ENVIRONMENT_SENT",
                 # The publishing composite's one term is this rule, not a capability.
                 "CAP.JS.PUBLISH.001",
+                # The model-loading composite's one term is a fact, not a capability: a load in a
+                # body nothing on the load path runs is the loader a caller asks for
+                # (`SUSPECT.MODEL.LOADED_ON_IMPORT.001` says "when it is imported").
+                "AST.PY.UNSAFE_MODEL_LOAD",
             )
         ]
         if not offsets:
@@ -269,7 +330,7 @@ class LoadPath:
         if not offsets:
             return False
         for opener in LoadPath._LOAD_TIME_INITIALISER.finditer(content.text):
-            start = len(content.text[: opener.end()].encode("utf-8"))
+            start = content.byte_offset(opener.end(), content.text)
             depth, index, limit = 1, start, min(len(text), start + 200_000)
             while index < limit and depth:
                 byte = text[index]
@@ -303,6 +364,7 @@ class LoadPath:
         try:
             tree = PythonSyntax.shared(content.text)
         except (SyntaxError, ValueError, RecursionError):
+            # S2: an excuse; failing excuses nothing, so the finding it would lower stands
             return []
         functions = [
             node

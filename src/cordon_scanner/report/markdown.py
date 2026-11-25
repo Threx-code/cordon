@@ -83,6 +83,9 @@ class MarkdownReporter(BaseReporter):
             f"<details>\n<summary><b>{Escape.code(f.rule_id)}</b> at "
             f"<code>{Escape.code(str(f.location))}</code></summary>\n\n"
         ).encode()
+        if f.assurance:
+            yield f"_{Escape.markdown(f.assurance.capitalize())}._\n\n".encode()
+            yield f"{Escape.markdown(f.assurance_hint or '')}\n\n".encode()
         yield f"{Escape.markdown(f.message)}\n\n".encode()
 
         if f.explanation.escalations:

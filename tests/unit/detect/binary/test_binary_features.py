@@ -102,3 +102,26 @@ class TestWords:
         one = Fixture.features(ELF + self.BODY + b"https://alpha.example/a\x00")
         two = Fixture.features(ELF + self.BODY + b"https://bravo.example/b\x00")
         assert one == two
+
+
+class TestAServingScanStillReadsThePackagesOwnNames:
+    """`BinaryFeatures.groups` loads the scanner's own `exe-strings-*.json`. In a scan's parent, JSON read
+    through `ScannedJson` is served by the context worker, which never held these files: the first
+    call (a package that ships a program, a measurement run) ended the scan as "internal error", exit 2,
+    on about 6% of units."""
+
+    def test_the_names_load_inside_a_serving_scan(self) -> None:
+        from cordon_scanner.engine.isolation.documents import Documents
+        from cordon_scanner.foundation.formats.served_json import ServedJson
+
+        BinaryFeatures.groups.cache_clear()
+        Documents.end()
+        Documents.activate([])
+        try:
+            with ServedJson.serving("package"):
+                groups = BinaryFeatures.groups()
+        finally:
+            Documents.end()
+            BinaryFeatures.groups.cache_clear()
+        assert groups
+        assert all(names for names in groups.values())

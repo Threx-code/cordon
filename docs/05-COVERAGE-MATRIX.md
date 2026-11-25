@@ -118,8 +118,10 @@ rather than a document.
 
 | Rule | Severity | Implemented by | Attack category |
 |---|---|---|---|
+| `POLICY.ABUSE_TOOLING.PLATFORM_FORGERY.001` | medium | `composites` | policy |
 | `POLICY.VCS.BINARY_ADDED.001` | low | `vcs` | policy |
 | `SUSPECT.POLYGLOT.MISMATCH.001` | high | `binary` | obfuscation |
+| `SUSPECT.SOURCE.UNPARSED_RUNNING.001` | high | `manifest` | obfuscation |
 | `SUSPECT.SUBMODULE.UNTRUSTED.001` | medium | `config` | integrity |
 | `SUSPECT.VCS.HOOKS_PATH.001` | medium | `config` | integrity |
 | `SUSPECT.VCS.HOOK_ADDED.001` | medium | `vcs` | integrity |
@@ -171,6 +173,8 @@ rather than a document.
 | `SUSPECT.DEPENDENCY.SOURCE_PRIORITY.001` | medium | `manifest` | policy |
 | `SUSPECT.DEPENDENCY.TYPOSQUAT.001` | high | `dependency` | policy |
 | `SUSPECT.DEPENDENCY.TYPOSQUAT.BUNDLED.001` | info | `dependency` | policy |
+| `SUSPECT.DEPENDENCY.UNKNOWN_HOST.001` | medium | `manifest` | policy |
+| `SUSPECT.DEPENDENCY.UNKNOWN_HOST.BUNDLED.001` | info | `manifest` | policy |
 | `SUSPECT.DEPENDENCY.UNREGISTERED.001` | high | `registry` | dependency_confusion |
 | `SUSPECT.DEPENDENCY.UNVETTED.001` | medium | `registry` | typosquat |
 | `SUSPECT.DEPENDENCY.YANKED.001` | high | `registry` | policy |
@@ -262,15 +266,31 @@ rather than a document.
 | `MALWARE.ACCOUNT.CHANNEL_FOLLOW.001` | critical | `composites` | malicious_code |
 | `MALWARE.ANTI_ANALYSIS.001` | critical | `composites` | malicious_code |
 | `MALWARE.CLAMAV.SIGNATURE.001` | critical | `clamav` | malicious_code |
+| `MALWARE.CLIPPER.001` | critical | `composites` | malicious_code |
 | `MALWARE.CODE.REUSE.001` | high | `code-reuse` | malicious_code |
 | `MALWARE.CRYPTOMINER.001` | critical | `composites` | cryptomining |
 | `MALWARE.DROPPER.001` | critical | `composites` | dropper |
+| `MALWARE.DROPPER.DATA_FILE_CODE.001` | high | `composites` | dropper |
+| `MALWARE.DROPPER.DECODED.001` | high | `composites` | dropper |
+| `MALWARE.DROPPER.DIRECTORY.001` | high | `composites` | dropper |
+| `MALWARE.DROPPER.HIDDEN.001` | high | `composites` | dropper |
+| `MALWARE.DROPPER.MACHINE_REPORT.001` | high | `composites` | dropper |
 | `MALWARE.DROPPER.SHIPPED_PAYLOAD.001` | critical | `composites` | dropper |
+| `MALWARE.IMPLANT.AV_EXCLUSION.001` | high | `composites` | anti_analysis |
+| `MALWARE.IMPLANT.INSTALL.001` | high | `composites` | persistence |
+| `MALWARE.IMPLANT.PERSIST_RUN.001` | critical | `composites` | persistence |
+| `MALWARE.IMPORT.DECODE_EXEC.001` | critical | `composites` | malicious_code |
+| `MALWARE.IMPORT.FETCH_RUN.001` | critical | `composites` | malicious_code |
+| `MALWARE.IMPORT.PERSIST.001` | critical | `composites` | persistence |
+| `MALWARE.IMPORT.PROGRAM_START.001` | critical | `composites` | malicious_code |
 | `MALWARE.INSTALL.BACKGROUND.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.CONSUMER_CODE.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.DECODED_LAUNCH.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.DISGUISED_PROGRAM.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.FETCH_EXEC.001` | critical | `manifest` | install_hook |
+| `MALWARE.INSTALL.FETCH_RUN.001` | critical | `composites` | install_hook |
+| `MALWARE.INSTALL.FOREIGN_INDEX.001` | critical | `composites` | install_hook |
+| `MALWARE.INSTALL.FOREIGN_PROGRAM.001` | high | `composites` | install_hook |
 | `MALWARE.INSTALL.GYP_COMMAND.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.HIDDEN_ACTION.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.NETWORK_PROBE.001` | high | `manifest` | install_hook |
@@ -279,13 +299,19 @@ rather than a document.
 | `MALWARE.INSTALL.REMOTE_CODE.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.SHELL_EVASION.001` | critical | `composites` | install_hook |
 | `MALWARE.INSTALL.SPELLED_CODE.001` | critical | `composites` | install_hook |
+| `MALWARE.INSTALL.STARTUP_CODE.001` | high | `composites` | install_hook |
+| `MALWARE.INSTALL.STARTUP_NETWORK.001` | high | `composites` | install_hook |
 | `MALWARE.INSTALL.WINDOWS_LOADER.001` | critical | `composites` | install_hook |
+| `MALWARE.KEYLOGGER.001` | critical | `composites` | exfiltration |
 | `MALWARE.MOBILE.ATTRIBUTION_CLOAK.001` | critical | `composites` | malicious_code |
 | `MALWARE.MODEL.PICKLE_EXEC.001` | critical | `formats` | malicious_code |
+| `MALWARE.PERSIST.BACKDOOR.001` | critical | `composites` | persistence |
+| `MALWARE.PERSIST.HIDDEN.001` | critical | `composites` | persistence |
 | `MALWARE.PROTESTWARE.001` | critical | `composites` | malicious_code |
 | `MALWARE.REVERSE_SHELL.001` | critical | `composites` | malicious_code |
 | `MALWARE.REVERSE_SHELL.002` | critical | `composites` | malicious_code |
 | `MALWARE.RULEFILE.MATCH.001` | critical | `rule-file` | malicious_code |
+| `MALWARE.WORM.SELF_PROPAGATION.001` | critical | `verdict` | malicious_code |
 | `SUSPECT.CODE.MODEL.001` | high | `code-model` | malicious_code |
 | `SUSPECT.CRYPTOMINER.001` | high | `composites` | cryptomining |
 | `SUSPECT.DECODE_CHAIN.001` | critical | `composites` | malicious_code |
@@ -306,23 +332,41 @@ rather than a document.
 | `SUSPECT.DROPPER.REMOTE_COMMAND.001` | high | `composites` | dropper |
 | `SUSPECT.FILE.DISGUISED_PROGRAM.001` | high | `composites` | dropper |
 | `SUSPECT.INSTALL.AUTOSTART.001` | high | `composites` | install_hook |
+| `SUSPECT.INSTALL.COMPUTED_CODE.001` | high | `composites` | install_hook |
 | `SUSPECT.INSTALL.DEPENDENCY_CONFUSION.001` | high | `manifest` | dependency_confusion |
+| `SUSPECT.INSTALL.INLINE_PROGRAM.001` | high | `manifest` | install_hook |
 | `SUSPECT.INSTALL.OBFUSCATED_HOOK.001` | high | `obfuscated-hook` | obfuscation |
 | `SUSPECT.INSTALL.SCRIPT.001` | high | `manifest` | install_hook |
 | `SUSPECT.INSTALL.STRING_CODE.001` | high | `composites` | install_hook |
+| `SUSPECT.INSTALL.TEMP_COMMAND.001` | high | `composites` | install_hook |
 | `SUSPECT.INSTALL.UNEXAMINED.001` | high | `manifest` | install_hook |
+| `SUSPECT.INSTALL.UNREAD.001` | high | `manifest` | install_hook |
 | `SUSPECT.INTENT.UNEXPLAINED_EFFECT.001` | high | `intent` | malicious_code |
+| `SUSPECT.LATERAL.KUBE_EVERY_CONTEXT.001` | high | `capabilities.host-access` | malicious_code |
+| `SUSPECT.LATERAL.PUSH_EVERY_REPOSITORY.001` | high | `capabilities.host-access` | malicious_code |
+| `SUSPECT.LATERAL.SSH_KNOWN_HOSTS.001` | high | `capabilities.host-access` | malicious_code |
 | `SUSPECT.MODEL.LOADED_ON_IMPORT.001` | high | `composites` | malicious_code |
 | `SUSPECT.MODEL.MALICIOUS_PACKAGE.001` | high | `model` | malicious_code |
 | `SUSPECT.MODEL.PICKLE_IMPORT.001` | medium | `formats` | malicious_code |
 | `SUSPECT.MODEL.REMOTE_CODE.001` | medium | `composites` | malicious_code |
 | `SUSPECT.MODEL.UNSAFE_LOAD_OPTION.001` | low | `composites` | malicious_code |
 | `SUSPECT.PERSIST.001` | high | `composites` | persistence |
+| `SUSPECT.PERSIST.MCP_CLIENT_SPREAD.001` | medium | `capabilities.host-access` | persistence |
+| `SUSPECT.PERSIST.REMOTE_SCRIPT.001` | high | `capabilities.host-access` | persistence |
+| `SUSPECT.PERSIST.WRITES_DOWNLOADER.001` | high | `agents` | persistence |
+| `SUSPECT.PERSIST.WRITES_DOWNLOADER.002` | high | `agents` | persistence |
+| `SUSPECT.PERSIST.WRITES_DOWNLOADER.003` | high | `agents` | persistence |
+| `SUSPECT.PERSIST.WRITES_DOWNLOADER.004` | high | `agents` | persistence |
+| `SUSPECT.PERSIST.WRITES_DOWNLOADER.005` | high | `agents` | persistence |
+| `SUSPECT.PERSIST.WRITES_DOWNLOADER.006` | high | `agents` | persistence |
 | `SUSPECT.REGISTRY.SELF_PUBLISH.001` | high | `composites` | malicious_code |
 | `SUSPECT.RULEFILE.MATCH.001` | high | `rule-file` | malicious_code |
 | `SUSPECT.RULEFILE.UNMATCHED.001` | high | `rule-file` | malicious_code |
 | `SUSPECT.TARGETED_PAYLOAD.001` | high | `composites` | malicious_code |
 | `SUSPECT.VERDICT.MODEL.001` | high | `manifest` | malicious_code |
+| `SUSPECT.WALLET.CLIPBOARD_SWAP.001` | high | `capabilities.host-access` | malicious_code |
+| `SUSPECT.WALLET.DRAIN_TO_FIXED_ADDRESS.001` | high | `capabilities.host-access` | malicious_code |
+| `SUSPECT.WALLET.UNLIMITED_APPROVAL_FIXED.001` | medium | `capabilities.host-access` | malicious_code |
 
 ### Domain 7 — Obfuscation and evasion
 
@@ -334,16 +378,20 @@ rather than a document.
 | `SUSPECT.ANTI_ANALYSIS.001` | high | `composites` | anti_analysis |
 | `SUSPECT.DECODE_EXEC.001` | high | `composites` | obfuscation |
 | `SUSPECT.DYNAMIC_DISPATCH.001` | high | `composites` | obfuscation |
+| `SUSPECT.DYNAMIC_DISPATCH.002` | high | `composites` | obfuscation |
+| `SUSPECT.EXECUTE.DECODED_BYTES.001` | high | `composites` | obfuscation |
 | `SUSPECT.MEDIA.APPENDED_PAYLOAD.001` | high | `formats` | obfuscation |
 | `SUSPECT.MEDIA.OPAQUE_TRAILER.001` | medium | `formats` | obfuscation |
 | `SUSPECT.MEDIA.TRAILING_DATA.001` | low | `formats` | obfuscation |
 | `SUSPECT.OBFUSCATION.BIDI.001` | high | `obfuscation` | obfuscation |
+| `SUSPECT.OBFUSCATION.DORMANT_PAYLOAD.001` | high | `composites` | obfuscation |
 | `SUSPECT.OBFUSCATION.ENCODED.001` | medium | `obfuscation` | obfuscation |
 | `SUSPECT.OBFUSCATION.LONGLINE.001` | low | `obfuscation` | obfuscation |
 | `SUSPECT.OBFUSCATION.MANGLED.001` | high | `obfuscation` | obfuscation |
 | `SUSPECT.OBFUSCATION.PACKED.001` | medium | `obfuscation` | obfuscation |
 | `SUSPECT.OBFUSCATION.REQUIRE_ALIAS.001` | high | `obfuscation` | obfuscation |
 | `SUSPECT.OBFUSCATION.TAG_SMUGGLING.001` | high | `obfuscation` | obfuscation |
+| `SUSPECT.OBFUSCATION.UNRESOLVED_PAYLOAD.001` | high | `composites` | obfuscation |
 
 ### Domain 8 — Credentials and secret stores
 
@@ -410,6 +458,11 @@ rather than a document.
 | `SECRET.TWILIO.KEY.001` | high | `secrets` | secret_exposure |
 | `SECRET.URL.CREDENTIAL.001` | high | `secrets` | secret_exposure |
 | `SECRET.VAULT.TOKEN.001` | critical | `secrets` | secret_exposure |
+| `SUSPECT.AUTH.OAUTH_REDIRECT_ELSEWHERE.001` | medium | `capabilities.host-access` | secret_exposure |
+| `SUSPECT.AUTH.SESSION_ID_SENT.001` | medium | `capabilities.host-access` | secret_exposure |
+| `SUSPECT.AUTH.TOKEN_PASSTHROUGH.001` | medium | `capabilities.host-access` | secret_exposure |
+| `SUSPECT.EXPOSE.ANY_ORIGIN_WITH_CREDENTIALS.001` | medium | `capabilities.host-access` | secret_exposure |
+| `SUSPECT.EXPOSE.HOME_ON_NETWORK.001` | high | `capabilities.host-access` | secret_exposure |
 
 ### Domain 9 — Exfiltration channels
 
@@ -417,22 +470,34 @@ rather than a document.
 |---|---|---|---|
 | `MALWARE.EXFIL.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.BEACON.001` | critical | `composites` | exfiltration |
+| `MALWARE.EXFIL.CLOUD_UPLOAD.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.COMMAND_OUTPUT.001` | critical | `composites` | exfiltration |
+| `MALWARE.EXFIL.CONFUSION_BEACON.001` | high | `composites` | exfiltration |
+| `MALWARE.EXFIL.CREDENTIALS_TO_FREE_HOST.001` | high | `composites` | exfiltration |
 | `MALWARE.EXFIL.CREDENTIAL_STORE.001` | critical | `composites` | exfiltration |
+| `MALWARE.EXFIL.CREDENTIAL_STORE.002` | high | `composites` | exfiltration |
 | `MALWARE.EXFIL.DNS_CALLBACK.001` | critical | `composites` | exfiltration |
+| `MALWARE.EXFIL.DNS_TUNNEL.001` | high | `composites` | exfiltration |
 | `MALWARE.EXFIL.DROP_POINT.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.FLOW_RAW_CHANNEL.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.FLOW_TO_DROP.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.HIDDEN_DESTINATION.001` | critical | `composites` | exfiltration |
+| `MALWARE.EXFIL.HIDDEN_DESTINATION.002` | high | `composites` | exfiltration |
 | `MALWARE.EXFIL.INSTALL_CALLBACK.001` | critical | `composites` | exfiltration |
+| `MALWARE.EXFIL.IP_LOGGER.001` | critical | `composites` | exfiltration |
+| `MALWARE.EXFIL.RELAYED_HIDDEN.001` | high | `composites` | exfiltration |
 | `MALWARE.EXFIL.SCRIPT_CALLBACK.001` | high | `manifest` | exfiltration |
+| `MALWARE.EXFIL.SWEPT_FILES.001` | high | `composites` | exfiltration |
+| `MALWARE.EXFIL.SWEPT_TO_HOST.001` | critical | `composites` | exfiltration |
 | `MALWARE.EXFIL.TRACKING_CALLBACK.001` | critical | `composites` | exfiltration |
+| `SUSPECT.COLLECT.EXFIL.001` | medium | `capabilities.host-access` | exfiltration |
 | `SUSPECT.EXFIL.001` | medium | `composites` | exfiltration |
 | `SUSPECT.EXFIL.BEACON.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.BROWSER_SECRETS.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.CALLBACK.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.COMMAND_BEACON.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.COMMAND_OUTPUT.001` | high | `composites` | exfiltration |
+| `SUSPECT.EXFIL.CREDENTIAL_FILE.001` | medium | `capabilities.host-access` | exfiltration |
 | `SUSPECT.EXFIL.CREDENTIAL_STORE.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.CREDENTIAL_SWEEP.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.DNS.001` | high | `composites` | exfiltration |
@@ -440,7 +505,9 @@ rather than a document.
 | `SUSPECT.EXFIL.ENVIRONMENT.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.FLOW_IDENTITY.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.FLOW_SECRET.001` | high | `composites` | exfiltration |
+| `SUSPECT.EXFIL.MAIL_ON_IMPORT.001` | high | `composites` | exfiltration |
 | `SUSPECT.EXFIL.NAMED_SECRET.001` | high | `composites` | exfiltration |
+| `SUSPECT.EXFIL.WALLET_KEY.001` | high | `capabilities.host-access` | exfiltration |
 | `SUSPECT.EXFIL.WALLET_SECRET.001` | high | `composites` | exfiltration |
 
 ### Domain 10 — Containers and orchestration
@@ -702,12 +769,14 @@ rather than a document.
 | `SUSPECT.ARCHIVE.PADDED.001` | high | `manifest` | obfuscation |
 | `SUSPECT.ARCHIVE.PATH_ESCAPE.001` | high | `manifest` | obfuscation |
 | `SUSPECT.ARCHIVE.POLYGLOT.001` | high | `manifest` | obfuscation |
+| `SUSPECT.BINARY.CHAT_ENDPOINT.001` | high | `binary` | integrity |
 | `SUSPECT.BINARY.CREDENTIAL_THEFT.001` | high | `binary` | integrity |
 | `SUSPECT.BINARY.EXECUTABLE_PATH.001` | high | `binary` | integrity |
 | `SUSPECT.BINARY.HIDDEN_IMPORTS.001` | medium | `binary` | integrity |
 | `SUSPECT.BINARY.IMPLANT.001` | high | `binary` | integrity |
 | `SUSPECT.BINARY.KEYLOGGER.001` | high | `binary` | integrity |
 | `SUSPECT.BINARY.NATIVE_IN_PURE_WHEEL.001` | high | `binary` | integrity |
+| `SUSPECT.BINARY.NATIVE_PROGRAM_IN_PURE_WHEEL.001` | high | `binary` | integrity |
 | `SUSPECT.BINARY.PACKED.001` | medium | `binary` | integrity |
 | `SUSPECT.BINARY.PROCESS_INJECTION.001` | high | `binary` | integrity |
 | `SUSPECT.BINARY.STRINGS.001` | medium | `binary` | integrity |
@@ -733,6 +802,7 @@ rather than a document.
 | `OPERATIONAL.IMAGE.UNMATCHED` | info | `os-packages` | coverage |
 | `OPERATIONAL.JUDGE.BUDGET` | info | `agent-judge` | coverage |
 | `OPERATIONAL.JUDGE.STATUS` | info | `agent-judge` | coverage |
+| `OPERATIONAL.JUDGE.TRUNCATED` | info | `agent-judge` | coverage |
 | `OPERATIONAL.JUDGE.UNAVAILABLE` | info | `agent-judge` | coverage |
 | `OPERATIONAL.MCP.LIVE_UNREAD.001` | info | `mcp-live` | coverage |
 | `OPERATIONAL.MCP.UNRESOLVED` | info | `agents` | coverage |
@@ -764,6 +834,9 @@ rather than a document.
 | `POLICY.AGENT.WIDE_DIRECTORY.001` | medium | `agents` | misconfiguration |
 | `POLICY.AGENT.WILDCARD_PERMISSION.001` | medium | `agents` | misconfiguration |
 | `SECRET.MCP.INLINE_CREDENTIAL.001` | high | `agents` | secret_exposure |
+| `SUSPECT.AGENT.AGENCY.AUTO_APPROVE_ALL.001` | medium | `capabilities.mcp-agents` | prompt_injection |
+| `SUSPECT.AGENT.AGENCY.BROAD_DEFAULT_SCOPE.001` | medium | `capabilities.mcp-agents` | prompt_injection |
+| `SUSPECT.AGENT.AGENCY.DELETE_WITHOUT_CONFIRM.001` | medium | `capabilities.mcp-agents` | prompt_injection |
 | `SUSPECT.AGENT.API_REDIRECT.001` | high | `agents` | exfiltration |
 | `SUSPECT.AGENT.ATR.AGENT_MANIPULATION.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.ATR.CONTEXT_EXFILTRATION.001` | medium | `agents` | exfiltration |
@@ -776,6 +849,7 @@ rather than a document.
 | `SUSPECT.AGENT.ATR.SKILL_COMPROMISE.001` | medium | `agents` | malicious_code |
 | `SUSPECT.AGENT.ATR.TOOL_POISONING.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.AUTH_BYPASS_EDIT.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.CODE_AND_INSTRUCTIONS.001` | high | `verdict` | prompt_injection |
 | `SUSPECT.AGENT.CREDENTIAL_EXFIL.001` | critical | `agents` | exfiltration |
 | `SUSPECT.AGENT.DROPPER_PROSE.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.FETCH_EXEC.001` | high | `agents` | dropper |
@@ -784,15 +858,27 @@ rather than a document.
 | `SUSPECT.AGENT.HIDDEN_INSTRUCTION.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.HIDDEN_TEXT.001` | high | `agents` | obfuscation |
 | `SUSPECT.AGENT.HOOK.001` | medium | `agents` | install_hook |
+| `SUSPECT.AGENT.INJECTION_CORROBORATED.001` | high | `verdict` | prompt_injection |
 | `SUSPECT.AGENT.INJECTION_TEXT.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.INSTALL_REDIRECT.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.INSTRUCTION_ADD_REMOTE.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.INSTRUCTION_CONCEAL_ACTIONS.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.INSTRUCTION_DISABLE_SAFETY.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.INSTRUCTION_EDIT_AGENT_SETTINGS.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.INSTRUCTION_FETCH_AND_OBEY.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.INSTRUCTION_PIPE_TO_SHELL.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.INSTRUCTION_SEND_SECRETS.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.INSTRUCTION_TRIGGER_PHRASE.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.INTENT.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.INTENT_CHAINED.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.JUDGED.001` | medium | `agent-judge` | prompt_injection |
 | `SUSPECT.AGENT.PHANTOM_PREREQUISITE.001` | high | `agents` | prompt_injection |
+| `SUSPECT.AGENT.PLANTS_INSTRUCTIONS.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.PLUGIN_SOURCE.001` | high | `agents` | integrity |
+| `SUSPECT.AGENT.REMOTE_CONTROL.001` | high | `agents` | malicious_code |
 | `SUSPECT.AGENT.REMOTE_INSTRUCTIONS.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.SENSITIVE_IMPORT.001` | high | `agents` | exfiltration |
+| `SUSPECT.AGENT.SKILL_CLAIM_MISMATCH.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.SKILL_DECODE_RUN.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.SKILL_DISGUISED_ARCHIVE.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.SKILL_HOOK_FETCH.001` | high | `agents` | prompt_injection |
@@ -807,41 +893,276 @@ rather than a document.
 | `SUSPECT.EXTENSION.LOOKALIKE.001` | medium | `agents` | typosquat |
 | `SUSPECT.EXTENSION.MALICIOUS_VERSIONS.001` | low | `agents` | malicious_code |
 | `SUSPECT.EXTENSION.REMOVED.001` | high | `agents` | malicious_code |
+| `SUSPECT.MCP.ACCOUNT_ENUMERATION.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.AGENT_SAFETY_OFF.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.ANALYSIS_TOOL_NAMES.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.ARGUMENT_OVERRIDE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.BIND_SHELL.001` | medium | `agents` | misconfiguration |
 | `SUSPECT.MCP.BORROWED_NAME.001` | high | `manifest` | misconfiguration |
+| `SUSPECT.MCP.C2_DNS_TXT.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.C2_TELEGRAM.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.CHARCODE_BUILD.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.CLOUD_METADATA.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.CONTAINER_ESCAPE.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.CONTAINER_HOST_ACCESS.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DECODE_RUN.001` | medium | `agents` | misconfiguration |
 | `SUSPECT.MCP.DENIAL_OF_WALLET.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_CONCEALMENT.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_CONSENT_CLAIM.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_CROSS_TOOL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_EXFIL_ORDER.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_FAKE_APPROVAL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_FAKE_BOUNDARY.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_FAKE_WARNING.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_FETCHED.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_HARVEST.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_HIDDEN_HTML.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_LINK_EXFIL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_MEMORY_WRITE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_MODE_CLAIM.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_OTHER_AGENT_ORDER.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_OUTPUT_HIDDEN.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_OVERRIDE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_RECIPIENT_INJECTION.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_RETRIEVAL_DIRECTIVE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_ROLE_MARKER.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_SECRET_CALL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_SECRET_REQUEST.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_SETTINGS_EDIT.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_TERMINAL_ESCAPE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_TOOL_PRIORITY.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_URGENCY_AUTHORITY.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_URL_APPEND.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DESCRIPTION_ZERO_WIDTH.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.DETACHED_CHILD.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.DOWNLOAD_RUN_TEMP.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ELICIT_CREDENTIAL.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.EMBEDDED_WASM.001` | medium | `agents` | misconfiguration |
 | `SUSPECT.MCP.ENV_INJECTION.001` | high | `agents` | malicious_code |
+| `SUSPECT.MCP.ERROR_CONCEALMENT.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ERROR_CONSENT_CLAIM.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ERROR_CROSS_TOOL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ERROR_EXFIL_ORDER.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ERROR_FAKE_APPROVAL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ERROR_FAKE_BOUNDARY.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ERROR_FAKE_WARNING.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ERROR_HARVEST.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ERROR_HIDDEN_HTML.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ERROR_LINK_EXFIL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ERROR_MEMORY_WRITE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ERROR_MODE_CLAIM.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ERROR_OTHER_AGENT_ORDER.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ERROR_OUTPUT_HIDDEN.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ERROR_OVERRIDE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ERROR_RETRIEVAL_DIRECTIVE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ERROR_ROLE_MARKER.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ERROR_SECRET_CALL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ERROR_SECRET_REQUEST.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ERROR_SETTINGS_EDIT.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ERROR_TERMINAL_ESCAPE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ERROR_TOOL_PRIORITY.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ERROR_URGENCY_AUTHORITY.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ERROR_URL_APPEND.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ERROR_ZERO_WIDTH.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.EXFIL_DNS.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.EXFIL_DROP.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.EXFIL_EMAIL.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.EXFIL_LOGGER.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.EXFIL_PRESIGNED.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.EXFIL_REPO.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.EXFIL_TUNNEL.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.EXFIL_WEBHOOK.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.FORK_BOMB.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.GATED_PAYLOAD.001` | medium | `agents` | misconfiguration |
 | `SUSPECT.MCP.HANDLER_SHELL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.HOME_WIPE.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.IDENTITY_GATE.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.INPUT_DROPPED.001` | medium | `agents` | misconfiguration |
 | `SUSPECT.MCP.INPUT_FORWARDED.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.INPUT_MIRROR.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.INPUT_PROGRAM.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.INPUT_SHELL.001` | medium | `agents` | misconfiguration |
 | `SUSPECT.MCP.INSECURE_TRANSPORT.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.ISSUE_TASKING.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.K8S_SECRET_READ.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LIBRARY_HIJACK.001` | medium | `agents` | misconfiguration |
 | `SUSPECT.MCP.LISTENER.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.LIVE_TOOL_DESCRIPTION.001` | high | `mcp-live` | misconfiguration |
+| `SUSPECT.MCP.LOG_CONCEALMENT.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LOG_CONSENT_CLAIM.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LOG_CROSS_TOOL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LOG_EXFIL_ORDER.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LOG_FAKE_APPROVAL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LOG_FAKE_BOUNDARY.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LOG_FAKE_WARNING.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LOG_HARVEST.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LOG_HIDDEN_HTML.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LOG_LINK_EXFIL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LOG_MEMORY_WRITE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LOG_MODE_CLAIM.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LOG_OTHER_AGENT_ORDER.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LOG_OUTPUT_HIDDEN.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LOG_OVERRIDE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LOG_RETRIEVAL_DIRECTIVE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LOG_ROLE_MARKER.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LOG_SECRET_CALL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LOG_SECRET_REQUEST.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LOG_SETTINGS_EDIT.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LOG_TERMINAL_ESCAPE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LOG_TOOL_PRIORITY.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LOG_URGENCY_AUTHORITY.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LOG_URL_APPEND.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.LOG_ZERO_WIDTH.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.LOOKALIKE.001` | high | `agents` | typosquat |
+| `SUSPECT.MCP.LOOKALIKE.002` | high | `agents` | typosquat |
+| `SUSPECT.MCP.NATIVE_FROM_TEMP.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.NOTIFICATION_FLOOD.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.PACKAGE_TAMPER.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.PASTE_TASKING.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PRIVILEGE_GRANT.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROCESS_MASQUERADE.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_CONCEALMENT.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_CONSENT_CLAIM.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_CROSS_TOOL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_EXFIL_ORDER.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_FAKE_APPROVAL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_FAKE_BOUNDARY.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_FAKE_WARNING.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_HARVEST.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_HIDDEN_HTML.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_INJECTION.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_LINK_EXFIL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_MEMORY_WRITE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_MODE_CLAIM.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_OTHER_AGENT_ORDER.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_OUTPUT_HIDDEN.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_OVERRIDE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_RECIPIENT_INJECTION.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_RETRIEVAL_DIRECTIVE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_ROLE_MARKER.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_SECRET_CALL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_SECRET_REQUEST.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_SETTINGS_EDIT.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_TERMINAL_ESCAPE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_TOOL_PRIORITY.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_URGENCY_AUTHORITY.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_URL_APPEND.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.PROMPT_ZERO_WIDTH.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RANSOM_NOTE.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.RECON_BATTERY.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESOURCE_CONCEALMENT.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESOURCE_CONSENT_CLAIM.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESOURCE_CROSS_TOOL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESOURCE_EXFIL_ORDER.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESOURCE_FAKE_APPROVAL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESOURCE_FAKE_BOUNDARY.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESOURCE_FAKE_WARNING.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESOURCE_HARVEST.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESOURCE_HIDDEN_HTML.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESOURCE_INJECTION.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESOURCE_LINK_EXFIL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESOURCE_MEMORY_WRITE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESOURCE_MODE_CLAIM.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESOURCE_OTHER_AGENT_ORDER.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESOURCE_OUTPUT_HIDDEN.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESOURCE_OVERRIDE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESOURCE_RETRIEVAL_DIRECTIVE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESOURCE_ROLE_MARKER.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESOURCE_SECRET_CALL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESOURCE_SETTINGS_EDIT.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESOURCE_TERMINAL_ESCAPE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESOURCE_TOOL_PRIORITY.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESOURCE_URGENCY_AUTHORITY.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESOURCE_URL_APPEND.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESOURCE_ZERO_WIDTH.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESPONSE_RUN.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_CONCEALMENT.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_CONSENT_CLAIM.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_CROSS_TOOL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_EXFIL_ORDER.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_FAKE_APPROVAL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_FAKE_BOUNDARY.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_FAKE_WARNING.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_HARVEST.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_HIDDEN_HTML.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_INJECTION.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_LINK_EXFIL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_MEMORY_WRITE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_MODE_CLAIM.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_OTHER_AGENT_ORDER.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_OUTPUT_HIDDEN.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_OVERRIDE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_RECIPIENT_INJECTION.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_RETRIEVAL_DIRECTIVE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_ROLE_MARKER.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_SECRET_CALL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_SECRET_REQUEST.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_SETTINGS_EDIT.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_TERMINAL_ESCAPE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_TOOL_PRIORITY.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_URGENCY_AUTHORITY.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_URL_APPEND.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.RESULT_ZERO_WIDTH.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.REVERSE_SHELL.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.ROOTS_ESCAPE.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.SAMPLING_ABUSE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SCHEMA_CONCEALMENT.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SCHEMA_CONSENT_CLAIM.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SCHEMA_CROSS_TOOL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SCHEMA_EXFIL_ORDER.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SCHEMA_FAKE_APPROVAL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SCHEMA_FAKE_BOUNDARY.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SCHEMA_FAKE_WARNING.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SCHEMA_HARVEST.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SCHEMA_HIDDEN_HTML.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SCHEMA_LINK_EXFIL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SCHEMA_MEMORY_WRITE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SCHEMA_MODE_CLAIM.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SCHEMA_OTHER_AGENT_ORDER.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SCHEMA_OUTPUT_HIDDEN.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SCHEMA_OVERRIDE.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.SCHEMA_POISONING.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SCHEMA_RECIPIENT_INJECTION.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SCHEMA_RETRIEVAL_DIRECTIVE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SCHEMA_ROLE_MARKER.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SCHEMA_SECRET_CALL.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SCHEMA_SECRET_REQUEST.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SCHEMA_SETTINGS_EDIT.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SCHEMA_TERMINAL_ESCAPE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SCHEMA_TOOL_PRIORITY.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SCHEMA_URGENCY_AUTHORITY.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SCHEMA_URL_APPEND.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SCHEMA_ZERO_WIDTH.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.SECRET_HARVEST.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.SECURITY_TOOL_KILL.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.SHELL_LAUNCH.001` | high | `agents` | dropper |
+| `SUSPECT.MCP.SHELL_PIPE_DOWNLOAD.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.SPLIT_PAYLOAD.001` | medium | `agents` | misconfiguration |
+| `SUSPECT.MCP.SUBSCRIPTION_CHANNEL.001` | medium | `agents` | misconfiguration |
 | `SUSPECT.MCP.TIME_BOMB.001` | high | `agents` | misconfiguration |
 | `SUSPECT.MCP.TOOLS_CHANGED.001` | medium | `mcp-live` | misconfiguration |
+| `SUSPECT.MCP.TOOLS_REPLACED_AFTER_CALLS.001` | medium | `agents` | misconfiguration |
 | `SUSPECT.MCP.TOOL_DESCRIPTION.001` | high | `agents` | prompt_injection |
+| `SUSPECT.MCP.TOOL_NAME_LOOKALIKE.001` | medium | `agents` | misconfiguration |
 | `SUSPECT.MCP.TOOL_POISONING.001` | high | `mcp-packages` | misconfiguration |
 | `SUSPECT.MCP.TOOL_SQUATTING.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.TRACE_ERASE.001` | medium | `agents` | misconfiguration |
 | `SUSPECT.MCP.UNPINNED.001` | medium | `agents` | integrity |
 | `SUSPECT.MCP.UNTRUSTED_REMOTE.001` | high | `agents` | misconfiguration |
+| `SUSPECT.MCP.WEBSOCKET_C2.001` | high | `agents` | misconfiguration |
 
 ## Generated infrastructure policy
 
-**862 policies**, over the resources the providers say have the attribute each control is about. Which resources those are is a fact rather than a memory, so it is read from the schema rather than typed: a policy naming an attribute a provider does not have can never fire, and looks exactly like a clean scan.
+**881 policies**, over the resources the providers say have the attribute each control is about. Which resources those are is a fact rather than a memory, so it is read from the schema rather than typed: a policy naming an attribute a provider does not have can never fire, and looks exactly like a clean scan.
 
 | Control family | Policies |
 |---|---|
 | `AUTOMOUNT_TOKEN` | 18 |
 | `BACKUP` | 11 |
 | `BOOT_INTEGRITY` | 17 |
-| `CMEK` | 319 |
-| `DELETION_PROTECTION` | 56 |
-| `ENCRYPT_AT_REST` | 58 |
+| `CMEK` | 330 |
+| `DELETION_PROTECTION` | 61 |
+| `ENCRYPT_AT_REST` | 60 |
 | `ENCRYPT_IN_TRANSIT` | 19 |
 | `FORCE_DESTROY` | 31 |
 | `GOVERNANCE` | 9 |
@@ -856,7 +1177,7 @@ rather than a document.
 | `PRIVILEGED` | 19 |
 | `PRIVILEGE_ESCALATION` | 16 |
 | `PUBLIC_ACCESS` | 79 |
-| `PUBLIC_IP` | 12 |
+| `PUBLIC_IP` | 13 |
 | `RESILIENCE` | 9 |
 | `RETENTION` | 17 |
 | `RUN_AS_ROOT` | 15 |
@@ -864,7 +1185,7 @@ rather than a document.
 | `WEAK_TLS` | 27 |
 | `WRITABLE_ROOT` | 17 |
 
-Severity: 544 low, 209 medium, 109 high.
+Severity: 561 low, 209 medium, 111 high.
 
 Built from:
 
@@ -873,7 +1194,7 @@ Built from:
   registry.terraform.io/hashicorp/azurerm          4.81.0
   registry.terraform.io/hashicorp/google           6.50.0
   registry.terraform.io/hashicorp/kubernetes       2.38.0
-  AWS CloudFormation resource specification        265.0.0
+  AWS CloudFormation resource specification        273.0.0
 ```
 
 Regenerate after a provider release:

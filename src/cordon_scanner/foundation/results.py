@@ -204,6 +204,8 @@ class Dependency:
     scope: Scope = Scope.RUNTIME
     resolved_from: str | None = None
     integrity: str | None = None
+    hashes: tuple[str, ...] = ()
+    """Every hash the lockfile lists for the artefact (`LockEntry.hashes`); `integrity` is the first of them. A revocation matches any of them."""
     parents: tuple[str, ...] = ()
     declared_spec: str | None = None
     project: str | None = None
@@ -359,6 +361,8 @@ class Dependency:
             value = getattr(self, key)
             if value is not None:
                 out[key] = value
+        if self.hashes:
+            out["hashes"] = list(self.hashes)
         if self.parents:
             out["parents"] = list(self.parents)
         source_type, source_url = self.source
@@ -426,6 +430,17 @@ class ScanStats:
     detector_cpu_ms: Mapping[str, int] | None = None
     """CPU milliseconds by detector id, only with `CORDON_DETECTOR_CLOCK=1`
     (`engine/detector_clock`); absent otherwise, so a scan's output does not vary by run."""
+    view_files: Mapping[str, int] | None = None
+    """What the decoded view read (`foundation/collector` ScanCounts, note 18): files viewed, differing,
+    partial, refused, and its CPU milliseconds; only with `CORDON_DETECTOR_CLOCK=1`."""
+    model_refusals: Mapping[str, str] | None = None
+    """The delivered models the scan turned down and why (`FeedModels.refusals`); absent when none was, so a scan's output does not vary with models nobody delivered."""
+    rule_gaps: Mapping[str, str] | None = None
+    """The delivered rules the scan could not evaluate (a term written for a version the scanner does not know), by rule id and reason; absent when none was, so a scan's output does not vary without cause."""
+    rules_demoted: Mapping[str, str] | None = None
+    """The delivered rules the scan ran as warnings (one fired on a bundled benign fixture, or the device's record says it blocked too much), by rule id and reason; absent when none was."""
+    feed: Mapping[str, Any] | None = None
+    """The feed the scan ran on: `serial` (the delivered rule-pack set's sequence, or `none` with no feed) and `packs` (each delivered pack's version); set by every scan, so a backend can count scanners by feed version."""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -445,6 +460,11 @@ class ScanStats:
                 if self.detector_cpu_ms is not None
                 else {}
             ),
+            **({"view_files": dict(self.view_files)} if self.view_files is not None else {}),
+            **({"model_refusals": dict(self.model_refusals)} if self.model_refusals else {}),
+            **({"rule_gaps": dict(self.rule_gaps)} if self.rule_gaps else {}),
+            **({"rules_demoted": dict(self.rules_demoted)} if self.rules_demoted else {}),
+            **({"feed": dict(self.feed)} if self.feed else {}),
         }
 
 
@@ -510,6 +530,42 @@ class ScanResult:
     verdict: dict[str, Any] | None = None
     """The package verdict (`core/verdict.py`): the features it read and, with a model shipped, its
     score and thresholds."""
+    places: dict[str, tuple[str, ...]] | None = None
+    """Where the scanned package's files run from (`ScanContext.places`): each place's paths, sorted.
+    Read by the facts export (`report/facts.py`) at scan time; not in `to_dict`, so the JSON result and
+    every saved result keep their shape. None for a result built outside a package scan."""
+    capabilities: dict[str, tuple[str, ...]] | None = None
+    """Each file's capability names, as the capability detector's own pass found them (worker fact `cap.all`):
+    for every file a worker inspected, reached or not. Read by the facts export; not in `to_dict`."""
+    reach: dict[str, tuple[str, int]] | None = None
+    """How each code file is reached from a place that runs (`decide.reach.FileReach`): `path -> (kind, depth)`. Read by the facts export
+    at scan time; not in `to_dict`, like `places`. None for a result built outside a package scan."""
+    destinations: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] | None = None
+    """Each file's URL destinations as salted digests, never names: `path -> (host digests, domain digests)`, for files the
+    capability detector found reaching the network. Read by the facts export; not in `to_dict`."""
+    extensions: dict[str, int] | None = None
+    """Every scanned file counted under its extension (`FileExtension.of`: empty for none, `other` for an odd one): a quiet native file, which
+    no finding or capability puts in a facts record, is counted here. Read by the facts export; not in `to_dict`."""
+    size_classes: dict[str, int] | None = None
+    """Every scanned file counted under its size class (`FileFacts.size_class`). Read by the facts export; not in `to_dict`."""
+    encoded_literals: dict[str, int] | None = None
+    """The encoded literals of the scanned text files counted by kind, never the literals. Read by the facts export; not in `to_dict`."""
+    instruction_files: int | None = None
+    """How many scanned files are an agent's instruction files. Read by the facts export; not in `to_dict`."""
+    binaries: tuple[str, ...] | None = None
+    """The SHA-256 of every native executable or library scanned, sorted (`NativeFile`). `binaries_complete` is False when
+    it is a part: a file that could not be hashed whole, or more than the bound. Read by the facts export; not in `to_dict`."""
+    binaries_complete: bool = True
+    executables: tuple[dict[str, Any], ...] | None = None
+    """The record of each native executable scanned (`ExecutableRecord`), sorted by digest. Read by the facts export; not in `to_dict`."""
+    tool_list: tuple[dict[str, Any], ...] | None = None
+    """The MCP tools one JSON file declares whole (`DeclaredTools`), when exactly one file does; None when none does or when
+    more than one does (which of them the server serves is not known). Read by the facts export; not in `to_dict`."""
+    unfiltered: tuple[Finding, ...] | None = None
+    """Every finding the scan made, before the reporting thresholds (`PolicyGate.filter_for_reporting`)
+    removed the ones under them: the same tuple, not a copy. The facts export reads it, so the facts do not
+    depend on a reporting setting, which a scanned repository's own configuration can change, and so they are
+    the facts package-scope rules are evaluated on (capability findings are informational). Not in `to_dict`."""
 
     def __post_init__(self) -> None:
         if any(f.rule_id.startswith(INTERNAL_PREFIX) for f in self.findings):

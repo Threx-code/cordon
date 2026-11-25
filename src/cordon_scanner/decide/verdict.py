@@ -45,11 +45,15 @@ from cordon_scanner.decide.feature_schema import FeatureFold, FeatureRecord, Fea
 from cordon_scanner.decide.verdict_features import VerdictFeatures
 from cordon_scanner.foundation.models import Category, Confidence, Finding, Severity
 from cordon_scanner.foundation.paths import PackagePaths
+from cordon_scanner.intel.malware.feed_models import FeedModels
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterable, Sequence
 
 MODEL_PATH: Final = PackagePaths.data("detect") / "verdict.json.gz"
+#: A model of the PyPI package area's own, fitted on the package-wide code features (0.8.0): a
+#: PyPI package answers to it where it ships; every other area keeps `MODEL_PATH`'s model.
+PYPI_MODEL_PATH: Final = PackagePaths.data("detect") / "verdict-pypi.json.gz"
 
 _CODE_SUFFIXES: Final = (
     ".js",
@@ -89,11 +93,51 @@ class VerdictModel:
     @staticmethod
     @functools.cache
     def load(path: Path = MODEL_PATH) -> dict[str, Any] | None:
+        """The model at `path`, or the signed feed's delivered copy of it when that loads (the same
+        format and fold checks as the bundled one) and its `version` is fresher (`FeedModels`)."""
+        bundled = VerdictModel._read(path)
+        if bundled is None:
+            return None
+        delivered = FeedModels.delivered(path.name)
+        if delivered is None:
+            return bundled
+        model = VerdictModel._read(delivered)
+        if model is None:
+            FeedModels.refuse(path.name, VerdictModel._why_unusable(delivered))
+        elif not VerdictModel._complete(model):
+            FeedModels.refuse(path.name, "incomplete")
+        elif FeedModels.newer(model.get("version"), bundled.get("version")):
+            FeedModels.accepted(path.name)
+            return model
+        else:
+            versioned = FeedModels.versioned(model.get("version"))
+            FeedModels.refuse(path.name, "not_fresher" if versioned else "unversioned")
+        return bundled
+
+    @staticmethod
+    def _why_unusable(path: Path) -> str:
+        """Why the model file at `path` cannot be scored with: it is a model of another feature schema or fold (`other_schema`) or it is not a model (`unreadable`)."""
         try:
             with gzip.open(path, "rt", encoding="utf-8") as handle:
-                model: dict[str, Any] = json.load(handle)
-        except OSError:
+                model: Any = json.load(handle)
+        except (OSError, ValueError, EOFError):
+            return "unreadable"
+        if isinstance(model, dict) and "rules" in model and VerdictModel.undeclared(model):
+            return "undeclared"
+        return "other_schema" if isinstance(model, dict) else "unreadable"
+
+    @staticmethod
+    def _read(path: Path) -> dict[str, Any] | None:
+        """The model file at `path` when it is one this tree can score with, else `None`."""
+        try:
+            with gzip.open(path, "rt", encoding="utf-8") as handle:
+                model: Any = json.load(handle)
+        except (OSError, ValueError, EOFError):
             return None
+        if not isinstance(model, dict):
+            return None
+        if "rules" in model and VerdictModel.undeclared(model):
+            return None  # a schema that declares its rule ids and reads another is not read
         if model.get("format") == VerdictModel.UNFOLDED:
             return model
         if (
@@ -102,6 +146,47 @@ class VerdictModel:
         ):
             return model
         return None
+
+    @staticmethod
+    def reads(model: dict[str, Any]) -> list[str]:
+        """The rule ids the model reads: every `r:<rule>` feature of its own trees and of its sections (`by_area`, `registry`)."""
+        sections = [
+            model,
+            *(model.get("by_area") or {}).values(),
+            *([model["registry"]] if isinstance(model.get("registry"), dict) else []),
+        ]
+        names = {
+            n
+            for s in sections
+            if isinstance(s, dict)
+            for n in (s.get("features") or ())
+            if isinstance(n, str)
+        }
+        return sorted({n[2:] for n in names if n.startswith("r:") and not n.endswith("#n")})
+
+    @staticmethod
+    def undeclared(model: dict[str, Any]) -> list[str]:
+        """The rule ids the model reads and its schema does not declare (`rules`): every one of them when it declares none."""
+        declared = model.get("rules")
+        return [
+            r
+            for r in VerdictModel.reads(model)
+            if not isinstance(declared, list) or r not in declared
+        ]
+
+    @staticmethod
+    def _complete(model: dict[str, Any]) -> bool:
+        """Whether the model holds every section a scan reads when it applies it: the features, the baseline, the trees, a block line for the fallback area and the floor.
+        A model without them would end a scan that has findings in an error, so it is not used."""
+        areas = model.get("areas")
+        return (
+            isinstance(model.get("features"), list)
+            and isinstance(model.get("trees"), list)
+            and isinstance(model.get("baseline"), (int, float))
+            and isinstance(areas, dict)
+            and Verdict.FALLBACK in areas
+            and isinstance(model.get("floor"), list)
+        )
 
     @staticmethod
     def inputs(model: dict[str, Any], features: dict[str, float]) -> dict[str, float]:
@@ -114,7 +199,8 @@ class VerdictModel:
         )
 
     @staticmethod
-    def score(model: dict[str, Any], features: dict[str, float]) -> float:
+    def raw(model: dict[str, Any], features: dict[str, float]) -> float:
+        """The trees' sum before the logistic: the log-odds, where one feature's part stays visible after the score has saturated."""
         # In single precision, as the trees were fitted: a value near a split would otherwise fall
         # on the other side of it.
         vector = array.array("f", [features.get(name, 0.0) for name in model["features"]])
@@ -132,7 +218,31 @@ class VerdictModel:
                     if (x <= n["threshold"] if not math.isnan(x) else n["missing_left"])
                     else n["right"]
                 )
+        return raw
+
+    @staticmethod
+    def score(model: dict[str, Any], features: dict[str, float]) -> float:
+        raw = VerdictModel.raw(model, features)
         return 1.0 / (1.0 + math.exp(-max(-60.0, min(60.0, raw))))
+
+    @staticmethod
+    def drivers(
+        model: dict[str, Any], features: dict[str, float], names: Iterable[str], top: int = 5
+    ) -> list[tuple[str, float]]:
+        """The features among `names` that pushed the score up, strongest first: for each, how much the log-odds fall when it alone is taken away. Ties by name, so the order is the same on every run."""
+        base = VerdictModel.raw(model, features)
+        found = [
+            (name, base - VerdictModel.raw(model, {**features, name: 0.0}))
+            for name in names
+            if features.get(name, 0.0) != 0.0
+        ]
+        return sorted(
+            (item for item in found if item[1] > 0), key=lambda item: (-item[1], item[0])
+        )[:top]
+
+
+# A models update installed by the feed is read at the next load, not at the next start.
+FeedModels.WATCHERS.append(VerdictModel.load.cache_clear)
 
 
 class Verdict:
@@ -142,6 +252,24 @@ class Verdict:
     RULE: ClassVar[str] = VerdictFeatures.OWN_RULE
     #: The line every package without one of its own answers to: the strictest of them all.
     FALLBACK: ClassVar[str] = "package"
+
+    #: A fraction of the model's block line, by area, that the package is held to; empty. MCP servers
+    #: were held to 0.9 of the shared model's line until the MCP area was fitted on its own rows
+    #: (reviews/mcp-98/20): its line is the out-of-fold score the legitimate MCP rows exceed at
+    #: 0.05%, the operating point itself, so a scale on top would apply it twice. The six malicious
+    #: units the 0.9 had gained stay blocked out of fold.
+    LINE_SCALE: ClassVar[dict[str, float]] = {}
+
+    @staticmethod
+    def line(areas: dict[str, Any], area: str) -> float:
+        """The score at which `area` blocks: the model's line for it, scaled by `LINE_SCALE`."""
+        return float(areas.get(area, areas[Verdict.FALLBACK])) * Verdict.LINE_SCALE.get(area, 1.0)
+
+    @staticmethod
+    def model_refusals() -> dict[str, str] | None:
+        """The delivered models a scan turned down and why, or None when it turned none down: what a scan's stats say about the models it did not use."""
+        return FeedModels.refusals() or None
+
     _PYPI: ClassVar[re.Pattern[str]] = re.compile(r"^[^/]+/PKG-INFO$|^[^/]+\.dist-info/METADATA$")
     #: Each ecosystem's layout, read on the outermost archive only (a jar bundled in a Gradle
     #: repository is not a Maven release), measured on the benign corpus (2026-10-19). Release
@@ -305,7 +433,7 @@ class Verdict:
             "area": area,
             "features": {"schema": FeatureSchema.current(), "values": features},
         }
-        model = VerdictModel.load()
+        model = Verdict.model_for(area)
         if model is None:
             return findings, summary
         # The second review (`intel/registry_record.py`): where the registry's record of this
@@ -333,17 +461,18 @@ class Verdict:
         # An area with trees of its own (agent skills read nothing like libraries) is scored by them.
         score = VerdictModel.score(model.get("by_area", {}).get(area, model), scored)
         areas = model["areas"]
-        block = float(areas.get(area, areas[Verdict.FALLBACK]))
+        block = Verdict.line(areas, area)
         summary.update(score=round(score, 4), block=block, model=model.get("version", ""))
+        if score >= block:
+            summary["drivers"] = Verdict.explain(
+                model.get("by_area", {}).get(area, model), scored, findings
+            )
         # The model lowers a block only in an area it was trained to separate (`lift_areas`: the
         # allowlist of areas with enough training malware -- the shipped model lists `npm` and
         # `mcp`). Every other area -- `skill`, `package` and the fallback included -- is add-only: it
         # may add a block, never lift one (review 98, the G7 actions regression came from lifting an
         # untrained `package` row). An older model without the allowlist keeps the former denylist.
-        lift_areas = model.get("lift_areas")
-        liftable = (
-            area in lift_areas if lift_areas is not None else area not in model.get("add_only", ())
-        )
+        liftable = Verdict.liftable(model, area)
         floor = frozenset(model["floor"])
         keep = frozenset(model.get("keep", ()))
         out: list[Finding] = []
@@ -351,6 +480,85 @@ class Verdict:
             findings, score, block, liftable, floor, keep, area, out, repository=repository
         )
         return out, summary
+
+    @staticmethod
+    def explain(
+        model: dict[str, Any], scored: dict[str, float], findings: Sequence[Finding]
+    ) -> dict[str, Any]:
+        """What drove a block by the model, strongest first: the facts the model reads that pushed the log-odds up, each with the places in the package that hold it (path and line). A fact the scan cannot place (a package-wide capability) is named under `unlocated` and not among the listed ones, so every listed fact can be checked against the files."""
+        names = [n for n in model["features"] if scored.get(n, 0.0) != 0.0 and not n.endswith("#n")]
+        listed: list[dict[str, Any]] = []
+        unlocated: list[str] = []
+        for name, gain in VerdictModel.drivers(model, scored, names, top=len(names)):
+            places = Verdict.places(name, findings)
+            if not places:
+                unlocated.append(name)
+            elif len(listed) < Verdict.DRIVERS_LISTED:
+                listed.append({"fact": name, "contribution": round(gain, 4), "locations": places})
+        return {"facts": listed, "unlocated": unlocated[: Verdict.DRIVERS_LISTED]}
+
+    DRIVERS_LISTED: ClassVar[int] = 5
+
+    @staticmethod
+    def places(name: str, findings: Sequence[Finding]) -> list[str]:
+        """Where a model feature is in the package: the findings it was made from, as `path:line`, five at most."""
+        kind, _, key = name.partition(":")
+        if kind == "r":
+            held = [f for f in findings if f.rule_id == key]
+        elif kind == "fam":
+            held = [f for f in findings if f.rule_id.rpartition(".")[0] == key]
+        elif kind == "cat":
+            held = [f for f in findings if f.category.value == key]
+        elif name == "w:code":
+            held = [f for f in findings if VerdictFeatures.is_code(f.rule_id)]
+        elif name in ("gate", "max") and findings:
+            top = (
+                max(int(f.severity) for f in findings if VerdictFeatures.is_code(f.rule_id))
+                if any(VerdictFeatures.is_code(f.rule_id) for f in findings)
+                else None
+            )
+            held = [
+                f
+                for f in findings
+                if top is not None and VerdictFeatures.is_code(f.rule_id) and int(f.severity) == top
+            ]
+        else:
+            held = []
+        return sorted({f"{f.location.path}:{f.location.line or 1}" for f in held})[:5]
+
+    LIFT_AREAS_ALLOWED: ClassVar[frozenset[str]] = frozenset({"npm", "pypi"})
+    """The only areas the model may lower a block in, whatever the model file lists (S6, lead
+    2026-11-10). MCP is add-only from 0.8.0 (mcp-98 gap 1). npm keeps its measured lift as a trade
+    recorded for the owner. PyPI lifts from 0.8.0 with its own model (`PYPI_MODEL_PATH`; owner
+    2026-11-13: build the model into the product), the trade measured by the release gate's LOST
+    and GAINED on the PyPI sets. A new lift area is a change to this line and to
+    test_verdict_bounds.py, never a model file."""
+
+    #: Areas judged by a model of their own, where that model ships.
+    OWN_MODELS: ClassVar[dict[str, Path]] = {"pypi": PYPI_MODEL_PATH}
+
+    @staticmethod
+    def model_for(area: str) -> dict[str, Any] | None:
+        """The model `area` answers to: its own (`OWN_MODELS`) where that ships and loads at this
+        tree's fold, else the shared model. npm, MCP, skills and every other area keep exactly the
+        model they had."""
+        own = Verdict.OWN_MODELS.get(area)
+        if own is not None:
+            model = VerdictModel.load(own)
+            if model is not None:
+                return model
+        return VerdictModel.load()
+
+    @staticmethod
+    def liftable(model: dict[str, Any], area: str) -> bool:
+        """Whether the model may lower a block in `area`: listed by the model (or, for an older
+        model, not add-only) and in `LIFT_AREAS_ALLOWED`."""
+        if area not in Verdict.LIFT_AREAS_ALLOWED:
+            return False
+        lift_areas = model.get("lift_areas")
+        return (
+            area in lift_areas if lift_areas is not None else area not in model.get("add_only", ())
+        )
 
     @staticmethod
     def _skill_claim(package: dict[str, float]) -> None:

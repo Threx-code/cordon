@@ -15,10 +15,13 @@ from cordon_scanner.cli.commands.agent import AgentCommand
 from cordon_scanner.cli.commands.baseline import BaselineCommand
 from cordon_scanner.cli.commands.bundle import BundleCommand
 from cordon_scanner.cli.commands.config import ConfigCommand
+from cordon_scanner.cli.commands.decision.decide import DecideCommand
+from cordon_scanner.cli.commands.decision.pr_comment import PrCommentCommand
 from cordon_scanner.cli.commands.guard import GuardCommand
 from cordon_scanner.cli.commands.intel import IntelCommand
 from cordon_scanner.cli.commands.inventory import InventoryCommand
 from cordon_scanner.cli.commands.notify import NotifyCommand
+from cordon_scanner.cli.commands.policy import PolicyCommand
 from cordon_scanner.cli.commands.report import ReportCommand
 from cordon_scanner.cli.commands.rules import RulesCommand
 from cordon_scanner.cli.commands.runner import RunnerCommand
@@ -110,6 +113,12 @@ tutorials for this version ({__version__}):
 
         BundleCommand.add_parser(sub)
 
+        PolicyCommand.add_parser(sub)
+
+        DecideCommand.add_parser(sub)
+
+        PrCommentCommand.add_parser(sub)
+
         AdvisoriesCommand.add_parser(sub)
 
         LoginCommand.add_parser(sub)
@@ -132,6 +141,9 @@ tutorials for this version ({__version__}):
         from cordon_scanner.cli.commands.review import ReviewCommand
 
         IncomingCommand.add_parser(sub)
+        from cordon_scanner.cli.commands.install.command import InstallGuardCommand
+
+        InstallGuardCommand.add_parser(sub)
 
         ReviewCommand.add_parser(sub)
         SuppressCommand.add_parser(sub)

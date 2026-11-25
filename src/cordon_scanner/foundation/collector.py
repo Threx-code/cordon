@@ -139,4 +139,44 @@ class ScanCaches:
             return len(ScanCaches._clearers)
 
 
-__all__ = ["Collector", "ScanCaches"]
+class ScanCounts:
+    """Integer counts by name for the scan in progress, in this process; emptied after each scan.
+
+    What a scan's readers did, for a capacity or coverage question -- note 18 §2 and §5.6: the
+    files whose decoded view differs, is partial or is refused, and the CPU it cost. Counted always
+    (a few additions a file), emitted only with `CORDON_DETECTOR_CLOCK=1` as `stats.view_files`,
+    beside `detector_cpu_ms` (`engine/detector_clock`), so a scan's output does not change
+    otherwise. A worker hands its counts back with its detector times."""
+
+    _counts: ClassVar[dict[str, int]] = {}
+    #: (name, key) pairs already counted: a file is counted once however often it is read.
+    _seen: ClassVar[set[tuple[str, str]]] = set()
+
+    @staticmethod
+    def add(name: str, n: int = 1) -> None:
+        counts = ScanCounts._counts
+        counts[name] = counts.get(name, 0) + n
+
+    @staticmethod
+    def once(name: str, key: str) -> None:
+        """`name` counted once for `key` (a file's path) in this scan."""
+        if (name, key) not in ScanCounts._seen:
+            ScanCounts._seen.add((name, key))
+            ScanCounts.add(name)
+
+    @staticmethod
+    def taken() -> dict[str, int]:
+        """This process's counts so far, removed: what a worker hands back with each unit."""
+        taken = dict(ScanCounts._counts)
+        ScanCounts._counts.clear()
+        return taken
+
+    @staticmethod
+    def snapshot() -> dict[str, int]:
+        return dict(sorted(ScanCounts._counts.items()))
+
+
+ScanCaches.register(ScanCounts._counts)
+ScanCaches.register(ScanCounts._seen)
+
+__all__ = ["Collector", "ScanCaches", "ScanCounts"]

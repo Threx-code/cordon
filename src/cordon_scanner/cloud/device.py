@@ -32,12 +32,18 @@ import tomllib
 import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar, Final
+from typing import TYPE_CHECKING, Any, ClassVar, Final
 
-from cordon_scanner.cloud import CloudEndpoint, CloudError
-from cordon_scanner.cloud.transport import CloudTransport, Transport
+from cordon_scanner.cloud import CloudError
+from cordon_scanner.cloud.agent.hook_install import AGENT_PRODUCTS, HookInstall
+from cordon_scanner.cloud.transport import Transport
 from cordon_scanner.foundation.evidence_key import EvidenceKey
 from cordon_scanner.version import __version__
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from cordon_scanner.cloud.local_store import LocalStore
 
 SCHEMA: Final = "cordon.device-inventory/v1"
 MAX_FILE_BYTES: Final = 2 << 20
@@ -362,12 +368,30 @@ class DeviceInventory:
         return out
 
     @staticmethod
+    def _hooks(home: Path, tools: set[str]) -> dict[str, bool]:
+        """For each agent product found: whether its own settings run Cordon's hook (never another tool's)."""
+        documents: dict[str, list[Any]] = {}
+        for source in DeviceInventory.sources(home):
+            if source.kind not in ("settings", "mcp") or source.tool not in AGENT_PRODUCTS:
+                continue
+            raw = DeviceInventory._read(source.path)
+            if raw is None:
+                continue
+            try:
+                documents.setdefault(source.tool, []).append(json.loads(raw))
+            except ValueError:
+                continue  # S2: a settings file that is not JSON installs no hook we can read
+        return HookInstall.by_product(tools, documents)
+
+    @staticmethod
     def _logical_mcp(servers: dict[str, Any]) -> bytes:
         return json.dumps({"mcpServers": servers}).encode()
 
     @staticmethod
-    def collect(home: Path | None = None) -> dict[str, Any]:
-        """The payload: device, inventory and findings. Nothing else leaves the machine."""
+    def collect(
+        home: Path | None = None, collection: Mapping[str, str] | None = None
+    ) -> dict[str, Any]:
+        """The payload: device, inventory and findings, and how well it was collected when the caller says (`CollectionStatus.payload`). Nothing else leaves the machine."""
         home = home or Path.home()
         tools, mcp, registries, files, read = DeviceInventory._read_sources(home)
         installed = DeviceInventory.installed_extensions(home)
@@ -379,7 +403,7 @@ class DeviceInventory:
 
         findings = DeviceInventory._agent_findings(files)
         findings.extend(DeviceInventory.extension_findings(installed))
-        return {
+        report = {
             "schema": SCHEMA,
             "agent_version": __version__,
             "device": DeviceInventory._device(),
@@ -390,9 +414,13 @@ class DeviceInventory:
                 "extensions": extensions,
                 "installed_extensions": installed,
                 "registries": registries,
+                "hooks": DeviceInventory._hooks(home, tools),
             },
             "findings": findings,
         }
+        if collection is not None:
+            report["collection"] = dict(collection)
+        return report
 
     @staticmethod
     def _read_sources(
@@ -511,21 +539,22 @@ class DeviceInventory:
         url: str | None = None,
         token: str | None = None,
         transport: Transport | None = None,
+        store: LocalStore | None = None,
     ) -> str:
-        """Send the payload with the organisation's device token. Returns the cloud's receipt id."""
+        """Send the payload with the organisation's device token. Returns the cloud's receipt id.
+
+        With `store`, a report that could not be delivered for want of a network (or a 5xx) waits in it and `ReportQueue.QUEUED` is
+        returned; the next call sends it first. A refusal is never queued."""
         device_token = token or os.environ.get("CORDON_DEVICE_TOKEN", "")
         if not device_token:
             raise CloudError("CORDON_DEVICE_TOKEN is not set; the MDM profile supplies it")
-        response = CloudTransport.request(
-            "POST",
-            f"{CloudEndpoint.base_url(url)}/v1/devices/inventory",
-            json_body=payload,
-            token=device_token,
-            transport=transport,
-        )
-        if response.status not in (200, 201, 202):
-            raise CloudError(f"the inventory was refused ({CloudTransport.error_text(response)})")
-        return str(response.body.get("receipt", ""))
+        from cordon_scanner.cloud.agent.report_queue import ReportQueue
+
+        if store is not None:
+            return ReportQueue.deliver(
+                payload, store, url=url, token=device_token, transport=transport
+            )
+        return ReportQueue.post(payload, url=url, token=device_token, transport=transport)
 
 
 __all__ = ["SCHEMA", "DeviceInventory", "Source"]

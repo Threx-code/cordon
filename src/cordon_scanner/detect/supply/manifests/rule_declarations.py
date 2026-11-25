@@ -18,6 +18,7 @@ from cordon_scanner.detect.supply.manifests.rule_ids import (
     NOT_INSTALLED_TWINS,
     REMOTE_TARBALL_RULE,
     SOURCE_PRIORITY_RULE,
+    UNKNOWN_HOST_RULE,
     WRAPPER_RULE,
 )
 from cordon_scanner.detect.supply.not_installed_files import NotInstalledFiles
@@ -147,19 +148,35 @@ _DECLARED: tuple[DeclaredRule, ...] = (
     ),
     DeclaredRule(
         id=REMOTE_TARBALL_RULE,
-        title="A published package installs a dependency from an arbitrary URL",
+        title="A package or project installs a dependency from an arbitrary URL",
         severity=Severity.HIGH,
         confidence=Confidence.MEDIUM,
         category=Category.SUSPICIOUS,
         detector="manifest",
         message=(
-            "A dependency of this published package is an http(s) URL on a host that is "
-            "not a registry. Every install fetches whatever that host serves at that "
+            "A dependency of this published package or project is an http(s) URL on a host "
+            "that is not a registry. Every install fetches whatever that host serves at that "
             "moment and runs its install scripts: no hash, no advisory and no review "
             "applies, and the package itself can be empty -- the PhantomRaven shape."
         ),
         references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
         remediation="Do not install it until the URL's content has been examined.",
+    ),
+    DeclaredRule(
+        id=UNKNOWN_HOST_RULE,
+        title="A dependency is fetched from a host that is neither a registry nor a code host",
+        severity=Severity.MEDIUM,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        detector="manifest",
+        message=(
+            "A dependency of this project is cloned with git, or a Go module is replaced by another "
+            "module, from a host that is neither the ecosystem's registry nor a public code host. "
+            "Whoever runs that host decides what installs, and no advisory, hash or review reaches "
+            "it."
+        ),
+        references=(references.DOWNLOAD_WITHOUT_INTEGRITY_CHECK,),
+        remediation="Confirm the host belongs to the organisation, or depend on a registry release.",
     ),
     DeclaredRule(
         id=MALICIOUS_REMOTE_TARBALL_RULE,
@@ -207,6 +224,65 @@ _DECLARED: tuple[DeclaredRule, ...] = (
         remediation="Read each finding listed. Do not install until explained.",
     ),
     DeclaredRule(
+        id="MALWARE.WORM.SELF_PROPAGATION.001",
+        title="The package publishes itself, decodes data to run it and fetches code to run it",
+        severity=Severity.CRITICAL,
+        confidence=Confidence.HIGH,
+        category=Category.MALICIOUS,
+        detector="verdict",
+        message=(
+            "This package carries all three of: publishing itself to a registry "
+            "(`SUSPECT.REGISTRY.SELF_PUBLISH.001`), decoding data and running it "
+            "(`SUSPECT.DECODE_EXEC.001`) and fetching code and running it "
+            "(`SUSPECT.DROPPER.REMOTE_CODE.001`). Each alone is ordinary in a release tool, a "
+            "loader or an updater; all three in one package are self-propagation."
+        ),
+        references=(references.OBSCURED_SECURITY_DATA,),
+        remediation=(
+            "Do not install. Read the three findings it names: a package that republishes "
+            "itself from the machine that installs it carries its payload to the next one."
+        ),
+    ),
+    DeclaredRule(
+        id="SUSPECT.AGENT.INJECTION_CORROBORATED.001",
+        title="An injection phrase and the learned reading of the skill's instructions agree",
+        severity=Severity.HIGH,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        detector="verdict",
+        message=(
+            "An instruction in this package reads as a prompt injection to the agent-threat rules "
+            "(`SUSPECT.AGENT.ATR.PROMPT_INJECTION.001`, at medium severity and low confidence) and "
+            "the learned reading of its skill instructions scores them as written to steer the agent "
+            "(`SUSPECT.AGENT.SKILL_INSTRUCTIONS.001`). Neither blocks alone, as each is common on "
+            "benign skills; the two agreeing is not."
+        ),
+        references=(references.OBSCURED_SECURITY_DATA,),
+        remediation=(
+            "Read the skill's instructions in full, and the files they tell the agent to run, before "
+            "installing it. Install it only from an author you trust."
+        ),
+    ),
+    DeclaredRule(
+        id="SUSPECT.AGENT.CODE_AND_INSTRUCTIONS.001",
+        title="An instruction file and the code of the same package agree on an attack on the agent",
+        severity=Severity.HIGH,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        detector="verdict",
+        message=(
+            "An instruction file of this package tells the agent to do something the rules treat as an "
+            "attack on it (`SUSPECT.AGENT.INSTRUCTION_*`), and the package's code does an agent-directed "
+            "thing (`SUSPECT.AGENT.*` in a code file). Each alone is common: an agent tool's code runs "
+            "commands, a skill's instructions say to fetch a page. The two agreeing is not."
+        ),
+        references=(references.OBSCURED_SECURITY_DATA,),
+        remediation=(
+            "Read the instruction file and the code file the findings name, together. Install the "
+            "package only from an author you trust."
+        ),
+    ),
+    DeclaredRule(
         id="SUSPECT.INTENT.UNEXPLAINED_EFFECT.001",
         title="The package's effects are not explained by what it says it is",
         severity=Severity.HIGH,
@@ -239,6 +315,20 @@ _DECLARED: tuple[DeclaredRule, ...] = (
         ),
         references=(references.OBSCURED_SECURITY_DATA,),
         remediation="Install the service's own server instead.",
+    ),
+    DeclaredRule(
+        id="SUSPECT.SOURCE.UNPARSED_RUNNING.001",
+        title="A module the package runs does not parse",
+        severity=Severity.HIGH,
+        confidence=Confidence.HIGH,
+        category=Category.SUSPICIOUS,
+        detector=ManifestFinding.DETECTOR,
+        message=(
+            "A module this package runs -- at install, on import, or as a command -- does not "
+            "parse, so its code was not read. Code that will run and cannot be read blocks."
+        ),
+        references=(references.OBSCURED_SECURITY_DATA,),
+        remediation="Do not install the package until the module has been read by hand.",
     ),
     DeclaredRule(
         id="SUSPECT.INSTALL.UNEXAMINED.001",
@@ -479,6 +569,20 @@ _DECLARED: tuple[DeclaredRule, ...] = (
         remediation="Do not install it; genuine native code ships as platform wheels.",
     ),
     DeclaredRule(
+        id="SUSPECT.BINARY.NATIVE_PROGRAM_IN_PURE_WHEEL.001",
+        title="A pure-Python wheel carries a native program and starts it",
+        severity=Severity.HIGH,
+        confidence=Confidence.HIGH,
+        category=Category.SUSPICIOUS,
+        detector="binary",
+        message=(
+            "The wheel is tagged none-any, declaring no compiled code, and carries an executable "
+            "that a Python file starts from a path built from where it lives."
+        ),
+        references=(references.OBSCURED_SECURITY_DATA,),
+        remediation="Do not install it; a package that needs a native program ships platform wheels.",
+    ),
+    DeclaredRule(
         id="SUSPECT.TYPOSQUAT.PACKAGE_NAME.001",
         title="Package is named like a popular package",
         severity=Severity.HIGH,
@@ -587,6 +691,44 @@ _DECLARED: tuple[DeclaredRule, ...] = (
         ),
         references=(references.NPM_LIFECYCLE,),
         remediation="Read the script. Install hooks run before any review or test.",
+    ),
+    DeclaredRule(
+        id="SUSPECT.INSTALL.INLINE_PROGRAM.001",
+        title="Install hook carries its program inline",
+        severity=Severity.HIGH,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        detector=ManifestFinding.DETECTOR,
+        message=(
+            "A `preinstall`, `install` or `postinstall` script of a published package carries a "
+            "program in the command itself (`node -e '...'`), outside any file a reviewer opens. "
+            "The program the capability rules find nothing in is the one an install hook uses to "
+            "say something or to wait; on the measured sets, packages that carry one are almost "
+            "all malicious."
+        ),
+        references=(references.NPM_LIFECYCLE,),
+        remediation=(
+            "Move the program into a file of the package so it is read like any other install-time "
+            "code, or drop the hook."
+        ),
+    ),
+    DeclaredRule(
+        id="SUSPECT.INSTALL.UNREAD.001",
+        title="Install hook runs a script this scan does not hold",
+        severity=Severity.HIGH,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        detector=ManifestFinding.DETECTOR,
+        message=(
+            "A `preinstall`, `install` or `postinstall` script hands an interpreter a script that "
+            "is not a file of the scan (`install_reach_incomplete`). The code that runs at install "
+            "was not read, and install-time code that cannot be read fails closed."
+        ),
+        references=(references.NPM_LIFECYCLE,),
+        remediation=(
+            "Ship the script in the package so it is read, or drop the hook; if it must run from "
+            "elsewhere, suppress this finding with a justification."
+        ),
     ),
     DeclaredRule(
         id=CONFUSION_RULE,

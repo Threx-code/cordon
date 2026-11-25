@@ -1,5 +1,5 @@
 """The configuration that adds Cordon's MCP server to each agent, as each agent's documentation
-gives its format (checked 2026-10-11).
+gives its format (checked 2026-11-21).
 
 `cordon-scanner mcp config --client <name>` prints one. Nothing here writes an agent's
 configuration: changing what an agent runs is the user's decision, made by pasting or running it.
@@ -41,6 +41,23 @@ CLIENTS: Final[dict[str, tuple[str, str]]] = {
     "continue": (".continue/mcpServers/cordon.yaml", "${{ workspaceFolder }}"),
     "jetbrains": (
         "Settings | Tools | AI Assistant | Model Context Protocol (MCP) > Add, as JSON",
+        "",
+    ),
+    "roo": (
+        ".roo/mcp.json in the project (MCP > Edit Project MCP), or the global mcp_settings.json (Edit Global MCP)",
+        "",
+    ),
+    "kiro": (".kiro/settings/mcp.json in the workspace, or ~/.kiro/settings/mcp.json", ""),
+    "amazonq": (".amazonq/mcp.json in the workspace, or ~/.aws/amazonq/mcp.json", ""),
+    "augment": (".augment/settings.json in the project, or ~/.augment/settings.json", ""),
+    "junie": (".junie/mcp/mcp.json in the project, or ~/.junie/mcp/mcp.json", ""),
+    "trae": (
+        "Settings > MCP > Add > Add Manually (paste this), or .trae/mcp.json in the project with project-level MCP enabled",
+        "",
+    ),
+    "opencode": ("opencode.json in the project", ""),
+    "goose": (
+        "~/.config/goose/config.yaml (Windows: %APPDATA%\\Block\\goose\\config\\config.yaml)",
         "",
     ),
 }
@@ -86,6 +103,8 @@ class Clients:
             "codex": cls._codex,
             "zed": cls._zed,
             "continue": cls._continue,
+            "opencode": cls._opencode,
+            "goose": cls._goose,
         }
 
     @staticmethod
@@ -118,6 +137,25 @@ class Clients:
     @staticmethod
     def _zed(command: str, args: list[str], entry: dict[str, object]) -> str:
         return json.dumps({"context_servers": {"cordon": {**entry, "env": {}}}}, indent=2)
+
+    @staticmethod
+    def _opencode(command: str, args: list[str], entry: dict[str, object]) -> str:
+        body = {
+            "$schema": "https://opencode.ai/config.json",
+            "mcp": {"servers": {"cordon": {"type": "local", "command": [command, *args]}}},
+        }
+        return (
+            '# opencode 2.x shape; on opencode 1.x the entry goes directly under "mcp" (no "servers" level)\n'
+            + json.dumps(body, indent=2)
+        )
+
+    @staticmethod
+    def _goose(command: str, args: list[str], entry: dict[str, object]) -> str:
+        lines = "\n".join(f"      - {json.dumps(a)}" for a in args)
+        return (
+            f"extensions:\n  cordon:\n    name: cordon\n    type: stdio\n    cmd: {json.dumps(command)}\n"
+            f"    args:\n{lines}\n    enabled: true\n    timeout: 300"
+        )
 
     @staticmethod
     def _continue(command: str, args: list[str], entry: dict[str, object]) -> str:

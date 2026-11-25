@@ -298,7 +298,10 @@ jobs:
       - run: pip install -e .
       # `cryptography` is a RELEASE-only dependency: it signs the bundle here and
       # never ships. The scanner verifies with the vendored `intel/_ed25519`.
-      - run: pip install "cryptography>=42"
+      # Pinned by version and hash, wheels only: the next step holds the signing key, and
+      # anything installed here would run beside it.
+      - run: |
+          pip install --require-hashes --only-binary :all: -r ci/release-signing-requirements.txt
       - name: Build and sign the bundle
         # Skips cleanly when the signing key is not yet configured, so the
         # release itself is never blocked on this opt-in feature being set up.
@@ -544,29 +547,18 @@ jobs:
       - name: Sign the image (keyless)
         run: cosign sign --yes "ghcr.io/${{ steps.repo.outputs.lower }}-bitbucket-pipe@${{ steps.push.outputs.digest }}"
 
-  github-release:
-    name: create the GitHub release
-    needs: [build, publish, confirm]
-    # Only for a real tag push. A `workflow_dispatch` verification run must not
-    # create a release object for a version that already exists.
-    # Also on the second run a tag push makes once PyPI has the version (publish skipped, confirm
-    # passed): a release page this job failed to create the first time is created then, and an
-    # existing one only has its notes refreshed.
-    if: >-
-      !cancelled() && startsWith(github.ref, 'refs/tags/v')
-      && needs.build.result == 'success'
-      && (needs.publish.result == 'success'
-          || (needs.publish.result == 'skipped' && needs.confirm.result == 'success'))
+  vscode-build:
+    name: build the VS Code extension
+    # No write permission and no stored credential: `npm ci`, the tests and vsce run third-party code, so the job
+    # that runs them can only produce the file; attesting and publishing it happen in jobs that run none of it.
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
-          name: dist
-          path: artefacts
+          persist-credentials: false
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -581,12 +573,62 @@ jobs:
         # stopped the 0.7.0 release here after PyPI had published (6 Nov).
         run: |
           set -euo pipefail
+          mkdir -p ../../vsix
           sudo apt-get update -qq
           sudo apt-get install -qq -y --no-install-recommends librsvg2-bin
           rsvg-convert -w 256 -h 256 images/icon.svg -o images/icon.png
           npm ci --no-audit --no-fund
           npm test
-          npx --yes @vscode/vsce@3.6.0 package --no-dependencies -o "../../artefacts/cordon-${GITHUB_REF_NAME#v}.vsix"
+          npx --yes @vscode/vsce@3.6.0 package --no-dependencies -o "../../vsix/cordon-${GITHUB_REF_NAME#v}.vsix"
+
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: vsix
+          path: vsix/*.vsix
+          if-no-files-found: error
+
+  github-release:
+    name: create the GitHub release
+    needs: [build, publish, confirm, vscode-build]
+    # Only for a real tag push. A `workflow_dispatch` verification run must not
+    # create a release object for a version that already exists.
+    # Also on the second run a tag push makes once PyPI has the version (publish skipped, confirm
+    # passed): a release page this job failed to create the first time is created then, and an
+    # existing one only has its notes refreshed.
+    if: >-
+      !cancelled() && startsWith(github.ref, 'refs/tags/v')
+      && needs.build.result == 'success' && needs.vscode-build.result == 'success'
+      && (needs.publish.result == 'success'
+          || (needs.publish.result == 'skipped' && needs.confirm.result == 'success'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      # The .vsix is attested here, where it is built, so the file on the release page is attested
+      # whether or not the Marketplace job is ever approved.
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: dist
+          path: artefacts
+
+      # Built in its own job, which holds no write permission and no credential: the package tooling there runs
+      # third-party code, and here it only hands over the file.
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: vsix
+          path: artefacts
+
+      # The very file the build job packaged, before it is uploaded: its provenance names this workflow, this tag and
+      # this commit as what built it.
+      - uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018 # v1.4.4
+        with:
+          subject-path: artefacts/*.vsix
 
       - name: Take the notes from the release page
         env:
@@ -612,6 +654,17 @@ jobs:
           fi
           head -8 notes.md
 
+      - name: Write the sums and a statement for each artefact
+        # `SHA256SUMS` and one in-toto statement per wheel, sdist and vsix, attached beside them, so a downloader
+        # checks the bytes with `scripts/release/verify_artifacts.py` on the release's files. The signature on the
+        # artefacts is the build-provenance attestation, checked live (`gh attestation verify`).
+        run: |
+          set -euo pipefail
+          python3 scripts/release/write_release_records.py artefacts/records \
+            artefacts/dist/*.whl artefacts/dist/*.tar.gz artefacts/*.vsix \
+            --repo "$GITHUB_REPOSITORY" --commit "$GITHUB_SHA" \
+            --run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
       - name: Publish it
         # The wheel and sdist are attached as well as being on PyPI: a release
         # page that carries the artefacts is what a signature is verified
@@ -624,23 +677,29 @@ jobs:
             --title "$GITHUB_REF_NAME" \
             --notes-file notes.md \
             --verify-tag \
-            artefacts/dist/* artefacts/*.vsix \
-            || gh release edit "$GITHUB_REF_NAME" --notes-file notes.md
+            artefacts/dist/* artefacts/*.vsix artefacts/records/* \
+            || {
+              # A re-run: the page exists. The .vsix this run built and attested replaces the earlier one, so the file on
+              # the page is always the one whose provenance names this run; its sums and statement are replaced with it.
+              gh release upload "$GITHUB_REF_NAME" artefacts/*.vsix --clobber
+              gh release upload "$GITHUB_REF_NAME" artefacts/records/* --clobber
+              gh release edit "$GITHUB_REF_NAME" --notes-file notes.md
+            }
 
   vscode-marketplace:
     name: publish the VS Code extension to the Marketplace and Open VSX
     # The `threx-code` publisher was unclaimed on both registries, so anyone could have taken it and
     # shipped an extension under the name `/connect` tells people to search for (audit PK-08, FE-02).
     # Published only from a tag, only after the GitHub release exists, from the very .vsix attached to
-    # it (attested here), and with tokens held in a protected environment that needs a reviewer.
+    # it, only once its attestation from this workflow verifies, and with tokens held in a protected
+    # environment that needs a reviewer.
     needs: github-release
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: marketplace
     permissions:
       contents: read
-      id-token: write
-      attestations: write
+      attestations: read
     steps:
       - name: Fetch the released .vsix
         env:
@@ -650,9 +709,28 @@ jobs:
           gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern '*.vsix' --dir vsix
           ls -l vsix
 
-      - uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018 # v1.4.4
-        with:
-          subject-path: vsix/*.vsix
+      - name: Publish only the one .vsix this workflow attested for this tag
+        # Attested where it was built (github-release). Checked against this repository, this workflow, this tag and
+        # this commit, signed through GitHub's OIDC issuer on a GitHub-hosted runner: an older .vsix this workflow
+        # attested for another tag, or a file replaced on the page, fails here and is never published.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(vsix/*.vsix)
+          if [ "${#files[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one .vsix on the release page, found ${#files[@]}"
+            exit 1
+          fi
+          gh attestation verify "${files[0]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release.yml" \
+            --source-ref "refs/tags/${GITHUB_REF_NAME}" \
+            --source-digest "${GITHUB_SHA}" \
+            --cert-oidc-issuer "https://token.actions.githubusercontent.com" \
+            --deny-self-hosted-runners
+          echo "VSIX=${files[0]}" >> "$GITHUB_ENV"
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -666,7 +744,7 @@ jobs:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: |
           set -euo pipefail
-          package="$(ls vsix/*.vsix)"
+          package="${VSIX}"
           if [ -n "${VSCE_PAT}" ]; then
             npx --yes @vscode/vsce@3.6.0 publish --packagePath "$package"
           else
@@ -677,3 +755,191 @@ jobs:
           else
             echo "::notice::OVSX_PAT is not set; Open VSX was not published to"
           fi
+
+  jetbrains-marketplace:
+    name: build the JetBrains plugin, attach it to the release, publish it to the JetBrains Marketplace
+    # Built by the plugin's own Dockerfile (pinned Gradle image, tests and the Plugin Verifier run in
+    # the build), from the tagged commit, after the GitHub release exists. The zip is attested and
+    # attached to the release. The Marketplace token is not in this job: the build runs Gradle and
+    # its plugins, third-party code, so the publish is its own job (jetbrains-publish) that runs no
+    # build at all. JetBrains takes a plugin's FIRST upload through its website (the
+    # `dev.cordon.jetbrains` id is claimed then); every release after that goes through here.
+    needs: github-release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: The plugin's version is the tag's
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          plugin="$(sed -n 's/^version = "\(.*\)"$/\1/p' editors/jetbrains/build.gradle.kts)"
+          if [ "$plugin" != "$version" ]; then
+            echo "::error::editors/jetbrains/build.gradle.kts says ${plugin}, the tag says ${version}"
+            exit 1
+          fi
+
+      - name: Build, test and verify
+        run: |
+          set -euo pipefail
+          docker build -f editors/jetbrains/Dockerfile -o out editors/jetbrains
+          ls -l out
+
+      - uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018 # v1.4.4
+        with:
+          subject-path: out/*.zip
+
+      - name: Attach it to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" out/*.zip --repo "$GITHUB_REPOSITORY" --clobber
+
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: jetbrains-plugin
+          path: out/*.zip
+          if-no-files-found: error
+
+  jetbrains-publish:
+    name: publish the JetBrains plugin to the JetBrains Marketplace
+    # The one job that holds the Marketplace token, from a protected environment that needs a
+    # reviewer. It checks nothing out and builds nothing: it takes the zip the build job attested,
+    # checks that attestation, and sends the zip to JetBrains' upload endpoint, the token's only
+    # destination. Skipped, with a notice, until the token is configured: a release must not fail
+    # because the Marketplace listing has not been claimed yet, and the notice says it has not.
+    needs: jetbrains-marketplace
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: marketplace
+    permissions:
+      contents: read
+      attestations: read
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: jetbrains-plugin
+          path: out
+
+      - name: The zip is the one this release's build attested
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for plugin in out/*.zip; do
+            gh attestation verify "$plugin" --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
+          done
+
+      - name: Publish
+        env:
+          JETBRAINS_MARKETPLACE_TOKEN: ${{ secrets.JETBRAINS_MARKETPLACE_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${JETBRAINS_MARKETPLACE_TOKEN}" ]; then
+            echo "::notice::JETBRAINS_MARKETPLACE_TOKEN is not set; the JetBrains Marketplace was not published to"
+            exit 0
+          fi
+          plugins=(out/*.zip)
+          if [ "${#plugins[@]}" -ne 1 ]; then
+            echo "::error::expected one plugin zip, found ${#plugins[@]}"
+            exit 1
+          fi
+          curl --fail-with-body --silent --show-error --proto '=https' \
+            -H "Authorization: Bearer ${JETBRAINS_MARKETPLACE_TOKEN}" \
+            -F xmlId=dev.cordon.jetbrains \
+            -F channel=stable \
+            -F "file=@${plugins[0]}" \
+            https://plugins.jetbrains.com/plugin/uploadPlugin
+
+  github-action-mirror:
+    name: copy the GitHub Action to its own repository, for the GitHub Marketplace
+    # The Marketplace lists an action whose `action.yml` is at the ROOT of a public repository, so
+    # `action/` is mirrored to `Threx-code/cordon-action` at each release and tagged with the same
+    # version; the listing itself is a click on that repository's release page. Skipped, with a
+    # notice, until the mirror's token (contents: write on that one repository) is configured.
+    needs: github-release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: marketplace
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Mirror and tag
+        env:
+          ACTION_MIRROR_TOKEN: ${{ secrets.ACTION_MIRROR_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ACTION_MIRROR_TOKEN}" ]; then
+            echo "::notice::ACTION_MIRROR_TOKEN is not set; the GitHub Action mirror was not updated"
+            exit 0
+          fi
+          mirror="$(mktemp -d)"
+          git clone --quiet "https://x-access-token:${ACTION_MIRROR_TOKEN}@github.com/Threx-code/cordon-action.git" "$mirror"
+          find "$mirror" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -R action/. "$mirror/"
+          cp LICENSE "$mirror/" 2>/dev/null || true
+          cd "$mirror"
+          git config user.name "cordon-release"
+          git config user.email "release@cordonscan.com"
+          git add -A
+          git commit --quiet -m "Cordon ${GITHUB_REF_NAME}" || echo "no change in action/"
+          git tag -f "${GITHUB_REF_NAME}"
+          git push --quiet origin HEAD:main
+          git push --quiet origin "refs/tags/${GITHUB_REF_NAME}"
+
+  mcp-registry:
+    name: publish server.json to the MCP Registry
+    # The server is `io.github.threx-code/cordon`, so GitHub's own OIDC token for this repository is
+    # the login: no personal token is stored. The registry checks the PyPI package names the server
+    # (the README's `mcp-name` line), so this runs after PyPI has the release. The publisher is built
+    # from source at an exact version (Go verifies every module against its checksum database).
+    needs: [publish, github-release]
+    # `publish` is skipped when PyPI already has the version; the server can still be listed then.
+    if: >-
+      always() && startsWith(github.ref, 'refs/tags/v')
+      && needs.github-release.result == 'success'
+      && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment: marketplace
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: "1.26"
+          cache: false
+
+      - name: The server's version is the tag's
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          python3 - "$version" <<'PY'
+          import json, sys
+          doc = json.load(open("server.json"))
+          versions = {doc["version"], *(p["version"] for p in doc.get("packages", []))}
+          if versions != {sys.argv[1]}:
+              sys.exit(f"server.json says {sorted(versions)}, the tag says {sys.argv[1]}")
+          PY
+
+      - name: Publish
+        run: |
+          set -euo pipefail
+          go install github.com/modelcontextprotocol/registry/cmd/publisher@v1.8.4
+          "$(go env GOPATH)/bin/publisher" login github-oidc
+          "$(go env GOPATH)/bin/publisher" publish

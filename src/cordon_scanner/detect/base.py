@@ -138,6 +138,16 @@ class ScanContext:
     """Skill scripts and MCP server sources: in `install_hook_paths` because an agent runs them
     unasked, but tools, not install scripts -- a bundle read to its end is not padding."""
 
+    skill_named_paths: frozenset[str] = frozenset()
+    """Scripts a skill that is also a package tells the agent to run: where a package manifest
+    stands beside a `SKILL.md`, the files it names by path or by file name (`LoadPath.skill_script`).
+    The rest of such a package is its own code, read at its own grade."""
+
+    startup_closure_paths: frozenset[str] = frozenset()
+    """The `.pth` startup hooks and the files their import lines reach: code that runs in every
+    Python process the machine starts once the package is installed (a subset of
+    `install_hook_paths`). Read by the startup facts (`StartupHooks`)."""
+
     ci_hook_paths: frozenset[str] = frozenset()
     """Paths that execute in the project's own pipeline.
 
@@ -165,6 +175,11 @@ class ScanContext:
     install code runs the author's own compiled binary on the consumer's machine -- which no reader
     of the install script can see, unlike a compiler spawned by bare name (census A, pypi-98). Used
     to keep a dropper of a shipped binary blocked while a compiler-spawn `setup.py` clears."""
+
+    data_only_paths: frozenset[str] = frozenset()
+    """Data files (JSON, YAML, TOML, CSV) that the package's code names only beside a parser
+    (`DataRoles`): their strings are values looked up, not acts, so the capability rules and the
+    code model do not read them."""
 
     consumer_install_paths: frozenset[str] = frozenset()
     """Paths that execute on the machine of whoever INSTALLS the package.
@@ -203,6 +218,20 @@ class ScanContext:
     name.
     """
 
+    import_closure_paths: frozenset[str] = frozenset()
+    """The Python modules of a published distribution a consumer can import (every importable
+    first-party module: consumers import the module that holds the API, `from sdk.client import
+    Client`, and its top level runs then), with what they import. Not tests, documentation, build
+    tooling or vendored copies (`PackageEntries.importable_modules`)."""
+    import_deferred_lines: frozenset[tuple[str, int, int]] = frozenset()
+    """`(path, first_line, last_line)` for function bodies in `import_closure_paths` that importing
+    never runs (`analysis.python.reachability.LoadReach`): reached only when someone calls them."""
+    import_deferred_lines_without_main: frozenset[tuple[str, int, int]] = frozenset()
+    """The same, with `__main__.py`'s load statements not a root: what `import pkg` runs, not
+    `python -m pkg` (reviews/pypi-98/19). Read only for `CompositeRuleIds.IMPORT_REACH_WITHOUT_MAIN`."""
+    startup_deferred_lines: frozenset[tuple[str, int, int]] = frozenset()
+    """Bodies in `startup_closure_paths` that importing them at interpreter start never runs."""
+
     scorer: RiskScorer = field(default_factory=RiskScorer)
     offline: bool = True
     nested_scan: Callable[[Path, Config], tuple[Finding, ...]] | None = None
@@ -235,10 +264,22 @@ class ScanContext:
     Its lockfiles then describe its maintainers' development environment, not what installing it
     brings in."""
 
+    confusion_version: str = ""
+    """Why the published package's own version looks chosen to outrank a private registry's
+    (`NameSignals.confusion_version`: 99.0.0, 99999999.0.0, 7.7.7), or "": the dependency-confusion
+    probe's version. Read by the `confusion_version` composite term."""
+    package_code_bytes: int = 0
+    """The bytes of a published Python package's own code files (`InstallFacts.of`; the files
+    `PackageIdentity.code_files` counts), 0 when it is not one."""
+    package_install_message: str = ""
+    """What an INERT root `setup.py` says when it refuses to install: the strings of its `raise`, `print` and
+    exit calls (`InstallFacts.of`), "" where `setup.py` could run anything or says nothing."""
     package_repository: str = ""
     """The published package's own `repository` URL (npm's `package.json`), as the registry shows
     it; empty when there is none or the target is not a package. Lets a detector tell the
     package's own release from someone else's (review 98, FP-2)."""
+    package_name: str = ""
+    """The published package's own name as its manifest or metadata declares it, or "": the identity a delivered pack's warning list is read against (`rules/warn_list.py`)."""
     distribution: str = ""
     """Which published format `package_distribution` recognised: `pypi`, `npm`, `cargo`,
     `rubygems`, `nuget`, `hex`, `gomod`, `maven`, `conda`, `hackage`, `cran` or `galaxy`; empty
@@ -262,10 +303,39 @@ class ScanContext:
     (`CrossFileFlows`). Set only for the re-grade of those files, after detection; None before. A
     fact like the others: carried to a worker and part of the file's cache key."""
 
+    python_imported_clients: Mapping[str, Mapping[str, str]] | None = None
+    """Per Python file, the names it imports from another of the package's files that are HTTP
+    clients made there (`ImportedClients`): `from .imports import *` taking `session =
+    httpx.Client()`. Found before detection from every Python file of the package, so a file's
+    analyser starts with them bound. None when there are none, or for a single-file scan."""
+
+    python_imported_runners: Mapping[str, Mapping[str, str]] | None = None
+    """Per Python file, the functions it imports from another of the package's files that run one of
+    their own parameters as a command, by position (`ImportedClients.runners_of`): a bot handler
+    in `bot.py` that hands the message text to `run_cmd` from `utils.py`. Found before detection
+    from every Python file, like the clients; None when there are none."""
+    python_carried_calls: Mapping[str, Mapping[str, str]] | None = None
+    """Per file, its functions and the parameter positions another of the package's files passes
+    a carried value (`CarriedCalls`), in the runner map's shape."""
+    python_imported_collectors: Mapping[str, Mapping[str, str]] | None = None
+    """Per Python file, the functions it imports from another of the package's files that collect a
+    fingerprint of the machine: environment, platform, and files read or hashed
+    (`MachineCollectors`), in the runner map's shape."""
+    python_sent_names: Mapping[str, Mapping[str, str]] | None = None
+    """Per Python file, the names it binds that other files of the package import by name and pass
+    to a request, with how many files do (`SentNames`), in the runner map's shape: a destination
+    written down in `__init__.py` and posted from the modules that import it."""
+
     cross_file_unresolved: bool = False
     """Whether some file of the package calls into it in a way the join cannot follow (a computed
     `require`, a file not read whole, facts refused): set for the re-grade only. What needs the join
     to be complete -- note 78's lowering of a parameter-built command -- is then not applied."""
+
+    remote_code_unexternal: bool = False
+    """Whether every request of the package is known, none goes to an external literal host and no decoded
+    value is run anywhere in it (`CrossFileJoin.unexternal`): set for the re-grade of the files that carry
+    the two REMOTE_CODE composites. Then those are reported at MEDIUM, the install-time one withdrawn for
+    the suspect one, rather than blocked alone. False otherwise: nothing is lowered."""
 
     #: The fields that belong to the process holding the context rather than to the scan target,
     #: each with where its effect is accounted for. Everything else is a fact about the target:
@@ -286,6 +356,25 @@ class ScanContext:
         does, and what a file's cached findings depend on besides its own bytes."""
         return {f.name: getattr(self, f.name) for f in fields(self) if f.name not in self.LOCAL}
 
+    #: Each place a file of the scanned package can run from, by the name the facts export uses.
+    PLACES: ClassVar[dict[str, str]] = {
+        "install_hook": "install_hook_paths",
+        "install_entry": "install_entry_paths",
+        "import_entry": "import_entry_paths",
+        "library_entry": "library_entry_paths",
+        "library_closure": "library_closure_paths",
+        "agent_tool": "agent_run_paths",
+        "skill_named": "skill_named_paths",
+        "startup_closure": "startup_closure_paths",
+        "ci_hook": "ci_hook_paths",
+    }
+
+    def places(self) -> dict[str, tuple[str, ...]]:
+        """Where the scanned package's files run from: each place's paths, sorted, empty places left out
+        (the learning loop's facts export reads it from the result, `report/facts.py`)."""
+        out = {name: tuple(sorted(getattr(self, attr))) for name, attr in self.PLACES.items()}
+        return {name: paths for name, paths in out.items() if paths}
+
     def out_of_time(self) -> bool:
         """Whether the scan's time budget has been spent."""
         if self.deadline is None:
@@ -294,6 +383,20 @@ class ScanContext:
 
     def in_install_hook(self, path: str) -> bool:
         return path in self.install_hook_paths
+
+    def in_startup_closure(self, path: str) -> bool:
+        return path in self.startup_closure_paths
+
+    def startup_reaches(self, path: str, line: int) -> bool:
+        """Whether this line runs at every interpreter start: the file is one a `.pth` hook's
+        imports reach, and the line is not in a body those imports never call."""
+        if path not in self.startup_closure_paths:
+            return False
+        return not any(
+            first <= line <= last
+            for deferred_path, first, last in self.startup_deferred_lines
+            if deferred_path == path
+        )
 
     def install_hook_reaches(self, path: str, line: int) -> bool:
         """Whether install-time context applies at this line of this file.
@@ -306,6 +409,17 @@ class ScanContext:
         return not any(
             first <= line <= last
             for deferred_path, first, last in self.install_deferred_lines
+            if deferred_path == path
+        )
+
+    def import_reaches(self, path: str, line: int) -> bool:
+        """Whether this line runs when the published package is imported: the file is one a consumer
+        imports (or what it imports), and the line is not in a body only a caller runs."""
+        if path not in self.import_closure_paths:
+            return False
+        return not any(
+            first <= line <= last
+            for deferred_path, first, last in self.import_deferred_lines
             if deferred_path == path
         )
 
@@ -662,6 +776,13 @@ class RuleFileInputs(Protocol):
     def files(self, rules_path: str) -> list[Path]: ...
 
 
+class PackageInstallFacts(Protocol):
+    """What the engine uses of the class `InstallFacts`: a Python package's code bytes and the message of
+    an inert refusing `setup.py` (`ScanContext.package_code_bytes`, `package_install_message`)."""
+
+    def of(self, units: Sequence[Any]) -> tuple[int, str]: ...
+
+
 class ComposerPluginPaths(Protocol):
     """What the engine uses of the class `ComposerPluginHooks`."""
 
@@ -740,6 +861,13 @@ class CrossFileJoining(Protocol):
         findings: Sequence[Finding],
     ) -> bool: ...
     def lowered(self, findings: Sequence[Finding]) -> set[str]: ...
+    def carriers(self, findings: Sequence[Finding]) -> set[str]: ...
+    def unexternal(
+        self,
+        facts: Mapping[str, Mapping[str, list[Any]]],
+        findings: Sequence[Finding],
+        flows: Mapping[str, Sequence[tuple[int, tuple[str, ...], str, str]]] | None = ...,
+    ) -> bool: ...
 
 
 class ServerSourceFinding(Protocol):
@@ -752,6 +880,30 @@ class SkillScripts(Protocol):
     """What the engine uses of the class `LoadPath`."""
 
     def skill_script(self, path: str, ctx: ScanContext | None) -> bool: ...
+
+    def named_scripts(self, units: Sequence[FileUnit]) -> frozenset[str]: ...
+
+
+class CapabilityNameMemo(Protocol):
+    """What the engine uses of the class `LabelledNames`: the capability names the detector's own pass found in
+    the file a worker is inspecting."""
+
+    def take(self, path: str) -> frozenset[str]: ...
+
+
+class DestinationMemo(Protocol):
+    """What the engine uses of the class `LabelledHosts`: the destination digests the detector's own pass found in the
+    file a worker is inspecting."""
+
+    def take(self, path: str) -> tuple[frozenset[str], frozenset[str]]: ...
+
+
+class ExecutableRecording(Protocol):
+    """What the engine uses of the class `ExecutableRecord`: the record of one native executable for the facts export."""
+
+    def of(
+        self, data: bytes, whole: bool = True, reason: str | None = None
+    ) -> dict[str, Any] | None: ...
 
 
 class SubmoduleDependencies(Protocol):

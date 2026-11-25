@@ -229,6 +229,40 @@ class JsShapes:
         """[module]: a local path the file hands on whole."""
         return isinstance(value, list) and len(value) == 1 and JsShapes._name(value[0], 4096)
 
+    REQUEST_CLASSES: ClassVar[frozenset[str]] = frozenset(
+        {"external", "local", "unresolved", "unread", "over_budget"}
+    )
+
+    @staticmethod
+    def request(value: Any) -> bool:
+        """[class, count]: how many of a file's request sites are of a class (never a host)."""
+        return (
+            isinstance(value, list)
+            and len(value) == 2
+            and value[0] in JsShapes.REQUEST_CLASSES
+            and JsShapes._int(value[1], 1)
+        )
+
+    @staticmethod
+    def decoded(value: Any) -> bool:
+        """[1]: a decoded value reaches a process or an evaluator in the file."""
+        return (
+            isinstance(value, list) and len(value) == 1 and value[0] == 1 and type(value[0]) is int
+        )
+
+
+class DigestShapes:
+    """The shape of a destination digest (`net.host`, `net.domain`): 16 lowercase hexadecimal digits. Kept apart from
+    `Shapes`, which the verdict model's feature schema covers: these facts feed no model."""
+
+    @staticmethod
+    def digest(value: Any) -> bool:
+        return (
+            isinstance(value, str)
+            and len(value) == 16
+            and all(c in "0123456789abcdef" for c in value)
+        )
+
 
 class Facts:
     """The parent's side of the channel: what it accepts from a worker, and nothing else."""
@@ -240,6 +274,9 @@ class Facts:
         "verdict.modules": Shapes.module_name,
         "verdict.abilities": Shapes.ability,
         "cap.label": Shapes.capability,
+        "cap.all": Shapes.capability,
+        "net.host": DigestShapes.digest,
+        "net.domain": DigestShapes.digest,
         "cap.error": Shapes.marker,
         "cap.download": Shapes.marker,
         "intent.effect": Shapes.intent_effect,
@@ -250,6 +287,8 @@ class Facts:
         "js.callout": JsShapes.callout,
         "js.callsink": JsShapes.callsink,
         "js.reexport": JsShapes.reexport,
+        "js.request": JsShapes.request,
+        "js.decoded": JsShapes.decoded,
     }
 
     @staticmethod

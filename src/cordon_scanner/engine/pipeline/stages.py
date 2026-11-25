@@ -13,16 +13,20 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from cordon_scanner.analysis.python.flows.cross_file import CrossFileMaps
 from cordon_scanner.decide.code_model import CodeModelPass
+from cordon_scanner.decide.package_rules import PackageRules
+from cordon_scanner.decide.reach import FileReach
+from cordon_scanner.decide.remote_control import RemoteControl
 from cordon_scanner.detect.base import (
     FileUnit,
     GraphUnit,
     RepositoryUnit,
     ScanContext,
 )
-from cordon_scanner.detect.registry import ComposerPluginHooks, ServerSources
+from cordon_scanner.detect.registry import ComposerPluginHooks
 from cordon_scanner.engine.cache import CacheSignature
-from cordon_scanner.engine.closure import ImportClosure
+from cordon_scanner.engine.closure import ImportClosure, StartupClosure
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.ceilings import Ceilings
 from cordon_scanner.engine.pipeline.constants import REPOSITORY_SCOPE
@@ -126,8 +130,7 @@ class ScanStages:
         # A skill's scripts run when the agent uses the skill, on the user's machine and unasked:
         # the trust boundary an install hook has (review 98: a skill script reading files and
         # posting them out was graded as a library's, at MEDIUM).
-        skill_scripts = TreeFacts.skill_scripts(units)
-        agent_run = skill_scripts | ServerSources.of(units)
+        skill_scripts, skill_named, agent_run = TreeFacts.skill_surface(units)
         agent_tools = self.engine._agent_tool_paths(units, agent_run, hook_paths)
         # Only a skill's scripts take the install grade. An MCP server runs when the agent calls
         # a tool the user asked it to use: downloading a browser, starting a detached emulator or
@@ -162,15 +165,22 @@ class ScanStages:
             ctx,
             dependencies=Graph.packages(dependencies),
             install_hook_paths=frozenset(hook_paths),
+            startup_closure_paths=(startup := StartupClosure.of(units, entries))[0],
+            startup_deferred_lines=startup[1],
             tree_paths=frozenset(unit.path for unit in units),
-            shipped_native_paths=TreeFacts.shipped_native(units),
+            **TreeFacts.file_roles(units),
             install_entry_paths=entries,
             agent_run_paths=agent_tools,
+            skill_named_paths=skill_named,
             consumer_install_paths=frozenset(consumer_hooks),
             install_deferred_lines=deferred,
             ci_hook_paths=ctx.ci_hook_paths | frozenset(ci_scripts),
         )
-        ctx = replace(ctx, verdict_dependency_names=Ceilings.verdict_dependency_names(units))
+        ctx = replace(
+            ctx,
+            verdict_dependency_names=Ceilings.verdict_dependency_names(units),
+            **CrossFileMaps.of(units),
+        )
         return Hooks.lifted_inherit(ctx)
 
     def detect(
@@ -228,6 +238,9 @@ class ScanStages:
                 return
             acc.add(ReleaseChecks.unexamined_install_code(acc.findings, ctx))
             acc.add(ReleaseChecks.native_code_in_a_pure_wheel(units, ctx))
+            # Not `native_program_in_a_pure_wheel`: a directory is not one release. An installed
+            # environment holds many `.dist-info` WHEEL files (and a source tree may commit its own),
+            # so reading the tree as one wheel would join one package's program to another's run.
             acc.add(ReleaseChecks.known_malicious_release(units, ctx))
             acc.add(ReleaseChecks.known_vulnerable_release(units, ctx, dependencies))
             acc.add(ReleaseChecks.placeholder_release(units, ctx))
@@ -326,6 +339,7 @@ class ScanStages:
         # finding it was hiding reappears at the same moment somebody is told
         # why, rather than as an unexplained new failure weeks later.
         acc.findings[:], code_model = CodeModelPass.decide(self.engine, acc.findings, ctx)
+        acc.findings[:], remote_control = RemoteControl.decide(acc.findings)
         findings = ResultFolding.settled(self.config, acc)
 
         # The package's JSON these read is the context worker's (item 56 (b)), never decoded here.
@@ -341,7 +355,16 @@ class ScanStages:
                 repository=not ctx.package_distribution,
                 facts=acc.facts,
             )
-        findings = (*graded, *code_model)
+        findings = (*graded, *code_model, *remote_control)
+        # Package-scope composites, over everything the rules and the verdict left (`package_rules.py`).
+        acc.reach, read = FileReach.guarded(units, ctx)
+        # the gap is kept in this list, as every finding of this stage is; `acc.gap` marks the scan incomplete
+        gaps = () if read else (acc.gap(FileReach.gap()),)
+        findings = (
+            *findings,
+            *gaps,
+            *PackageRules.decide(self.engine.rules, findings, ctx, acc.facts, acc.reach),
+        )
         dependencies = self.engine.detection.annotated(dependencies, findings, ctx, units)
         return findings, verdict, dependencies
 

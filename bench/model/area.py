@@ -11,7 +11,8 @@ two artefacts the gate and the audit record need beside the model:
   metrics.json          a normalised summary (recall, benign rate, n, threshold, per group), so one
                          reader distils every area's result the same way.
 
-Pure and deterministic: the same inputs give the same files. No trainer logic here -- this is the
+Pure and deterministic: the same inputs give the same files (the contract files; a model is byte-identical for the same list and seed only in
+the fixture area and the code area, whose fits are single-seeded with the deterministic setting; no other area is claimed). No trainer logic here -- this is the
 contract the trainers fill.
 """
 
@@ -19,9 +20,65 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
+
+
+class EntryPoint:
+    """Why `train.py` is the only way in: every script that writes a model is listed here, and refuses to run unless `train.py`
+    started it. A script that fits a model and is neither listed nor an evaluation-only script is a failing test."""
+
+    ENV = "CORDON_TRAIN_ENTRY"
+    #: area name -> the trainer `train.py --area <name>` runs.
+    TRAINERS: ClassVar[dict[str, str]] = {
+        "verdict": "verdict_train.py",
+        "skill-text": "train_text.py",
+        "files": "train_files.py",
+        "area-fit": "area_fit.py",
+        "mcp": "mcp_model_train.py",
+        "mcp-channel": "mcp_channel_model.py",
+        "mcp-lines": "mcp_recalibrate.py",
+        "intent": "intent_build.py",
+    }
+    #: Scripts that put finished models together or copy them (they fit nothing and make no new model).
+    PACKAGING = frozenset({"bundle.py"})
+    #: Scripts that fit models only to measure them (cross-validation): they write no model anyone ships.
+    EVALUATION_ONLY = frozenset({"mcp_crossval.py", "skill_crossval.py"})
+
+    @classmethod
+    def refuse_inherited(cls) -> None:
+        """`train.py` starts only from a clean environment: a grant left in the shell would open every later run, so one already
+        there, from outside, is refused."""
+        if os.environ.get(cls.ENV):
+            raise SystemExit(f"{cls.ENV} is already set in this environment: unset it; only train.py gives a trainer the grant")
+
+    @classmethod
+    def environment(cls) -> dict[str, str]:
+        """The environment `train.py` gives the trainer it starts: the grant is the process id of `train.py` itself, so a value
+        typed into a shell (which is not the trainer's parent) opens nothing."""
+        return {**{k: v for k, v in os.environ.items() if k != cls.ENV}, cls.ENV: str(os.getpid())}
+
+    @classmethod
+    def granted(cls, parent: int | None = None) -> bool:
+        """Whether this process was started by `train.py`: the grant names its parent, and where the parent's command line can be
+        read, that parent is `train.py`."""
+        parent = os.getppid() if parent is None else parent
+        if os.environ.get(cls.ENV) != str(parent):
+            return False
+        cmdline = Path(f"/proc/{parent}/cmdline")
+        if cmdline.exists():
+            return "train.py" in cmdline.read_bytes().decode("utf-8", "replace")
+        return True
+
+    @classmethod
+    def require(cls, script: str) -> None:
+        """Refuses to run a trainer on its own."""
+        if not cls.granted():
+            raise SystemExit(
+                f"{Path(script).name} is not an entry point: train through bench/model/train.py --area ... --train LIST --seed N"
+            )
 
 
 class Contract:

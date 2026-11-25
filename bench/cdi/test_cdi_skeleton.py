@@ -6,6 +6,7 @@ from __future__ import annotations
 import pytest
 from bench.cdi.candidate import CandidateFactory, FactoryRejection
 from bench.cdi.featureset import FeatureSetBuilder
+from bench.cdi.manifests import ManifestConflict, Manifests
 from bench.cdi.miss import Miss
 from bench.cdi.schemas import Schemas
 
@@ -35,13 +36,17 @@ class Build:
         )
 
     @staticmethod
-    def miss(split="dev", miss_id="miss:1"):
+    def manifests(split="dev"):
+        """The one dataset manifest that lists the miss's artifact, in `split`."""
+        return Manifests([{"dataset": "d1", "split": split, "artifacts": ["abc123"]}])
+
+    @staticmethod
+    def miss(miss_id="miss:1"):
         return Miss.detection_miss(
             miss_id=miss_id,
             artifact_id="art:evil@1.0",
             artifact_digest="abc123",
             label_ref="label:7",
-            dataset_membership=split,
             baseline={"scanner_version": "afae550", "intel_version": "s3", "model_version": None},
             reproduce={
                 "command": "cordon scan evil-skill.tgz",
@@ -98,7 +103,10 @@ class TestFeatureSet:
 
 class TestMiss:
     def test_valid(self):
-        assert Build.miss()["schema_version"] == "1.0.0"
+        assert Build.miss()["schema_version"] == "1.1.0"
+
+    def test_the_miss_carries_no_split(self):
+        assert "dataset_membership" not in Build.miss()
 
     def test_bad_needed_kind_rejected(self):
         with pytest.raises(ValueError):
@@ -107,7 +115,6 @@ class TestMiss:
                 artifact_id="a",
                 artifact_digest="d",
                 label_ref="l",
-                dataset_membership="dev",
                 baseline={},
                 reproduce={},
                 detectors_ran=[],
@@ -126,7 +133,7 @@ class TestMiss:
 class TestCandidateFactory:
     def test_file_exfil_candidate_from_train_miss(self):
         c = CandidateFactory.file_exfil_candidate(
-            [Build.miss(split="train")], train_dataset_digest="sha256:aa"
+            [Build.miss()], train_dataset_digest="sha256:aa", manifests=Build.manifests("train")
         )
         assert c["status"] == "proposed"
         assert c["derived_from_miss_ids"] == ["miss:1"]
@@ -138,8 +145,39 @@ class TestCandidateFactory:
         # The leakage guard: a held-split miss must never inform a candidate.
         with pytest.raises(FactoryRejection):
             CandidateFactory.file_exfil_candidate(
-                [Build.miss(split="held")], train_dataset_digest="sha256:aa"
+                [Build.miss()], train_dataset_digest="sha256:aa", manifests=Build.manifests("held")
             )
+
+    def test_factory_refuses_a_miss_no_manifest_lists(self):
+        with pytest.raises(FactoryRejection):
+            CandidateFactory.file_exfil_candidate(
+                [Build.miss()], train_dataset_digest="sha256:aa", manifests=Manifests([])
+            )
+
+    def test_factory_refuses_a_miss_listed_in_two_splits(self):
+        both = Manifests(
+            [
+                {"dataset": "a", "split": "train", "artifacts": ["abc123"]},
+                {"dataset": "b", "split": "held", "artifacts": ["abc123"]},
+            ]
+        )
+        with pytest.raises(FactoryRejection, match="more than one split"):
+            CandidateFactory.file_exfil_candidate(
+                [Build.miss()], train_dataset_digest="sha256:aa", manifests=both
+            )
+
+    def test_moving_the_artifact_to_held_in_the_manifest_refuses_the_same_miss(self):
+        """The miss is not edited; only the manifest changes, and the factory's answer changes with it."""
+        miss = Build.miss()
+        before = dict(miss)
+        assert CandidateFactory.file_exfil_candidate(
+            [miss], train_dataset_digest="sha256:aa", manifests=Build.manifests("dev")
+        )
+        with pytest.raises(FactoryRejection):
+            CandidateFactory.file_exfil_candidate(
+                [miss], train_dataset_digest="sha256:aa", manifests=Build.manifests("held")
+            )
+        assert miss == before
 
     def test_rule_pack_required(self):
         with pytest.raises(FactoryRejection):
@@ -149,6 +187,7 @@ class TestCandidateFactory:
                 kind="rule",
                 lane="rule_pack",
                 source_misses=[Build.miss()],
+                manifests=Build.manifests(),
                 mechanism_addressed="",
                 evidence="",
                 provenance="",
@@ -165,9 +204,43 @@ class TestCandidateFactory:
 
     def test_reject_is_a_new_version(self):
         c = CandidateFactory.file_exfil_candidate(
-            [Build.miss(split="train")], train_dataset_digest="sha256:aa"
+            [Build.miss()], train_dataset_digest="sha256:aa", manifests=Build.manifests("train")
         )
         r = CandidateFactory.reject(c, "held-out gain not reproducible")
         assert r["status"] == "rejected"
         assert r["rejection_reason"] == "held-out gain not reproducible"
         assert c["status"] == "proposed"  # original unchanged (append-only)
+
+
+class TestManifests:
+    """Membership is read from the manifests."""
+
+    def test_an_artifact_in_one_manifest_has_that_split(self):
+        assert Build.manifests("train").membership("abc123") == "train"
+
+    def test_an_unlisted_artifact_has_none(self):
+        assert Build.manifests().membership("nope") is None
+
+    def test_two_manifests_of_the_same_split_agree(self):
+        both = Manifests(
+            [
+                {"dataset": "a", "split": "dev", "artifacts": ["x"]},
+                {"dataset": "b", "split": "dev", "artifacts": ["x"]},
+            ]
+        )
+        assert both.membership("x") == "dev"
+
+    def test_two_splits_for_one_artifact_is_a_conflict_naming_both(self):
+        both = Manifests(
+            [
+                {"dataset": "a", "split": "train", "artifacts": ["x"]},
+                {"dataset": "b", "split": "held", "artifacts": ["x"]},
+            ]
+        )
+        with pytest.raises(ManifestConflict) as caught:
+            both.membership("x")
+        assert caught.value.splits == ("held", "train")
+
+    def test_the_split_of_a_miss_follows_its_artifact_digest(self):
+        assert Build.manifests("dev").of_miss(Build.miss()) == "dev"
+        assert Build.manifests("held").of_miss(Build.miss()) == "held"

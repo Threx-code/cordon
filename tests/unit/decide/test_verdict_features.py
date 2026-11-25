@@ -301,12 +301,13 @@ class TestTheShippedVerdict:
         assert summary["score"] < summary["block"]
         assert graded == findings
 
-    def test_an_unrecognised_package_answers_to_the_strictest_line(self) -> None:
+    def test_an_unrecognised_package_answers_to_the_strictest_line_and_is_add_only(self) -> None:
         findings = [VerdictKit.finding("SUSPECT.X.001", Severity.HIGH)]
         graded, summary = VerdictKit.decide(findings, VerdictKit.model(), layout="src/")
         assert summary["area"] == Verdict.FALLBACK
         assert summary["block"] == 0.95
-        assert graded[0].severity == Severity.MEDIUM
+        # S6: only npm may lift (`Verdict.LIFT_AREAS_ALLOWED`), whatever the model lists
+        assert graded == findings
 
     def test_a_model_judges_only_the_ecosystems_in_its_scope(self) -> None:
         findings = [VerdictKit.finding("SUSPECT.X.001", Severity.HIGH)]
@@ -560,3 +561,32 @@ class TestVerdictHoldsMinimalPackages:
         # looked like.
         assert all(f.severity <= Severity.MEDIUM for f in hook), [f.severity for f in hook]
         assert any("Held as a warning by the package verdict" in f.message for f in result.findings)
+
+
+class TestTheShippedScorerImportsOnlyTheStandardLibrary:
+    """The model is trees shipped as data and scored with no dependency: the modules that load and score it import nothing but the standard library and the scanner itself."""
+
+    MODULES = ("verdict.py", "feature_schema.py", "verdict_features.py")
+
+    def test_no_import_in_the_scoring_modules_is_a_third_party_package(self) -> None:
+        import ast
+        import sys
+
+        from support import ROOT
+
+        found = []
+        for name in self.MODULES:
+            tree = ast.parse(
+                (ROOT / "src" / "cordon_scanner" / "decide" / name).read_text(encoding="utf-8")
+            )
+            for node in ast.walk(tree):
+                modules = [a.name for a in node.names] if isinstance(node, ast.Import) else []
+                if isinstance(node, ast.ImportFrom) and node.module and not node.level:
+                    modules = [node.module]
+                found += [
+                    f"{name}: {m}"
+                    for m in modules
+                    if m.split(".")[0]
+                    not in sys.stdlib_module_names | {"cordon_scanner", "__future__"}
+                ]
+        assert found == []

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import multiprocessing
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -124,7 +125,6 @@ class TestTheSupervisor:
         assert outcome.results == {i: i * i for i in range(12)}
         assert not outcome.failed
 
-    @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="RLIMIT_AS is Linux's")
     def test_a_unit_past_the_memory_limit_costs_only_itself(self) -> None:
         units = [Unit(0, ("echo", "a"), 1), Unit(1, ("hog", 2 << 30), 1), Unit(2, ("echo", "b"), 1)]
         outcome = Harness.supervisor(Bounds(memory_bytes=1 << 30)).run(units)
@@ -132,14 +132,12 @@ class TestTheSupervisor:
         assert outcome.failed == {1: Reason.MEMORY}
         assert outcome.isolation["memory_limit"] == "enforced"
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="no RLIMIT_CPU on Windows")
     def test_a_unit_past_its_cpu_budget_is_ended_by_the_kernel(self) -> None:
         units = [Unit(0, ("spin", None), 1), Unit(1, ("echo", "after"), 1)]
         outcome = Harness.supervisor(Bounds(cpu_floor=1.0, wall_factor=60.0)).run(units)
         assert outcome.failed == {0: Reason.CPU}
         assert outcome.results == {1: "after"}
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="no RLIMIT_CPU on Windows")
     def test_an_idle_worker_is_not_ended_for_the_cpu_before(self) -> None:
         """Each unit uses most of a 2 s budget; one worker runs them all, so the CPU it has used
         passes any one unit's budget many times over: the limit is per unit, released between."""
@@ -232,15 +230,36 @@ class TestTheSupervisor:
         was ready, so a scan whose workers cannot start is a scanner error, never a hang."""
         monkeypatch.setattr(Worker, "START_BACKSTOP", 2.0)
         began = time.monotonic()
-        with pytest.raises(IsolationUnavailable):
+        with pytest.raises(IsolationUnavailable, match="ended by the start backstop"):
             Harness.supervisor(Bounds(), workers=1, setup="setup_that_hangs").run(
                 [Unit(0, ("echo", 1), 1)]
             )
         assert time.monotonic() - began < 2 * 2.0 + 20
 
+    def test_a_worker_that_never_starts_says_where_it_hung(self, monkeypatch) -> None:
+        """A run where no worker could start once ended in "exit -9" and nothing else; the error
+        carries the stuck worker's threads."""
+        monkeypatch.setattr(Worker, "START_BACKSTOP", 8.0)
+        with pytest.raises(IsolationUnavailable) as raised:
+            Harness.supervisor(Bounds(), workers=1, setup="setup_that_hangs").run(
+                [Unit(0, ("echo", 1), 1)]
+            )
+        assert "setup_that_hangs" in str(raised.value)
+
+    def test_a_worker_that_starts_leaves_no_stack_file(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+        outcome = Harness.supervisor(Bounds(), workers=1).run([Unit(0, ("echo", 1), 1)])
+        assert outcome.results
+        assert not list(tmp_path.rglob("*.stack"))
+        assert not list(tmp_path.glob("cordon-start-*"))
+
     def test_no_worker_that_can_start_is_said_not_run_here(self) -> None:
-        with pytest.raises(IsolationUnavailable):
+        """One that ended by itself is not said to have met the start backstop: once the backstop
+        had killed a hung worker, the two read the same ("died, exit -9", macOS CI, 2026-11-14)."""
+        with pytest.raises(IsolationUnavailable) as raised:
             Harness.supervisor(Bounds(), setup="setup_that_raises").run([Unit(0, ("echo", 1), 1)])
+        assert "start backstop" not in str(raised.value)
+        assert "s after it started)" in str(raised.value)
 
 
 class TestTheBudgetIsOnTopOfWhatTheWorkerInherits:
@@ -283,3 +302,153 @@ class TestTheBudgetIsOnTopOfWhatTheWorkerInherits:
             assert Limits.address_space() > 0
         else:
             assert Limits.address_space() == 0
+
+
+class TestTheWindowsJobIsDeclaredForSixtyFourBitHandles:
+    """S8 on Windows: undeclared, ctypes passes a HANDLE as a 32-bit int, so the current-process
+    pseudo-handle (-1) is truncated, AssignProcessToJobObject names no process, and the worker
+    runs unlimited. Checked on every platform with a stand-in for the DLL."""
+
+    def test_every_handle_crosses_as_a_pointer(self, monkeypatch) -> None:
+        import ctypes
+
+        from cordon_scanner.engine.isolation.platform_limits import JobLimits
+
+        class Function:
+            restype: object = ctypes.c_int
+            argtypes: object = None
+
+        class Dll:
+            def __init__(self, *_: object, **__: object) -> None:
+                self.functions: dict[str, Function] = {}
+
+            def __getattr__(self, name: str) -> Function:
+                return self.functions.setdefault(name, Function())
+
+        monkeypatch.setattr(ctypes, "WinDLL", Dll, raising=False)
+        monkeypatch.setattr(JobLimits, "_dlls", {})
+        kernel32 = JobLimits._kernel32()
+        assert kernel32.GetCurrentProcess.restype is ctypes.c_void_p
+        assert kernel32.CreateJobObjectW.restype is ctypes.c_void_p
+        assert kernel32.AssignProcessToJobObject.argtypes == [ctypes.c_void_p, ctypes.c_void_p]
+        assert kernel32.SetInformationJobObject.argtypes[0] is ctypes.c_void_p
+        assert JobLimits._psapi().GetProcessMemoryInfo.argtypes[0] is ctypes.c_void_p
+
+
+class TestAWindowsDeathPastItsBudgetIsTheCpuLimit:
+    """Windows ends a unit past its Job Object time limit with an exit code it does not document
+    (on Windows CI it was not ERROR_NOT_ENOUGH_QUOTA, and the unit read as "died"), so the parent
+    reads the worker's user time instead. Checked on every platform with a stand-in process."""
+
+    SECOND = 10_000_000  # user time ticks
+
+    class Ended:
+        exitcode = 1
+        sentinel = 7
+
+    @staticmethod
+    def worker(user_at_give: int | None, budget: float = 2.0) -> Worker:
+        worker = Worker.__new__(Worker)
+        worker.process = TestAWindowsDeathPastItsBudgetIsTheCpuLimit.Ended()
+        worker.unit = Unit(0, ("spin", None), 1)
+        worker.cpu_given, worker.user_at_give = budget, user_at_give
+        return worker
+
+    @staticmethod
+    def user_time(monkeypatch, ticks: int | None) -> None:
+        from cordon_scanner.engine.isolation.platform_limits import JobLimits
+
+        monkeypatch.setattr(JobLimits, "user_time_of", classmethod(lambda cls, handle: ticks))
+
+    def test_a_death_past_the_budget_is_the_cpu_limit(self, monkeypatch) -> None:
+        self.user_time(monkeypatch, 8 * self.SECOND)
+        assert self.worker(5 * self.SECOND).reason() == Reason.CPU
+
+    def test_a_death_inside_the_budget_is_a_death(self, monkeypatch) -> None:
+        self.user_time(monkeypatch, 5 * self.SECOND + self.SECOND // 2)
+        assert self.worker(5 * self.SECOND).reason() == Reason.DIED
+
+    def test_a_time_it_cannot_read_is_a_death(self, monkeypatch) -> None:
+        self.user_time(monkeypatch, None)
+        assert self.worker(5 * self.SECOND).reason() == Reason.DIED
+
+    def test_with_no_time_taken_at_give_the_exit_code_alone_decides(self, monkeypatch) -> None:
+        """Linux and macOS take no reading at give (`user_at_give` None): SIGXCPU says CPU."""
+        self.user_time(monkeypatch, 10**12)
+        assert self.worker(None).reason() == Reason.DIED
+        if hasattr(signal, "SIGXCPU"):
+            worker = self.worker(None)
+            worker.process.exitcode = -signal.SIGXCPU
+            assert worker.reason() == Reason.CPU
+
+    def test_a_platform_without_sigxcpu_reads_exit_1_as_a_death(self, monkeypatch) -> None:
+        """Windows has no SIGXCPU: the old fallback made `-(-1)`, so exit code 1 read as CPU there.
+        Checked on every platform by taking SIGXCPU away."""
+        self.user_time(monkeypatch, None)
+        monkeypatch.delattr(signal, "SIGXCPU", raising=False)
+        worker = self.worker(5 * self.SECOND)
+        worker.process.exitcode = 1
+        assert worker.reason() == Reason.DIED
+
+    @pytest.mark.skipif(os.name == "nt", reason="off Windows only")
+    def test_the_parent_reads_no_user_time_off_windows(self) -> None:
+        from cordon_scanner.engine.isolation.platform_limits import JobLimits
+
+        assert JobLimits.user_time_of(os.getpid()) is None
+
+
+class TestStartStacks:
+    """The stack file a worker arms before it is ready: its own, gone once it is ready or read, and naming no path
+    outside the installation."""
+
+    def test_disarming_removes_the_file(self, tmp_path) -> None:
+        from cordon_scanner.engine.isolation.supervisor import StartStacks
+
+        armed = StartStacks.arm((str(tmp_path), time.time() + 60))
+        assert armed is not None and armed[1].exists()
+        StartStacks.disarm(armed)
+        assert not armed[1].exists()
+
+    @pytest.mark.parametrize("ahead", [10.0**9, -(10.0**9)], ids=["far ahead", "far behind"])
+    def test_a_deadline_on_another_clock_is_held_inside_the_backstop(
+        self, tmp_path, monkeypatch, ahead
+    ) -> None:
+        """A deadline from a supervisor whose clock differs from the worker's (a spawned worker, a moved test clock)
+        arms within (0, START_BACKSTOP]: never a timeout the platform refuses, never a dump after the worker ends."""
+        import faulthandler
+
+        from cordon_scanner.engine.isolation.supervisor import StartStacks, Worker
+
+        asked = []
+        monkeypatch.setattr(
+            faulthandler, "dump_traceback_later", lambda timeout, **kw: asked.append(timeout)
+        )
+        monkeypatch.setattr(faulthandler, "cancel_dump_traceback_later", lambda: None)
+        armed = StartStacks.arm((str(tmp_path), time.time() + ahead))
+        try:
+            assert asked and 0 < asked[0] <= Worker.START_BACKSTOP
+        finally:
+            StartStacks.disarm(armed)
+
+    def test_a_dead_workers_file_under_a_reused_pid_is_replaced(self, tmp_path) -> None:
+        from cordon_scanner.engine.isolation.supervisor import StartStacks
+
+        stale = tmp_path / f"{os.getpid()}.stack"
+        stale.write_text("an earlier worker's threads", encoding="utf-8")
+        armed = StartStacks.arm((str(tmp_path), time.time() + 60))
+        assert armed is not None
+        assert "earlier worker" not in armed[1].read_text(encoding="utf-8")
+        StartStacks.disarm(armed)
+
+    def test_paths_are_cut_to_the_installation(self) -> None:
+        from cordon_scanner.engine.isolation.supervisor import StartStacks
+
+        text = (
+            'File "/Users/someone/work/src/cordon_scanner/engine/x.py", line 3\n'
+            'File "/home/u/.venv/lib/python3.13/site-packages/foo/bar.py", line 9\n'
+            "opened /home/u/private/notes.txt\n"
+        )
+        out = StartStacks.redacted(text)
+        assert 'File "cordon_scanner/engine/x.py"' in out
+        assert 'File "foo/bar.py"' in out
+        assert "someone" not in out and "/home/u" not in out and "notes.txt" in out

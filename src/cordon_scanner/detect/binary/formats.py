@@ -40,6 +40,8 @@ from cordon_scanner.foundation.models import (
     Severity,
 )
 from cordon_scanner.foundation.scoring import ScoringContext
+from cordon_scanner.sources.archive import ARCHIVE_SUFFIXES
+from cordon_scanner.sources.signatures import NotArchiveFormats
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -329,14 +331,23 @@ class FormatDetector(BaseDetector):
             return ()
         path = content.path.rpartition("!")[2].lower()
         try:
-            if path.endswith(pickles.ALWAYS_PICKLE) or (
-                path.endswith(pickles.PICKLE_SUFFIXES)
-                and (
-                    pickles.PickleReader.looks_like_pickle(raw)
-                    # A torch model too large to hold stores `data.pkl` past the prefix, so the
-                    # prefix does not look like a pickle; the zip on disk (`archive_source`) is read
-                    # through its index instead.
-                    or content.archive_source is not None
+            if (
+                path.endswith(pickles.ALWAYS_PICKLE)
+                or (
+                    path.endswith(pickles.PICKLE_SUFFIXES)
+                    and (
+                        pickles.PickleReader.looks_like_pickle(raw)
+                        # A torch model too large to hold stores `data.pkl` past the prefix, so the
+                        # prefix does not look like a pickle; the zip on disk (`archive_source`) is
+                        # read through its index instead.
+                        or content.archive_source is not None
+                    )
+                )
+                # Named as an archive and positively a pickle (PyTorch's legacy `*.pth.tar`): no
+                # archive starts with PROTO, and the archive reader examines it as the pickle it is.
+                or (
+                    path.endswith(ARCHIVE_SUFFIXES)
+                    and NotArchiveFormats.format_of(raw[:3]) == "pickle"
                 )
             ):
                 return self._pickle(unit, ctx)

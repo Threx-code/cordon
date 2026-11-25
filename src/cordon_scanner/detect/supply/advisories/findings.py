@@ -332,9 +332,13 @@ class AdvisoryFinding:
         # In a published package, a lockfile is its maintainers' development environment: what
         # installing the package brings in comes from its declared metadata instead. Reported, at
         # LOW, so it informs without blocking the package. A malicious release is never lowered.
-        maintainers_only = (
-            not malicious and ctx.package_distribution and dependency.scope is not Scope.RUNTIME
+        # The same holds for a published package inside the scan, known by its own pinned manifest
+        # (a jar's embedded POM among the files an install guard fetched, or vendored in a
+        # repository): its optional, test and provided dependencies reach nobody who installs it.
+        published = ctx.package_distribution or SourcePaths.in_published_package(
+            dependency.declared_in or ""
         )
+        maintainers_only = not malicious and published and dependency.scope is not Scope.RUNTIME
         if maintainers_only:
             severity = min(severity, Severity.LOW)
         # A published Go module's own `go.mod` `require` is a MINIMUM version: minimal version

@@ -25,8 +25,13 @@ class Structure:
     """The lowest layer of `js_flow._Analysis`: the token stream, the functions and scopes found in
     it, and name resolution. Every layer above reads the file through these."""
 
-    def __init__(self, text: str, seed: Callable[[str], str | None] | None = None) -> None:
+    def __init__(
+        self, text: str, seed: Callable[[str], str | None] | None = None, *, files: bool = False
+    ) -> None:
         self.text = text
+        #: Opt-in, measurement only: a call that opens or writes a file is a `file` sink (`JsFlow.file_flows`). Off
+        #: for every analysis the rules run, so their flows are what they were.
+        self.files = files
         #: Opt-in: a label for a string literal, ahead of every other fact about it -- what a caller
         #: follows that no rule reads (`js_persist.py`). None for every analysis the rules run.
         self.seed = seed
@@ -64,6 +69,10 @@ class Structure:
         #: Work done (label growth and range evaluations), bounded so no file can run long.
         self.work = 0
         self.budget = 8 * self.n + 100_000
+        #: The name tokens of the calls the call pass classed as a request, a raw connection or a DNS lookup, with
+        #: the kind (`_apply_sink`); whole once `sites_complete` (the call pass has reached every call).
+        self.sink_sites: dict[int, str] = {}
+        self.sites_complete = False
         self._args_cache: dict[int, list[tuple[int, int]]] = {}
         self._file_destination: tuple[str | None, str] | None = None
         self._cache: dict[tuple[int, int, int], tuple[int, set[Label]]] = {}

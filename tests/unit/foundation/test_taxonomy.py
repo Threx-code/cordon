@@ -102,6 +102,10 @@ CLASSIFIED_BY_VERB_ALONE = frozenset(
         # The intent layer: about the whole package's effects against its stated purpose, read
         # across every file and place it runs, so no one family names it either.
         "SUSPECT.INTENT.UNEXPLAINED_EFFECT.001",
+        # The worm composite: three findings of three families (registry, decoding, fetching)
+        # that together are self-propagation, so no one of those families names it; malware is
+        # its domain.
+        "MALWARE.WORM.SELF_PROPAGATION.001",
     }
 )
 

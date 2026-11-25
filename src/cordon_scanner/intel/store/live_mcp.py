@@ -57,6 +57,8 @@ class ServedTool:
     name: str
     description: str
     fingerprint: str
+    schema: str = "{}"
+    """The tool's `inputSchema` as served, JSON with sorted keys: what the list digest is taken over."""
 
     @staticmethod
     def of(tool: dict[str, Any]) -> ServedTool:
@@ -70,7 +72,28 @@ class ServedTool:
             str(tool.get("name", "")),
             str(tool.get("description") or ""),
             "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+            json.dumps(
+                tool.get("inputSchema", {}),
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ),
         )
+
+    @staticmethod
+    def list_digest(tools: list[ServedTool]) -> str | None:
+        """The server's artifact digest (`ArtifactDigests.of_tool_list`): T0 when recorded at approval,
+        T1 when read again. Order and serialisation do not move it. None when the list has no single
+        canonical form -- two tools with one name -- which a reader treats as a change."""
+        from cordon_scanner.contracts.digests import ArtifactDigests
+
+        try:
+            return ArtifactDigests.of_tool_list(
+                {"name": t.name, "description": t.description, "inputSchema": json.loads(t.schema)}
+                for t in tools
+            )
+        except ValueError:
+            return None
 
 
 class LiveMcp:
@@ -204,12 +227,30 @@ class McpApprovals:
 
     @staticmethod
     def record(url: str, tools: list[ServedTool]) -> dict[str, Any]:
-        return {
+        """One approved server: its URL, the list digest T0, and each tool's fingerprint and
+        description (the description is kept so a later read can say which text changed)."""
+        record: dict[str, Any] = {
             "url": url,
             "tools": {
                 t.name: {"fingerprint": t.fingerprint, "description": t.description} for t in tools
             },
         }
+        digest = ServedTool.list_digest(tools)
+        if digest is not None:
+            record["list_digest"] = digest
+        return record
+
+    @staticmethod
+    def digest(tools: list[ServedTool]) -> str | None:
+        """T1: the list digest of what the server serves now (`ServedTool.list_digest`)."""
+        return ServedTool.list_digest(tools)
+
+    @staticmethod
+    def unchanged(approved: dict[str, Any], digest: str | None) -> bool:
+        """Whether the list read now (digest T1) is the approved one (T0). Only a recorded T0 equal
+        to a T1 says so; an approval written before T0 was recorded is compared tool by tool."""
+        recorded = approved.get("list_digest")
+        return isinstance(recorded, str) and digest is not None and recorded == digest
 
     @staticmethod
     def write(root: Path, servers: dict[str, dict[str, Any]]) -> Path:
@@ -223,7 +264,8 @@ class McpApprovals:
 
     @staticmethod
     def differences(approved: dict[str, Any], tools: list[ServedTool]) -> list[tuple[str, str]]:
-        """`(kind, tool)` for each change since approval: `added`, `changed`, `removed`."""
+        """`(kind, tool)` for each change since approval: `added`, `description changed` (the text the
+        agent reads), `changed` (its input schema or annotations), `removed`."""
         listed = approved.get("tools")
         recorded: dict[str, Any] = listed if isinstance(listed, dict) else {}
         served = {t.name: t for t in tools}
@@ -233,7 +275,9 @@ class McpApprovals:
             if not isinstance(entry, dict):
                 out.append(("added", name))
             elif entry.get("fingerprint") != tool.fingerprint:
-                out.append(("changed", name))
+                was = entry.get("description")
+                redescribed = isinstance(was, str) and was != tool.description
+                out.append(("description changed" if redescribed else "changed", name))
         out += [("removed", name) for name in recorded if name not in served]
         return out
 

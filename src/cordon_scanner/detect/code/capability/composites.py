@@ -21,6 +21,7 @@ from cordon_scanner.foundation.capabilities import Capability
 if TYPE_CHECKING:
     from typing import Any
 
+    from cordon_scanner.detect.base import ScanContext
     from cordon_scanner.foundation.content import FileContent
     from cordon_scanner.rules.pack import CompiledRule
 
@@ -28,11 +29,40 @@ if TYPE_CHECKING:
 class CompositeEvaluator:
     """One file's composite evaluation: windows, expressions and terms."""
 
-    def __init__(self, *, in_entry: bool = False, in_import_entry: bool = False) -> None:
+    #: Spawn facts kept on a line whose command is written out whole. A program spelled in full is
+    #: normally data (`fixed_lines`: `git rev-parse` is not a decode-and-run); for these facts the
+    #: literal is the act itself -- a calculator or `whoami` started at install
+    #: (`InstallPrograms`), as `safe_spawn_lines` keeps a bare shell or a `start x.vbs`.
+    LITERAL_IS_THE_ACT: ClassVar[frozenset[str]] = frozenset(
+        {
+            "AST.PY.INSTALL_FOREIGN_PROGRAM",
+            "AST.PY.CODE_FROM_DATA",
+            "AST.PY.FOREIGN_INDEX",
+            "AST.PY.SHIPPED_RUN",
+            # A publish command written out in full is the publishing itself, not a fixed helper call.
+            "CAP.SPAWN.NPM_PUBLISH.001",
+        }
+    )
+
+    #: Composites whose marker reads the command a spawn runs: a command written out in full that loops over
+    #: every cluster context or every known SSH host is the act itself, so these composites count the spawn on
+    #: that line. Every other composite keeps the fixed-argv discount (`_fixed_argv_window`).
+    READS_ITS_OWN_COMMAND: ClassVar[frozenset[str]] = frozenset(
+        {
+            "SUSPECT.LATERAL.KUBE_EVERY_CONTEXT.001",
+            "SUSPECT.LATERAL.SSH_KNOWN_HOSTS.001",
+        }
+    )
+
+    def __init__(
+        self, *, in_entry: bool = False, in_import_entry: bool = False, confusion: bool = False
+    ) -> None:
         #: The file is an install hook's own entry (the `install_entry` term).
         self.in_entry = in_entry
         #: The file is a published package's entry point, run on `require()`/`import` (REC-2).
         self.in_import_entry = in_import_entry
+        #: The package's own version is a dependency-confusion version (`confusion_version`).
+        self.confusion = confusion
 
     @staticmethod
     def satisfying_region(content: FileContent, hits: list[CapabilityHit]) -> bytes:
@@ -257,7 +287,8 @@ class CompositeEvaluator:
         *,
         fixed_lines: frozenset[int],
     ) -> bool:
-        window = CompositeEvaluator._fixed_argv_window(window, fixed_lines)
+        if compiled.rule.id not in CompositeEvaluator.READS_ITS_OWN_COMMAND:
+            window = CompositeEvaluator._fixed_argv_window(window, fixed_lines)
         # The file runs at install time; this window has to as well. If any hit
         # in it sits in a body the hooks never call, the pair the composite
         # describes is not something that happens during an install -- so the
@@ -349,7 +380,11 @@ class CompositeEvaluator:
         return [
             hit
             for hit in window
-            if not (hit.capability is Capability.SPAWN and hit.line in fixed_lines)
+            if not (
+                hit.capability is Capability.SPAWN
+                and hit.line in fixed_lines
+                and hit.rule_id not in CompositeEvaluator.LITERAL_IS_THE_ACT
+            )
         ]
 
     @staticmethod
@@ -567,9 +602,26 @@ class CompositeEvaluator:
                 return in_hook and self.in_entry
             if named == "import_entry":
                 return self.in_import_entry
+            if named == "confusion_version":
+                return self.confusion
             return False
 
         return False
+
+    def suspect_reports(
+        self,
+        ctx: ScanContext,
+        path: str,
+        hits: list[CapabilityHit],
+        rule: str = "SUSPECT.DROPPER.001",
+    ) -> bool:
+        """Whether the suspect grade of a dropper (`SUSPECT.DROPPER.001`) fires on the window its malware
+        grade matched: its `unless` excludes test paths, and withdrawing the one where the other does
+        not report would leave the file clean."""
+        suspect, fired = ctx.rules.get(rule), frozenset(hit.rule_id for hit in hits)
+        return suspect is not None and self.evaluate(
+            suspect, {hit.capability for hit in hits}, path, in_hook=True, fired=fired
+        )
 
     @staticmethod
     def capabilities_of(compiled: CompiledRule) -> tuple[Capability, ...]:

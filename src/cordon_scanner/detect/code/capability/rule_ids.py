@@ -21,6 +21,32 @@ class CompositeRuleIds:
 
     PERSIST_RULE = "MALWARE.INSTALL.PERSIST.001"
 
+    #: Composites graded as code that runs unasked when a line runs at import of a published Python
+    #: package (`ScanContext.import_reaches`): admitted by their measured pair on M3 half A against
+    #: the benign work half (reviews/pypi-98/10). Not INSTALL.PERSIST (1 malware for 2 benign: celery
+    #: beat and cron tools schedule by design) nor the model-loading rules (no malware, 2 benign).
+    IMPORT_REACH_WITHOUT_MAIN: ClassVar[frozenset[str]] = frozenset(
+        {"MALWARE.EXFIL.001", "MALWARE.EXFIL.BEACON.001"}
+    )
+    """Read at import against what `import pkg` runs, not `python -m pkg`
+    (`ScanContext.import_deferred_lines_without_main`, reviews/pypi-98/19): a credential sent or the
+    machine reported from a body only `__main__.py` reaches is a program the user started. Only
+    these two; every other import-graded composite keeps the full reach."""
+
+    IMPORT_GRADED: ClassVar[frozenset[str]] = frozenset(
+        {
+            "SUSPECT.DECODE_CHAIN.001",
+            "SUSPECT.DECODE_EXEC.001",
+            "MALWARE.DROPPER.001",
+            "SUSPECT.DROPPER.001",
+            "MALWARE.EXFIL.001",
+            "MALWARE.EXFIL.BEACON.001",
+            "SUSPECT.EXFIL.BEACON.001",
+            "MALWARE.EXFIL.INSTALL_CALLBACK.001",
+            "SUSPECT.EXFIL.CREDENTIAL_STORE.001",
+        }
+    )
+
     CALLBACK_RULE = "MALWARE.EXFIL.INSTALL_CALLBACK.001"
 
     EXFIL_RULES = frozenset({"SUSPECT.EXFIL.001", "MALWARE.EXFIL.001"})
@@ -58,6 +84,20 @@ class CompositeRuleIds:
         "MALWARE.DROPPER.001": DROPPER_RULE,
         "MALWARE.INSTALL.REMOTE_CODE.001": REMOTE_CODE_RULE,
     }
+
+    #: The two composites that read a response run (`CAP.JS.FLOW.REMOTE_CODE`): the runtime one and the
+    #: install-time one. Held at MEDIUM, the install-time one withdrawn for the runtime one, when the
+    #: package's requests name no external literal host and nothing decoded is run.
+    REMOTE_CODE_RULES: ClassVar[frozenset[str]] = frozenset(
+        {REMOTE_CODE_RULE, "MALWARE.INSTALL.REMOTE_CODE.001"}
+    )
+
+    #: Why the REMOTE_CODE composites are lowered, said in the finding.
+    UNEXTERNAL_REQUEST_REASON: ClassVar[str] = (
+        "a package whose requests name no external address and which runs nothing decoded: no request "
+        "goes to a host the code spells out, so what is run is the operator's to configure, not a "
+        "server's choice"
+    )
 
     #: Rules whose act is destroying data. They keep their severity in build tooling: a recipe
     #: runs unattended on every machine that builds, so "written to be read" does not hold.

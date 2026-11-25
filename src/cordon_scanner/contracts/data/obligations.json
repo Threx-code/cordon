@@ -1,0 +1,34 @@
+{
+  "contracts_version": "1.6.0",
+  "obligations": [
+    {
+      "code": "O001",
+      "name": "pin_digest",
+      "title": "Pin the digest",
+      "explanation": "install only the digest the decision was made for",
+      "state": "active"
+    },
+    {
+      "code": "O002",
+      "name": "log_decision",
+      "title": "Log the decision",
+      "explanation": "record the decision and its evidence in the audit log",
+      "state": "active"
+    },
+    {
+      "code": "O003",
+      "name": "notify_owner",
+      "title": "Notify the owner",
+      "explanation": "tell the owner of the repository or scope",
+      "state": "active"
+    },
+    {
+      "code": "O004",
+      "name": "open_review_ticket",
+      "title": "Open a review ticket",
+      "explanation": "open a review ticket for the conditions of the allow",
+      "state": "active"
+    }
+  ],
+  "retired": []
+}

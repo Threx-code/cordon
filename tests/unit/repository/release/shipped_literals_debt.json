@@ -1,0 +1,18 @@
+{
+  "src/cordon_scanner/analysis/python/inert_literals.py": 1,
+  "src/cordon_scanner/analysis/shared/destinations.py": 1,
+  "src/cordon_scanner/analysis/shared/languages.py": 2,
+  "src/cordon_scanner/detect/agents/configuration.py": 1,
+  "src/cordon_scanner/detect/agents/text_patterns.py": 1,
+  "src/cordon_scanner/detect/code/capability/anchor.py": 1,
+  "src/cordon_scanner/detect/code/capability/legitimate_use.py": 1,
+  "src/cordon_scanner/detect/code/capability/text_position.py": 4,
+  "src/cordon_scanner/detect/code/credential_sweep.py": 1,
+  "src/cordon_scanner/detect/infra/cloud_policies.py": 2,
+  "src/cordon_scanner/detect/infra/config_rule.py": 1,
+  "src/cordon_scanner/detect/supply/manifests/rule_declarations.py": 1,
+  "src/cordon_scanner/foundation/capabilities.py": 1,
+  "src/cordon_scanner/foundation/config/policy.py": 2,
+  "src/cordon_scanner/foundation/samples.py": 2,
+  "src/cordon_scanner/mcp/tools/catalogue.py": 1
+}

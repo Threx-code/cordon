@@ -43,6 +43,30 @@ class IntelAtBuild:
 
         status._judged_at_build = True  # type: ignore[attr-defined]
         FeedClient.status = staticmethod(status)  # type: ignore[method-assign,assignment]
+        IntelAtBuild._reuse_index()
+
+    #: The wall clock as this file found it: a test that sets its own clock replaces `time.time`.
+    WALL = time.time
+
+    @staticmethod
+    def _reuse_index() -> None:
+        """The code-reuse index judged when it was built, as the feed is: its 7-day limit made
+        every scan in the suite incomplete the week after the bundled index was built (10 Nov). A
+        test that sets its own clock, or its own `_SHIPPED`, decides for itself."""
+        from cordon_scanner.intel.malware.reuse_index import ReuseIndex
+
+        real = ReuseIndex._load
+        if getattr(real, "_judged_at_build", False):
+            return
+
+        def load(max_age_days):  # type: ignore[no-untyped-def]
+            if time.time is not IntelAtBuild.WALL:
+                return real(max_age_days)
+            return real(0)
+
+        load._judged_at_build = True  # type: ignore[attr-defined]
+        ReuseIndex._load = staticmethod(load)  # type: ignore[method-assign,assignment]
+        ReuseIndex.reset()
 
 
 class CoverageInWorkers:

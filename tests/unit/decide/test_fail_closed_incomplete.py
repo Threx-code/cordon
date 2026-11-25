@@ -297,3 +297,38 @@ class TestUnreadBytesBlock:
         assert PolicyGate.evaluate(result, Policy.default()).exit_code is not ExitCode.CLEAN
         quiet = dataclasses.replace(result, findings=())
         assert PolicyGate.evaluate(quiet, Policy.default()).exit_code is ExitCode.INCOMPLETE
+
+
+class TestGatesThatJudgeFindingsOneByOne:
+    """The install guard and the guarded clone and pull ask `PolicyGate.blocking`, so a scan the gate
+    fails as incomplete blocks there too, attributed to the file it could not read. Before, they asked
+    `_fails` of each finding: a package whose nested archive would not open had no finding for it,
+    and `cordon-scanner npm install` installed what `cordon-scanner scan` refused with exit 4."""
+
+    def test_a_content_gap_blocks_with_no_finding_at_all(self) -> None:
+        result = ScanResult(complete=False, content_complete=False, content_gaps=(GAP,))
+        blocking = PolicyGate.blocking(result, Policy.default())
+        assert [(f.rule_id, f.location.path) for f in blocking] == [GAP]
+
+    def test_an_accepted_gap_blocks_nothing(self) -> None:
+        result = ScanResult(complete=False, content_complete=False, content_gaps=(GAP,))
+        accepted = dataclasses.replace(
+            Policy.default(), accepted_gaps=(FailClosedKit.accepted(*GAP),)
+        )
+        assert PolicyGate.blocking(result, accepted) == ()
+
+    def test_any_other_gap_blocks_only_with_the_flag(self) -> None:
+        result = ScanResult(complete=False, content_complete=False)
+        assert PolicyGate.blocking(result, Policy.default()) == ()
+        flagged = dataclasses.replace(Policy.default(), fail_on_incomplete=True)
+        assert [f.rule_id for f in PolicyGate.blocking(result, flagged)] == [
+            "OPERATIONAL.SCAN.INCOMPLETE"
+        ]
+
+    def test_the_install_guard_does_not_install_what_it_could_not_read(self, tmp_path) -> None:
+        from cordon_scanner.cli.commands.install.context import InstallContext
+
+        FailClosedKit.corrupt_member_sdist(tmp_path)
+        config = Config.default().with_overrides(use_cache=False, offline=True)
+        blocking = InstallContext.scanner(config)(tmp_path)
+        assert any(f.rule_id == "OPERATIONAL.ARCHIVE.MEMBER_REJECTED" for f in blocking)

@@ -12,7 +12,7 @@ flow. What runs is the crate's own code, read by the binary rules; 15 npm releas
 it alone (review 98, npm work half), among them WebAssembly SDKs for Automerge, Kaspa and OPAQUE.
 
 Only that generated line is set aside, and only in a file that names the runtime's hooks and its
-own `_bg.wasm`. A compromised release that adds a dropper beside the glue is judged on that
+own `_bg.wasm` or the init it generates (`__wbg_init`, `initSync`). A compromised release that adds a dropper beside the glue is judged on that
 dropper: the 32 DataDog npm samples carrying the glue stay blocked on their payloads.
 """
 
@@ -32,8 +32,12 @@ _SHIM: Final = re.compile(
 class WasmBindgenGlue:
     @staticmethod
     def generated(text: str) -> bool:
-        """Whether the file is wasm-bindgen glue: it names the runtime's hooks and its module."""
-        return "__wbindgen_" in text and "_bg.wasm" in text
+        """Whether the file is wasm-bindgen glue: it names the runtime's hooks and either its module or the
+        init the glue generates (`--target no-modules` leaves the `.wasm` for the page to name when it calls
+        `wasm_bindgen(...)`: rerun's `re_viewer.js` never writes `_bg.wasm`)."""
+        return "__wbindgen_" in text and (
+            "_bg.wasm" in text or "__wbg_init" in text or "initSync" in text
+        )
 
     @staticmethod
     def shim_at(text: str, offset: int) -> bool:

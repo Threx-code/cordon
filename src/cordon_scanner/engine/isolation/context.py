@@ -1,10 +1,10 @@
-"""The scan context built in a supervised worker (item 56, phase (b)): the parent parses no manifest,
+"""The scan context built in a supervised worker: the parent parses no manifest,
 lockfile, SBOM, hook or closure.
 
 Everything between the walk and the finished `ScanContext` parses scanned content: the hooks written
 inline, the deobfuscation lift, the dependency graph (manifests, lockfiles, an SBOM target,
 .gitmodules), the hook paths and their import and require closures, the skill and server sources. It
-runs here, in one worker per scan under item 28's bounds, as the very same steps the parent ran, and
+runs here, in one worker per scan under the worker's bounds, as the very same steps the parent ran, and
 comes back as one JSON document the parent checks before it believes any of it:
 
 ```
@@ -19,7 +19,7 @@ comes back as one JSON document the parent checks before it believes any of it:
 
 A worker that dies, hangs, overruns, raises or answers with a refused document leaves the scan with
 only what the walk gives (`tree_paths`), and a blocking gap at the scan's scope: incomplete scans
-block (item 27). The parent never runs a step in-process. `IsolationUnavailable` is never caught.
+block. The parent never runs a step in-process. `IsolationUnavailable` is never caught.
 """
 
 from __future__ import annotations
@@ -48,15 +48,19 @@ location, evidence, explanation and risk), and slack. Checked before decoding (`
 
 PATH_SETS = (
     "install_hook_paths",
+    "startup_closure_paths",
     "import_entry_paths",
     "library_entry_paths",
     "library_closure_paths",
     "install_entry_paths",
     "agent_run_paths",
+    "skill_named_paths",
     "ci_hook_paths",
     "tree_paths",
     "shipped_native_paths",
+    "data_only_paths",
     "consumer_install_paths",
+    "import_closure_paths",
 )
 """Context fields that are sets of tree paths: each must be a path of the scan's units, or one the
 parent's own context held before the worker ran (the inventory's hook paths)."""
@@ -65,9 +69,40 @@ NAME_SETS = ("declared_dependencies", "verdict_dependency_names")
 SCALARS: dict[str, type] = {
     "package_distribution": bool,
     "package_repository": str,
+    "package_name": str,
     "distribution": str,
+    "confusion_version": str,
+    "package_code_bytes": int,
+    "package_install_message": str,
 }
-CONTEXT_FIELDS = (*PATH_SETS, *NAME_SETS, *SCALARS, "install_deferred_lines", "dependencies")
+DEFERRED_LINES = (
+    "install_deferred_lines",
+    "import_deferred_lines",
+    "import_deferred_lines_without_main",
+    "startup_deferred_lines",
+)
+"""Context fields that are `(path, first_line, last_line)` sets: bodies a hook or an import never runs."""
+RUNNER_MAPS = (
+    "python_imported_runners",
+    "python_carried_calls",
+    "python_imported_collectors",
+    "python_sent_names",
+)
+"""Context fields that are `{path: {function: "0,2"}}`: the positions of the parameters it runs
+(for `python_sent_names`, `{path: {name: "3"}}`: how many other files send the name)."""
+CLIENT_MAPS = ("python_imported_clients",)
+"""Context fields that are `{path: {name: client constructor}}`: crossing as `[path, name, client]`
+triples, each path one of the scan's units, each name an identifier, each client one of
+`HTTP_CLIENTS`."""
+CONTEXT_FIELDS = (
+    *PATH_SETS,
+    *NAME_SETS,
+    *SCALARS,
+    *DEFERRED_LINES,
+    *CLIENT_MAPS,
+    *RUNNER_MAPS,
+    "dependencies",
+)
 """Every context field a context worker may set. A step that changes any other field fails the
 worker (`ContextWork.encode_context`): a new field is declared here, with its shape, or not sent."""
 
@@ -84,7 +119,7 @@ class ContextWork:
         step's failure is reported at, whether the archive is an image, and the inventory's held
         manifest-hook places.
 
-        Each step runs in its own guard (note 56's review, change 1): one that raises is that step's
+        Each step runs in its own guard: one that raises is that step's
         blocking gap, and the steps after it still run. In the order of what blocks (change 2): the
         inventory's manifest hooks, the hooks written inline, the lift (the closures read lifted
         units), what runs at install and its closures, and only then the dependency graph."""
@@ -237,10 +272,16 @@ class ContextWork:
                 raise TypeError(f"a context step set {f.name}, which no context worker may send")
             if f.name == "dependencies":
                 out[f.name] = [Codec.encode(d) for d in value]
-            elif f.name == "install_deferred_lines":
+            elif f.name in DEFERRED_LINES:
                 out[f.name] = sorted([path, first, last] for path, first, last in value)
             elif f.name in SCALARS:
                 out[f.name] = value
+            elif f.name in (*CLIENT_MAPS, *RUNNER_MAPS):
+                out[f.name] = sorted(
+                    [path, name, client]
+                    for path, names in (value or {}).items()
+                    for name, client in names.items()
+                )
             else:
                 out[f.name] = sorted(value)
         return out
@@ -310,6 +351,12 @@ class ContextRun:
             lambda: engine.stages.install_context(units, acc, ctx, ()),
             replace(ctx, tree_paths=frozenset(u.path for u in units)),
         )
+        # A directory scan has no published package to say what runs.
+        self.ctx = self.guarded(
+            "unparsed running files",
+            lambda: engine.archive_stages.unparsed_directory(units, acc, self.ctx),
+            self.ctx,
+        )
         self.dependencies, self.ingested = self.guarded(
             "dependencies", lambda: engine.stages.dependencies(units, acc, root), ((), ())
         )
@@ -330,6 +377,10 @@ class ContextRun:
             replace(ctx, tree_paths=frozenset(u.path for u in units)),
         )
         graph_acc = Accumulator(finding_cap=engine.config.limits.max_findings)
+        # The manifests are read here, in the worker, as a directory scan's are: the parent parses none.
+        self.inventory_hooks = self.guarded(
+            "manifest hooks", lambda: engine.archive_stages.manifest_hooks(units), None
+        )
 
         def archive_graph() -> tuple[Dependency, ...]:
             published = "" if image else PackageFormat.of(units)
@@ -651,14 +702,40 @@ class ContextFacts:
                 if any(d is None for d in records) or len(records) > LIST_ENTRIES:
                     return None, "a dependency record of the wrong shape"
                 out[name] = tuple(records)
-            elif name == "install_deferred_lines":
+            elif name in DEFERRED_LINES:
                 if not isinstance(value, list) or len(value) > LIST_ENTRIES or not all(
                     isinstance(t, list) and len(t) == 3 and t[0] in known
                     and type(t[1]) is int and type(t[2]) is int and 0 <= t[1] <= t[2]
                     for t in value
                 ):  # fmt: skip
-                    return None, "install_deferred_lines of the wrong shape"
+                    return None, f"{name} of the wrong shape"
                 out[name] = frozenset((p, first, last) for p, first, last in value)
+            elif name in RUNNER_MAPS:
+                if not isinstance(value, list) or len(value) > LIST_ENTRIES or not all(
+                    isinstance(t, list) and len(t) == 3 and t[0] in known
+                    and isinstance(t[1], str) and len(t[1]) <= 256 and t[1].isidentifier()
+                    and isinstance(t[2], str) and re.fullmatch(r"\d{1,3}(,\d{1,3}){0,255}", t[2])
+                    for t in value
+                ):  # fmt: skip
+                    return None, f"{name} of the wrong shape"
+                runners: dict[str, dict[str, str]] = {}
+                for path, function, positions in value:
+                    runners.setdefault(path, {})[function] = positions
+                out[name] = runners or None
+            elif name in CLIENT_MAPS:
+                from cordon_scanner.analysis.python.flows.http_clients import HTTP_CLIENTS
+
+                if not isinstance(value, list) or len(value) > LIST_ENTRIES or not all(
+                    isinstance(t, list) and len(t) == 3 and t[0] in known
+                    and isinstance(t[1], str) and len(t[1]) <= 256 and t[1].isidentifier()
+                    and t[2] in HTTP_CLIENTS
+                    for t in value
+                ):  # fmt: skip
+                    return None, f"{name} of the wrong shape"
+                clients: dict[str, dict[str, str]] = {}
+                for path, client_name, client in value:
+                    clients.setdefault(path, {})[client_name] = client
+                out[name] = clients or None
             else:
                 if (
                     not isinstance(value, list)
@@ -678,7 +755,7 @@ class ContextFacts:
 class ContextStage:
     """The parent's step: the context worker run, its answer applied, or the gap that says why not."""
 
-    #: What the context worker may use (item 28's bounds): the detection pool's, for one unit the
+    #: What the context worker may use: the detection pool's, for one unit the
     #: size of the whole scan, and the scan's own deadline over it (`Supervisor.deadline`).
     RULE = "OPERATIONAL.WORKER.CONTEXT_FAILED"
 
@@ -898,8 +975,7 @@ class ContextStage:
 
     def archive_dependencies(self, acc: Accumulator) -> tuple[Dependency, ...]:
         """The archive's graph the context worker built, its findings, coverage and the records
-        outside the install set applied to `acc` here, where the parent built it before (item 56
-        (b), part 2). None held (the worker failed, or its graph step did): no graph, and the gap
+        outside the install set applied to `acc` here, where the parent built it before. None held (the worker failed, or its graph step did): no graph, and the gap
         that failure already left."""
         graph, self.archive_graph = self.archive_graph, None
         if graph is None:

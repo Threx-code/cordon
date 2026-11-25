@@ -459,6 +459,7 @@ class CloudRunner:
             reason=str(verdict.reason),
             transport=transport,
             ai_document=results.SignedResults.ai_inventory(target, result),
+            vendored=results.SignedResults.vendored(target),
         )
         return {
             "status": "succeeded",

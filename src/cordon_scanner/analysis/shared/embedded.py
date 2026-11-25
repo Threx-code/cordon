@@ -121,20 +121,28 @@ class EmbeddedCommands:
     )
 
     @staticmethod
-    def _remote(text: str, at: int) -> bool:
+    def _remote(text: str, at: int, language: str | None = None) -> bool:
         """Whether the call at `at` is made on an SSH session, so the command it is given runs on
         another machine -- a deploy tool provisioning a server is not a dropper on this one (review
         98: a deployment library's `ssh.exec` of a server bootstrap). See `remote_session`."""
         m = EmbeddedCommands._REMOTE_RECEIVER.search(text, max(0, at - 60), at)
-        return EmbeddedCommands.remote_session(text, m.group(1)) if m else False
+        return EmbeddedCommands.remote_session(text, m.group(1), language) if m else False
 
     @staticmethod
-    def remote_session(text: str, name: str) -> bool:
+    def remote_session(text: str, name: str, language: str | None = None) -> bool:
         """Whether `name` is an SSH session in this file: the file takes one from an SSH library or
         client, and does not bind the name to `child_process` -- a local module called `ssh` is
-        still the local module."""
-        return EmbeddedCommands.SSH_SOURCE.search(text) is not None and not (
-            EmbeddedCommands.binds_child_process(text, name)
+        still the local module.
+
+        Granted on a match and an absence (note 18 §6, amended 11-12): the SSH library is read in
+        the raw text only, so a decoded spelling never earns the excuse; the binding to
+        `child_process` withholds it in any reading of the file's language, so
+        `require('\\x63hild_process')` does."""
+        from cordon_scanner.analysis.shared.decoded_view import DecodedView
+
+        return EmbeddedCommands.SSH_SOURCE.search(text) is not None and not any(
+            EmbeddedCommands.binds_child_process(reading, name)
+            for reading in DecodedView.readings(text, language)
         )
 
     @staticmethod
@@ -209,7 +217,7 @@ class EmbeddedCommands:
         for call in _SPAWN_CALL.finditer(text):
             if len(commands) >= MAX_COMMANDS:
                 break
-            if EmbeddedCommands._remote(text, call.start()):
+            if EmbeddedCommands._remote(text, call.start(), language):
                 continue
 
             window = text[call.end() : call.end() + _ARGUMENT_WINDOW]
@@ -237,7 +245,7 @@ class EmbeddedCommands:
                 # read as `noise` and the PowerShell download-and-run assigned to
                 # `command` went unread (review 98: c11dff444).
                 parts = [
-                    *EmbeddedCommands._assigned_literal(text, arguments, call.start()),
+                    *EmbeddedCommands._assigned_literal(text, arguments, call.start(), language),
                     *parts,
                 ]
             if not parts:
@@ -255,29 +263,165 @@ class EmbeddedCommands:
         """`const NAME =`, `let NAME =`, `var NAME =`, or a bare `NAME =`."""
         return re.compile(rf"(?:const|let|var)?[ \t]*\b{re.escape(name)}[ \t]*=[ \t]*")
 
+    #: Statements followed back through a name that is built from itself (`cmd = cmd + "..."`).
+    _ASSIGNMENT_HOPS: ClassVar[int] = 4
+    #: What ends a line without ending the statement: the line stops on an operator, or the next one starts with
+    #: one (a JavaScript line break is a statement's end only where nothing carries it over).
+    _CARRIES_ON: ClassVar[str] = "+-*/%?:,([{=&|<>.!^~\\"
+    _CARRIED_ONTO: ClassVar[tuple[str, ...]] = (
+        "+",
+        "-",
+        "*",
+        "/",
+        "%",
+        "?",
+        ":",
+        ",",
+        "(",
+        "[",
+        ".",
+        "=",
+        "&",
+        "|",
+        "<",
+        ">",
+        "^",
+        "in ",
+        "of ",
+        "instanceof ",
+    )
+
     @staticmethod
-    def _assigned_literal(text: str, arguments: str, call_start: int) -> list[str]:
-        """The literal assigned to the name a spawn call was handed, if there is one.
+    def _assigned_literal(
+        text: str, arguments: str, call_start: int, language: str | None = None
+    ) -> list[str]:
+        """The literals assigned to the name a spawn call was handed, if there are any.
 
         Only backwards, and only within this file: the value has to be established
         before the call to be the value the call receives, and a name assigned
         afterwards is a different binding or a later one. Only the LAST assignment
-        before the call is read, for the same reason.
+        before the call is read, for the same reason -- up to the end of THAT STATEMENT,
+        and the statements that add to the name (`cmd += "..."`, `cmd = cmd + "..."`).
 
-        Nothing clever about scope or reassignment is attempted. This resolves the
-        one shape that actually hides commands -- a string built once and passed by
-        name -- and returns nothing when it cannot be sure.
+        Not every literal in the next 2,048 characters: a launcher's help text, defined
+        beside the spawn, was joined into its command and read as a download piped to a shell that
+        nothing runs. A name built across statements is followed through its own
+        additions; a statement about something else is not part of it.
+
+        Nothing clever about scope is attempted. This resolves the one shape that
+        actually hides commands -- a string built once and passed by name -- and
+        returns nothing when it cannot be sure.
         """
         named = _NAME.match(arguments)
         if named is None:
             return []
+        name = named.group(1)
         before = text[:call_start]
-        last = None
-        for assignment in EmbeddedCommands._assignment(named.group(1)).finditer(before):
-            last = assignment
-        if last is None:
-            return []
-        return EmbeddedCommands._literals(before[last.end() : last.end() + _ARGUMENT_WINDOW])
+        assignment = EmbeddedCommands._assignment(name)
+        found: list[tuple[int, list[str]]] = []
+        limit = len(before)
+        for _ in range(EmbeddedCommands._ASSIGNMENT_HOPS):
+            last = None
+            for hit in assignment.finditer(before, 0, limit):
+                last = hit
+            if last is None:
+                break
+            end = EmbeddedCommands._statement_end(before, last.end(), language)
+            statement = before[last.end() : end]
+            found.append((last.end(), EmbeddedCommands._statement_literals(statement, language)))
+            if not re.search(rf"(?<![\w$.]){re.escape(name)}(?![\w$])", statement):
+                break
+            limit = last.start()
+        # Statements that add to the name after its last assignment, up to the call.
+        appends = re.compile(rf"(?:^|[;{{}}\n])[ \t]*{re.escape(name)}[ \t]*\+=[ \t]*")
+        tail = found[0][0] if found else 0
+        for hit in appends.finditer(before, tail):
+            end = EmbeddedCommands._statement_end(before, hit.end(), language)
+            found.append(
+                (hit.end(), EmbeddedCommands._statement_literals(before[hit.end() : end], language))
+            )
+        found.sort(key=lambda item: item[0])
+        return [part for _, parts in found for part in parts]
+
+    @staticmethod
+    def _statement_end(text: str, start: int, language: str | None = None) -> int:
+        """Where the statement that begins at `start` ends: the first `;` outside a literal and brackets, or the first
+        line break outside them that no operator carries over; at most one argument window on.
+
+        Literals are read as `_literals` reads them (an escape consumes the next character). A `'` or `"` literal does
+        not run past its line; a backtick one may. Comments are skipped. Read too far, a statement joins in text that
+        is not its own; read too short, a command built in two lines loses its second -- so a line stops at an operator
+        and a line starting with one continues it."""
+        openers = EmbeddedCommands._COMMENTS.get(
+            language or "", EmbeddedCommands._C_FAMILY_COMMENTS
+        )
+        limit = min(len(text), start + _ARGUMENT_WINDOW)
+        depth = 0
+        index = start
+        last = ""
+        while index < limit:
+            char = text[index]
+            if char in _QUOTES:
+                index += 1
+                while index < limit and text[index] != char:
+                    if char != "`" and text[index] == "\n":
+                        break
+                    index += 2 if text[index] == "\\" else 1
+                last = char
+                index += 1
+                continue
+            opener = next((o for o in openers if text.startswith(o, index)), None)
+            if opener == "/*":
+                close = text.find("*/", index + 2, limit)
+                index = limit if close == -1 else close + 2
+                continue
+            if opener is not None:
+                newline = text.find("\n", index, limit)
+                index = limit if newline == -1 else newline
+                continue
+            if char in "([{":
+                depth += 1
+            elif char in ")]}":
+                depth -= 1
+                if depth < 0:
+                    return index
+            elif depth == 0 and char == ";":
+                return index
+            elif depth == 0 and char == "\n" and last and last not in EmbeddedCommands._CARRIES_ON:
+                following = text[
+                    EmbeddedCommands._next_code(text, index + 1, limit, openers) : limit
+                ]
+                if not following.startswith(EmbeddedCommands._CARRIED_ONTO):
+                    return index
+            if not char.isspace():
+                last = char
+            index += 1
+        return limit
+
+    @staticmethod
+    def _statement_literals(statement: str, language: str | None) -> list[str]:
+        """The literals of an assigned statement, its comments left out (a quote in a comment opens no literal)."""
+        return EmbeddedCommands._literals(
+            EmbeddedCommands._own_arguments(statement, language, whole=True)
+        )
+
+    @staticmethod
+    def _next_code(text: str, index: int, limit: int, openers: tuple[str, ...]) -> int:
+        """The index of the next character after `index` that is neither white space nor inside a comment."""
+        while index < limit:
+            if text[index] in " \t\r\n":
+                index += 1
+                continue
+            opener = next((o for o in openers if text.startswith(o, index)), None)
+            if opener == "/*":
+                close = text.find("*/", index + 2, limit)
+                index = limit if close == -1 else close + 2
+            elif opener is not None:
+                newline = text.find("\n", index, limit)
+                index = limit if newline == -1 else newline
+            else:
+                break
+        return index
 
     @staticmethod
     def _literals(window: str) -> list[str]:
@@ -331,13 +475,14 @@ class EmbeddedCommands:
     _C_FAMILY_COMMENTS: ClassVar[tuple[str, ...]] = ("//", "/*")
 
     @staticmethod
-    def _own_arguments(arguments: str, language: str | None) -> str:
+    def _own_arguments(arguments: str, language: str | None, *, whole: bool = False) -> str:
         """A call's arguments up to the first callback, with comments removed.
 
         What a spawn call runs is in its leading arguments; a callback's body is code that runs
         afterwards, and its comments and strings are not the command. Read whole, a word quoted
         in the callback's comment was taken for the command line. Stops at an arrow, a
-        `function` or a block opened outside a literal; quoted text is kept as it is.
+        `function` or a block opened outside a literal; quoted text is kept as it is. With
+        `whole` it only removes the comments (the text of an assigned statement).
         """
         openers = EmbeddedCommands._COMMENTS.get(
             language or "", EmbeddedCommands._C_FAMILY_COMMENTS
@@ -362,10 +507,12 @@ class EmbeddedCommands:
                 newline = arguments.find("\n", index)
                 index = length if newline == -1 else newline
                 continue
-            if arguments.startswith("=>", index) or char == "{":
+            if not whole and (arguments.startswith("=>", index) or char == "{"):
                 break
-            if arguments.startswith("function", index) and not (
-                index and (arguments[index - 1].isalnum() or arguments[index - 1] in "_$")
+            if (
+                not whole
+                and arguments.startswith("function", index)
+                and not (index and (arguments[index - 1].isalnum() or arguments[index - 1] in "_$"))
             ):
                 break
             out.append(char)
@@ -419,7 +566,7 @@ class EmbeddedCommands:
         """The plaintext of every encoded command written in this source.
 
         `decode_encoded_commands` reads what a spawn call was HANDED, which is the
-        right seam for `os.system("powershell -enc <blob>")` in a `setup.py`. A
+        right seam for `os.system(<an encoded PowerShell command>)` in a `setup.py`. A
         `.ps1` that runs the same thing at its top level hands it to nobody: the
         file is the script, `extract` finds no call site, and the plaintext was
         read by nothing.

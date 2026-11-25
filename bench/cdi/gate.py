@@ -21,6 +21,8 @@ What it decides, each a named gate with a reason (`PromotionDecision.gates`):
                 the policy's bar, or no worse than before where the area is not yet at it
   new_benign    every newly blocked benign unit is LISTED; the policy may allow some only once read
   runtime       p99 seconds per unit within the policy's ratio; no new timeouts
+  legit_incomplete  no legitimate unit is newly left unread to the end (crashed, timed out or degraded), counted apart
+                from content blocks, within the policy's allowance
   lineage       zero overlap between the candidate's training content keys and any eval set
                 (normalised-content keys, `featureset.py`), so a model never grades its own homework
 
@@ -35,17 +37,24 @@ import hashlib
 import json
 import math
 import sys
+from collections.abc import Collection
 from pathlib import Path
 from typing import Any
 
+from bench.cdi.claims import ClaimRefused, Claims
+from bench.cdi.lineage import Lineage
+from bench.cdi.preregistration import Preregistration
+from bench.cdi.rule_prefixes import RulePrefixes
+
 SCHEMA_VERSION = "1.0.0"
 DEFAULT_POLICY: dict[str, Any] = {
-    "policy_id": "gate-policy/1",
+    "policy_id": "gate-policy/2",
     "lose_max": 0,
     "benign_ub_bar": 0.005,
     "allow_new_benign_blocks": 0,
     "p99_ratio_max": 2.0,
     "new_timeouts_max": 0,
+    "new_incomplete_max": 0,
     "lineage_overlap_max": 0,
     "min_benign_n_for_bar": 740,
 }
@@ -80,6 +89,14 @@ class Gate:
         return bool(row) and row.get("exit") == 1
 
     @staticmethod
+    def incomplete(row: dict[str, Any] | None) -> bool:
+        """A scan that did not read the package to the end: it crashed, ran out of time, was told the scan was
+        degraded, or says its content was not all read. A clean scan and a block are both complete."""
+        if not row:
+            return False
+        return row.get("exit") not in (0, 1) or row.get("content_complete") is False
+
+    @staticmethod
     def malware_class_block(row: dict[str, Any] | None) -> bool:
         """A benign unit blocked for malware, not only for a leaked secret or a policy finding (the
         owner's ruling: SECRET.* and policy-only blocks are reported apart)."""
@@ -87,7 +104,7 @@ class Gate:
             return False
         findings = row.get("findings") or []
         serious = [f for f in findings if len(f) > 1 and f[1] in ("high", "critical")]
-        return any(not str(f[0]).startswith(("SECRET.", "VULNERABLE.", "POLICY.")) for f in serious)
+        return any(RulePrefixes.counts_as_malware_class(str(f[0])) for f in serious)
 
     @staticmethod
     def p99(rows: dict[str, dict[str, Any]]) -> float:
@@ -116,9 +133,11 @@ class Gate:
         if isinstance(policy, str):
             policy = json.loads(Path(policy).read_text(encoding="utf-8"))
         policy = {**DEFAULT_POLICY, **policy}
+        Preregistration.check(policy)
         metrics: dict[str, Any] = {"sets": {}, "per_area_benign": {}}
         lost: list[str] = []
         new_benign: list[str] = []
+        new_incomplete: list[str] = []
         datasets = []
         gates: dict[str, Any] = {}
         benign_by_area: dict[str, list[int]] = {}
@@ -163,6 +182,14 @@ class Gate:
                     new_blocks=len(fresh),
                     unblocked=len(m_off - m_on),
                 )
+                i_off = {f for f in common if Gate.incomplete(off[f])}
+                i_on = {f for f in common if Gate.incomplete(on[f])}
+                new_incomplete += [f"{s['name']}:{f}" for f in sorted(i_on - i_off)]
+                entry.update(
+                    incomplete_off=len(i_off),
+                    incomplete_on=len(i_on),
+                    new_incomplete=len(i_on - i_off),
+                )
             entry.update(
                 p99_off=Gate.p99({f: off[f] for f in common}),
                 p99_on=Gate.p99({f: on[f] for f in common}),
@@ -205,6 +232,10 @@ class Gate:
             "pass" if len(new_benign) <= policy["allow_new_benign_blocks"] else "fail",
             f"{len(new_benign)} new benign blocks, each to be read",
         )
+        gates["legit_incomplete"] = (
+            "pass" if len(new_incomplete) <= policy["new_incomplete_max"] else "fail",
+            f"{len(new_incomplete)} legitimate units newly not read to the end, apart from content blocks",
+        )
         worst = max(
             (e["p99_on"] / e["p99_off"] for e in metrics["sets"].values() if e.get("p99_off")),
             default=1.0,
@@ -236,15 +267,43 @@ class Gate:
                     else f"no benign match outside measured areas ({len(reach)} areas searched)",
                 )
         lineage = spec.get("lineage")
-        if lineage:
+        if lineage and "train_scans" in lineage:
+            # By content: the training and eval scans are compared by the normalised-content key, so a reworded or re-released copy is found
+            # where a sha256 check finds none. Every eval unit counts once, whichever eval list it is in.
+            train_rows = Gate.read_scans(lineage["train_scans"])
+            found = [Lineage.overlap(train_rows, Gate.read_scans(p)) for p in lineage["eval_scans"]]
+            overlap = sum(f["units"] for f in found)
+            missed = sum(f["missed_by_sha256"] for f in found)
+            gates["lineage"] = (
+                "pass" if overlap <= policy["lineage_overlap_max"] else "fail",
+                f"overlap {overlap} units by content, {missed} of them none by sha256",
+            )
+        elif lineage:
             train = Gate.keys(lineage["train_keys"])
             overlap = sum(len(train & Gate.keys(p)) for p in lineage["eval_keys"])
             gates["lineage"] = (
                 "pass" if overlap <= policy["lineage_overlap_max"] else "fail",
                 f"overlap {overlap}",
             )
+        elif spec.get("trained"):
+            # A candidate with a trained component and no lineage evidence is not "not applicable": the check was not done.
+            gates["lineage"] = ("fail", "a trained component with no lineage check")
         else:
             gates["lineage"] = ("not_applicable", "no trained component")
+        claim = spec.get("claim")
+        if claim:
+            # An ecosystem is claimed only on a held-out split that is large and diverse enough; each refusal names its minimum.
+            try:
+                plan = Claims.require(
+                    claim["held_families"],
+                    claim["dev_malware_n"],
+                    claim["legit_n"],
+                    claim.get("catalogue"),
+                )
+                short = "; ".join(plan["short_of_plan"])
+                gates["claim"] = ("pass", short or "held-out split meets the plan sizes")
+            except ClaimRefused as refused:
+                gates["claim"] = ("fail", "; ".join(refused.reasons))
         outcome = "reject" if any(v[0] == "fail" for v in gates.values()) else "shadow"
         run = {
             "schema_version": SCHEMA_VERSION,
@@ -279,6 +338,28 @@ class Gate:
         """The bytes a signature covers: sorted keys, no whitespace, the signature itself left out."""
         body = {k: v for k, v in document.items() if k != "signature"}
         return json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+    @staticmethod
+    def trusted_decision(decision: dict[str, Any], trusted_publics: Collection[str]) -> bool:
+        """Whether the decision carries a valid signature by one of the keys the caller trusts (hex public keys).
+
+        The generation role holds a key of its own; only decisions signed by the separate gate key are trusted, so the
+        role that makes candidates cannot publish a gate decision."""
+        from cordon_scanner.intel.provenance import _ed25519
+
+        signature = decision.get("signature")
+        if not isinstance(signature, dict) or signature.get("public") not in trusted_publics:
+            return False
+        try:
+            return bool(
+                _ed25519.Ed25519.verify(
+                    bytes.fromhex(signature["public"]),
+                    Gate.canonical(decision),
+                    bytes.fromhex(signature["sig"]),
+                )
+            )
+        except (KeyError, ValueError, TypeError):
+            return False
 
     @staticmethod
     def sign(decision: dict[str, Any], seed_hex: str) -> dict[str, Any]:

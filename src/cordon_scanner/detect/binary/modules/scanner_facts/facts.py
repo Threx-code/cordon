@@ -102,10 +102,9 @@ class FileFlows:
             or ReachedFlows.language(path, content.raw[:128]) != cls.LANGUAGE
         ):
             return {}
-        try:
-            flows = cls.read(content.text)
-        except Exception:  # a fact is evidence, never a scan failure  # noqa: BLE001
-            return {}
+        # A reader that raises escapes to the rule-file pass's OPERATIONAL.RULEFILE.UNAVAILABLE,
+        # which degrades coverage: rules that block read these facts (S2, reviews/release-080).
+        flows = cls.read(content.text)
         t = ScanFacts.text
         sinks = sorted({sink for _, sink, _ in flows})
         return {

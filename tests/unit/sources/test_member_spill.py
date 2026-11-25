@@ -15,7 +15,9 @@ from cordon_scanner.foundation.limits import DEFAULT_LIMITS
 from cordon_scanner.sources.archive import ArchiveReader
 from cordon_scanner.sources.base import Rejection
 
-LIMITS = DEFAULT_LIMITS.merged(max_member_bytes=4096, max_file_bytes=1024)
+LIMITS = DEFAULT_LIMITS.merged(
+    max_member_bytes=4096, max_file_bytes=1024, max_elided_member_bytes=0, max_elided_bytes=0
+)
 ELF = b"\x7fELF\x02\x01\x01" + b"\x00" * 9
 
 
@@ -143,3 +145,83 @@ class TestContent:
         worker = FileContent.load(Path(carried), parent.path, LIMITS)
         assert isinstance(worker, FileContent)
         assert worker.sha256 == parent.sha256
+
+
+class TestANestedArchivePastTheLimit:
+    """A nested archive larger than the size one is held at in memory is read from disk and its members are scanned, not reported unexamined."""
+
+    @staticmethod
+    def nested_over_the_limit() -> tuple[bytes, bytes]:
+        secret = b"payload that must be seen inside the big nested archive\n"
+        inner = Archives.tar({"inner/run.js": secret, "inner/noise.bin": os.urandom(9000)})
+        assert len(inner) > LIMITS.max_member_bytes
+        return Archives.tar({"package/nested.tgz": inner}), secret
+
+    def test_its_members_are_walked_with_the_path_that_records_the_nesting(self) -> None:
+        outer, secret = self.nested_over_the_limit()
+        rejected: list[tuple[str, str, str]] = []
+        walked = {
+            name: bytes(data)
+            for name, data in ArchiveReader.walk_archive(
+                outer, path="p.tgz", limits=LIMITS, rejected=rejected
+            )
+        }
+        assert walked["p.tgz!package/nested.tgz!inner/run.js"] == secret
+
+    def test_it_is_not_reported_unexamined(self) -> None:
+        outer, _ = self.nested_over_the_limit()
+        rejected: list[tuple[str, str, str]] = []
+        list(ArchiveReader.walk_archive(outer, path="p.tgz", limits=LIMITS, rejected=rejected))
+        assert not [r for r in rejected if "not examined" in r[2]]
+
+    def test_a_nested_zip_over_the_limit_is_walked_too(self) -> None:
+        inner = Archives.zip(
+            {"inner/run.js": b"console.log(1)\n", "inner/noise.bin": os.urandom(9000)}
+        )
+        outer = Archives.tar({"package/nested.zip": inner})
+        walked = dict(ArchiveReader.walk_archive(outer, path="p.tgz", limits=LIMITS))
+        assert bytes(walked["p.tgz!package/nested.zip!inner/run.js"]) == b"console.log(1)\n"
+
+    def test_its_own_budgets_still_stop_a_bomb_inside_it(self) -> None:
+        zeros = Archives.tar({"inner/zeros.bin": b"\x00" * 40_000_000})
+        outer = Archives.tar({"package/nested.tgz": zeros + os.urandom(9000)})
+        rejected: list[tuple[str, str, str]] = []
+        list(ArchiveReader.walk_archive(outer, path="p.tgz", limits=LIMITS, rejected=rejected))
+        assert rejected  # the budgets (ratio, elision, total) said so: the nested archive was not silently taken whole
+
+
+class TestALargeSingleFileGzip:
+    """`install.js.gz`, one compressed file and no tar, past the size a member is held at in memory is still read whole."""
+
+    @staticmethod
+    def gz(data: bytes) -> bytes:
+        import gzip
+
+        return gzip.compress(data, mtime=0)
+
+    def test_a_single_file_gzip_past_the_member_limit_is_read_whole(self) -> None:
+        data = bytes(range(256)) * 40  # about 10 KB, past the 4 KB member limit
+        result = ArchiveReader.extract(self.gz(data), path="install.js.gz", limits=LIMITS)
+        members = {m.name: m for m in result.members}
+        assert len(members) == 1
+        (member,) = members.values()
+        assert isinstance(member.data, SpilledBytes) and member.data.read_whole() == data
+
+    def test_it_is_not_refused(self) -> None:
+        result = ArchiveReader.extract(
+            self.gz(bytes(range(256)) * 40), path="install.js.gz", limits=LIMITS
+        )
+        assert not result.rejected
+
+    def test_a_small_one_stays_in_memory(self) -> None:
+        result = ArchiveReader.extract(self.gz(b"x" * 500), path="install.js.gz", limits=LIMITS)
+        (member,) = result.members
+        assert not isinstance(member.data, SpilledBytes) and member.data == b"x" * 500
+
+    def test_one_inside_an_archive_is_read_whole_too(self) -> None:
+        data = bytes(range(256)) * 40
+        outer = Archives.tar({"package/install.js.gz": self.gz(data)})
+        walked = dict(ArchiveReader.walk_archive(outer, path="p.tgz", limits=LIMITS))
+        member = walked["p.tgz!package/install.js.gz!install.js"]
+        assert isinstance(member, SpilledBytes)
+        assert member.read_whole() == data

@@ -8,22 +8,29 @@ not accusations; the composite reasoning in the detector is what combines them."
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.analysis.python.pyast import PythonSource
 from cordon_scanner.analysis.shared import embedded
 from cordon_scanner.analysis.shared.source_paths import SourcePaths
+from cordon_scanner.analysis.shared.text_gate import TextGate
 from cordon_scanner.detect.base import (
     FileUnit,
     RuleSelector,
     ScanContext,
 )
 from cordon_scanner.detect.code.capability.build_output import BuildOutput
+from cordon_scanner.detect.code.capability.fact_ids import PythonFactIds
+from cordon_scanner.detect.code.capability.hidden_destination import HiddenDestination
 from cordon_scanner.detect.code.capability.hits import CapabilityHit
+from cordon_scanner.detect.code.capability.install_programs import InstallPrograms
 from cordon_scanner.detect.code.capability.javascript import JavaScriptCapabilities
 from cordon_scanner.detect.code.capability.memo import CapabilityMemo
+from cordon_scanner.detect.code.capability.startup_hooks import StartupHooks
 from cordon_scanner.detect.code.capability.text_position import TextPosition
+from cordon_scanner.detect.code.capability.view_runner import ViewRunner
 from cordon_scanner.detect.secrets.secrets import SourceSpans
 from cordon_scanner.foundation.capabilities import Capability, MatchKind
 from cordon_scanner.foundation.text.comments import SourceComments
@@ -75,12 +82,13 @@ class Labelling:
         # BigQuery extension's 480-line bundle).
         if (
             len(text) <= JavaScriptCapabilities.JS_EVAL_MAX_BYTES
-            and JavaScriptCapabilities.JS_EVAL_MARKERS.search(text)
+            and TextGate.may_hold(JavaScriptCapabilities.JS_EVAL_MARKERS, text, language)
             and not BuildOutput.bundled(content)
         ):
             try:
                 folded, decoded_lines = JsEval.resolve_with_decodes(folded)
-            except (IndexError, KeyError, ValueError, TypeError, RecursionError):
+            except (IndexError, KeyError, ValueError, TypeError):
+                # S2: too deep to read is not empty: escapes to OPERATIONAL.DETECTOR.FAILED, a gap
                 # The evaluator reads hostile, malformed and unusual code. If it ever trips on a
                 # file, the file is read as written -- every other rule still applies -- rather
                 # than the scan failing.
@@ -166,6 +174,11 @@ class Labelling:
 
             first = None
             distinct: set[bytes] = set()
+            data = (
+                Labelling._data_literals(content, compiled, regex, raw, folded)
+                if language == "python" and capability is Capability.CREDENTIAL
+                else ()
+            )
 
             first = Labelling._examine_matches(
                 blocks,
@@ -181,6 +194,7 @@ class Labelling:
                 raw,
                 regex,
                 tests,
+                data,
             )
 
             if first is None:
@@ -201,6 +215,43 @@ class Labelling:
             )
 
         return hits
+
+    @staticmethod
+    def _in_text_only(
+        match: re.Match[bytes],
+        tests: tuple[tuple[int, int], ...],
+        prose: tuple[tuple[int, int], ...],
+        data: tuple[tuple[int, int], ...],
+    ) -> bool:
+        """Whether a match starts in a test module or a docstring, or lies wholly inside a literal
+        the module only treats as data."""
+        return (
+            SourceComments.inside_spans(tests, match.start())
+            or SourceComments.inside_spans(prose, match.start())
+            or any(start <= match.start() and match.end() <= end for start, end in data)
+        )
+
+    @staticmethod
+    def _data_literals(
+        content: FileContent,
+        compiled: CompiledRule,
+        regex: re.Pattern[bytes],
+        raw: bytes,
+        folded: bytes | None,
+    ) -> tuple[tuple[int, int], ...]:
+        """The Python string literals holding a match of this rule that reach no use: a table of the
+        credential stores a scanner or a redactor looks for. A match inside one is text, and the
+        walk goes on to the next match, so a real read after the table is still the hit
+        (`TextLiterals`: a use is every call that does not only test, match, format or show a
+        value; a file that names a way to run a string, or does not parse, excuses nothing)."""
+        from itertools import islice
+
+        from cordon_scanner.analysis.python.inert_literals import TextLiterals
+
+        offsets = [m.start() for m in islice(compiled.match.matches(regex, raw, folded), 200)]
+        if not offsets:
+            return ()
+        return TextLiterals.spans_at(content.text, raw, offsets)
 
     @staticmethod
     def _excused_spans(
@@ -284,6 +335,7 @@ class Labelling:
         raw: bytes,
         regex: re.Pattern[bytes],
         tests: tuple[tuple[int, int], ...],
+        data: tuple[tuple[int, int], ...] = (),
     ) -> re.Match[bytes] | None:
         """Walk one rule's matches in the file, dropping each the text's position excuses, counting the distinct operations it shows, and keeping the first that stands."""
         for index, match in enumerate(compiled.match.matches(regex, raw, folded)):
@@ -309,11 +361,9 @@ class Labelling:
             if TextPosition.is_example_line(content, match.start()):
                 # A doctest or a shell transcript. See `EXAMPLE_PROMPT`.
                 continue
-            if SourceComments.inside_spans(tests, match.start()):
-                # A Rust test module. See `tests` above.
-                continue
-            if SourceComments.inside_spans(prose, match.start()):
-                # A Python docstring. See `prose` above.
+            if Labelling._in_text_only(match, tests, prose, data):
+                # A Rust test module, a Python docstring, or a Python string that is only data:
+                # see `tests` and `prose` above and `_data_literals`.
                 continue
             if (
                 capability is Capability.ANTI_ANALYSIS
@@ -440,7 +490,8 @@ class Labelling:
         than a line of code, and it is not taken here.
         """
         if unit.language in ("javascript", "typescript"):
-            return cls._javascript_secret_flow(content, ctx), []
+            viewed = ViewRunner.bound(content, unit.language)  # and its decoded view (note 18)
+            return viewed(lambda c, _: cls._javascript_secret_flow(c, ctx)), []
         if unit.language != "python":
             return [], []
 
@@ -452,49 +503,54 @@ class Labelling:
             else content.text
         )
         resolved = PythonAnalyzer.analyse(
-            source, follow_literals=not SourcePaths.is_test_material_here(content.path, ctx)
+            source,
+            follow_literals=not SourcePaths.is_test_material_here(content.path, ctx),
+            imported_clients=(ctx.python_imported_clients or {}).get(content.path),
+            imported_runners=(ctx.python_imported_runners or {}).get(content.path),
+            carried_calls=(ctx.python_carried_calls or {}).get(content.path),
+            imported_collectors=(ctx.python_imported_collectors or {}).get(content.path),
         )
+        hits = [
+            CapabilityHit(
+                capability=hit.capability,
+                rule_id=PythonFactIds.rule_id(hit.detail, hit.capability),
+                byte_start=min(
+                    cls._span_of_line(content, hit.line)[0] + hit.column,
+                    cls._span_of_line(content, hit.line)[1],
+                ),
+                byte_end=cls._span_of_line(content, hit.line)[1],
+                line=hit.line,
+                fixed=hit.fixed_command,
+                resolved=True,
+            )
+            for hit in resolved
+        ]
+        # What the machine holds sent to a destination the code hides -- a URL decoded, reversed
+        # or built from character codes (` dest=decoded`) -- is a second fact beside the send:
+        # nobody's own API is a host the code will not write down (`HiddenDestination`).
+        facts = list(zip(hits, resolved, strict=True))
+        hits += [
+            dataclasses.replace(labelled, rule_id=HiddenDestination.FACT)
+            for labelled, hit in facts
+            if HiddenDestination.applies(hit.detail)
+        ]
+        # What arrives on a channel and runs carries its channel with it, as the JavaScript and Go
+        # twins do (`CAP.JS.RECEIVED_RUN`): the receive is the network side of the same act, so a
+        # bot update or a spreadsheet cell that becomes a command satisfies egress + fetch_exec
+        # even where the receive is not a request primitive.
+        hits += [
+            dataclasses.replace(labelled, capability=Capability.EGRESS)
+            for labelled, _ in facts
+            if labelled.rule_id == "AST.PY.RECEIVED_RUN"
+        ]
+        # A desktop application or an identity command started where the install reaches. The
+        # command being written out whole is the evidence here, not an excuse (`fixed`).
+        hits += InstallPrograms.hits(facts, content.path, ctx, lambda: cls._loaded(content.text))
+        # What runs in every interpreter once installed (`StartupHooks`): the network reached from
+        # a `.pth`, and a `.pth` line doing more than set up imports.
+        hits += StartupHooks.hits(hits, content, ctx, cls._span_of_line)
         return (
-            [
-                CapabilityHit(
-                    capability=hit.capability,
-                    rule_id=(
-                        "AST.PY.IDENTITY_SENT"
-                        if hit.detail.startswith("identity sent")
-                        else "AST.PY.ENVIRONMENT_SENT"
-                        if hit.detail.startswith("environment sent")
-                        else "AST.PY.SECRET_SENT"
-                        if hit.detail.startswith("secret sent")
-                        # A spawn, request or credential read written inside a string the file
-                        # then executes. See `MALWARE.INSTALL.HIDDEN_ACTION.001`.
-                        else "AST.PY.UNSAFE_MODEL_LOAD"
-                        if hit.detail.startswith("unsafe model load")
-                        else "AST.PY.REMOTE_MODEL_CODE"
-                        if hit.detail.startswith("remote model code")
-                        else "AST.PY.UNSAFE_MODEL_OPTION"
-                        if hit.detail.startswith("unsafe model option")
-                        else "AST.PY.HIDDEN_ACTION"
-                        if hit.detail.startswith("executed literal")
-                        and hit.capability
-                        in (
-                            Capability.SPAWN,
-                            Capability.EGRESS,
-                            Capability.FETCH_EXEC,
-                            Capability.CREDENTIAL,
-                        )
-                        else f"AST.PY.{hit.capability.name}"
-                    ),
-                    byte_start=min(
-                        cls._span_of_line(content, hit.line)[0] + hit.column,
-                        cls._span_of_line(content, hit.line)[1],
-                    ),
-                    byte_end=cls._span_of_line(content, hit.line)[1],
-                    line=hit.line,
-                    fixed=hit.fixed_command,
-                    resolved=True,
-                )
-                for hit in resolved
-            ],
+            hits,
             [embedded.Command(text=hit.command, line=hit.line) for hit in resolved if hit.command],
         )
 
@@ -540,6 +596,41 @@ class Labelling:
                 )
             )
         return hits
+
+    @classmethod
+    def go_secret_flow(cls, content: FileContent) -> list[CapabilityHit]:
+        """`FLOW.GO.SECRET_SENT`: a named credential in a request to a host outside its home, in Go.
+        See `GoFlow` in `detect/secretflow.py`."""
+        from cordon_scanner.detect.code.secretflow import GoFlow
+
+        text = content.text
+        hits: list[CapabilityHit] = []
+        for offset, _key, _host in GoFlow.findings(text):
+            line = text.count("\n", 0, offset) + 1
+            start, end = cls._span_of_line(content, line)
+            hits.append(
+                CapabilityHit(
+                    capability=Capability.CREDENTIAL,
+                    rule_id="FLOW.GO.SECRET_SENT",
+                    byte_start=start,
+                    byte_end=end,
+                    line=line,
+                    resolved=True,
+                )
+            )
+        return hits
+
+    @staticmethod
+    def _loaded(text: str) -> frozenset[int]:
+        """The lines that run when the module is imported (`PersistAtLoad.load_time_lines`)."""
+        from cordon_scanner.analysis.python.flows.implants.persist_at_load import PersistAtLoad
+        from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+
+        try:
+            return PersistAtLoad.load_time_lines(PythonSyntax.shared(text))
+        except (SyntaxError, ValueError):
+            # S2: covered by SOURCE.UNPARSED at every running file; a file that does not parse has no load-time lines
+            return frozenset()
 
     @staticmethod
     def _span_of_line(content: FileContent, line: int) -> tuple[int, int]:
@@ -800,7 +891,7 @@ class Labelling:
         store = cls._BROWSER_STORE.search(text)
         if store is None or cls._BROWSER_DECRYPT.search(text) is None:
             return []
-        start = len(text[: store.start()].encode("utf-8"))
+        start = content.byte_offset(store.start(), text)
         return [
             CapabilityHit(
                 capability=Capability.CREDENTIAL,
