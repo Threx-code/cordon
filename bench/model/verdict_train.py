@@ -67,6 +67,7 @@ except ImportError:  # pragma: no cover - script invocation puts bench/model on 
 from bench.model.area_lines import AreaLines
 from bench.model.capacity import Capacity
 from bench.model.established import Established
+from bench.model.split_weights import SplitWeights
 
 #: Findings the benign measure does not count: a secret, a policy choice, a known vulnerability or
 #: the scan's own notes are not a malware verdict (review 98).
@@ -685,6 +686,26 @@ class VerdictTrain:
             "work-set share it blocks is within this fraction (0.005), and record the bound per area",
         )
         p.add_argument(
+            "--hard-legit-factor",
+            type=float,
+            default=None,
+            help="weight a legitimate unit whose out-of-fold score is at least --hard-legit-from by this "
+            "factor (above 1) in the final fit, and record the rule and the numbers in the model",
+        )
+        p.add_argument(
+            "--hard-legit-from",
+            type=float,
+            default=None,
+            help="the out-of-fold score from which a legitimate unit is hard (0.5 when not given)",
+        )
+        p.add_argument(
+            "--time-cutoff",
+            metavar="YYYY-MM-DD",
+            default=None,
+            help="report, in the model's record, how many malicious units dated on or after this day the "
+            "model blocks (counts and recall)",
+        )
+        p.add_argument(
             "--capacity-search",
             action="store_true",
             help="set the tree count, leaves, learning rate and minimum leaf by family-grouped "
@@ -1256,8 +1277,31 @@ class VerdictTrain:
                     legit_scores[r["area"]].append(float(r["score"]))
             lines, line_bounds = AreaLines.enforce(lines, legit_scores, a.line_upper)
 
-        fitted = {x: model().fit(xw[idx], yw[idx]) for x, idx in groups.items()}
+        SplitWeights.one_side(work)
+        weights = hard = None
+        if a.hard_legit_factor:
+            listed, hard = SplitWeights.hard_legit(
+                work,
+                [r["score"] for r in work],
+                factor=a.hard_legit_factor,
+                from_score=a.hard_legit_from,
+            )
+            weights = np.array(listed)
+
+        def fit_group(idx):
+            if weights is None:
+                return model().fit(xw[idx], yw[idx])
+            return model().fit(xw[idx], yw[idx], sample_weight=weights[idx])
+
+        fitted = {x: fit_group(idx) for x, idx in groups.items()}
         exported = cls.export(fitted["*"], names)
+        if hard is not None:
+            exported = SplitWeights.attach(exported, hard_legit=hard)
+        if a.time_cutoff:
+            over = [bool(r["score"] >= lines.get(r["area"], lines[Verdict.FALLBACK])) for r in work]
+            exported = SplitWeights.attach(
+                exported, time_split=SplitWeights.time_check(work, over, a.time_cutoff)
+            )
         if capacity is not None:
             exported = Capacity.attach(exported, capacity)
         if line_bounds is not None:
