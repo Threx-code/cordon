@@ -1,0 +1,60 @@
+{
+  "about": "A real 200 answer of GET /v1/bundles/<scope> for an organisation that holds its own root, made in a test with keys made there; no tenant data. A device that holds no bundle asks with `since=0`. Verify `body.data.bundles` and `body.data.delegations` under `root_public` and `root_delegation` with the clock at `generated_at`.",
+  "body": {
+    "data": {
+      "bundles": [
+        {
+          "payload": "eyJjb21waWxlZF90YWJsZSI6eyJjaGFpbiI6W10sImRlZmF1bHRzIjp7ImNsb2NrX2J1Y2tldF9zIjo2MCwiZGVmYXVsdCI6ImFsbG93IiwiZXhjZXB0aW9ucyI6ImFsbG93Iiwib25fZ2FwcyI6ImJsb2NrIiwib25faW5jb21wbGV0ZSI6eyIqIjoiYmxvY2sifSwidW5yZXNvbHZlZCI6ImJsb2NrIiwid2Fybl91bnRpbF9tZWFzdXJlZCI6W119LCJpZCI6ImxlZ2FjeSIsImxpc3RzIjp7fSwibG9ja2VkX2J5IjpbXSwibWFuZGF0b3J5IjpmYWxzZSwicnVsZXMiOlt7ImFwcGxpZXNfdG8iOltdLCJpZCI6ImxlZ2FjeS1jYXRlZ29yaWVzIiwibWFuZGF0b3J5IjpmYWxzZSwib2JsaWdhdGlvbnMiOltdLCJvcmlnaW4iOiJsZWdhY3kiLCJyZXF1aXJlIjpbXSwidGhlbiI6ImJsb2NrIiwidGllciI6ImRlbnkiLCJ3aGVuIjpbeyJmaWVsZCI6ImZpbmRpbmcuY2F0ZWdvcnkiLCJvcCI6ImluIiwidmFsdWUiOlsibWFsaWNpb3VzIl19XX0seyJhcHBsaWVzX3RvIjpbXSwiaWQiOiJsZWdhY3ktc2V2ZXJpdHkiLCJtYW5kYXRvcnkiOmZhbHNlLCJvYmxpZ2F0aW9ucyI6W10sIm9yaWdpbiI6ImxlZ2FjeSIsInJlcXVpcmUiOltdLCJ0aGVuIjoiYmxvY2siLCJ0aWVyIjoiZGVueSIsIndoZW4iOlt7ImZpZWxkIjoiZmluZGluZy5jb25maWRlbmNlIiwib3AiOiJnZSIsInZhbHVlIjoibWVkaXVtIn0seyJmaWVsZCI6ImZpbmRpbmcuZG9tYWluIiwib3AiOiJpbiIsInZhbHVlIjpbImFnZW50IiwiYmluYXJ5IiwiYnVpbGQiLCJjcmVkZW50aWFsIiwiZGVwZW5kZW5jeSIsImV4ZmlsdHJhdGlvbiIsIm1hbHdhcmUiLCJvYmZ1c2NhdGlvbiIsInByb3ZlbmFuY2UiLCJyZWdpc3RyeSIsInNjYW5uZXIiLCJzb3VyY2UiLCJ1bnNwZWNpZmllZCJdfSx7ImZpZWxkIjoiZmluZGluZy5zZXZlcml0eSIsIm9wIjoiZ2UiLCJ2YWx1ZSI6ImhpZ2gifV19XSwic2NvcGUiOltdLCJzaGEyNTYiOiJzaGEyNTY6Mjc0ODg4ODRmNjNkMjYyZDE4ZDEzMGIyZTdhOGEyYjA4M2Q3OTE3OGE5ZjgzYjNmZjUyYmE3YTA3YmZmZThmNyIsInZlcnNpb24iOjF9LCJleHBpcmVzX2F0IjoiMjAyNi0xMS0yNlQxODozNzoyMi43ODUyNjUrMDA6MDAiLCJpc3N1ZWRfYXQiOiIyMDI2LTExLTI1VDE4OjM3OjIyLjc4NTI2NSswMDowMCIsImxpc3RzIjp7fSwicHJldl9zaGEiOiIiLCJzY29wZSI6Im9yZzphY21lL3JlcG86bGVkZ2VyIiwic2lnbmVyX2tleWlkIjoiN2JjMmExYTIxZmJhMGExYjZhNDBiOTUzOTY5OTI2ZThjNTZiOWZiMWNjOTNlOTM0NmYyMGNkOGU0YTE2M2NjYyIsInRlbmFudCI6ImRlZmF1bHQiLCJ2ZXJzaW9uIjoxfQ==",
+          "payloadType": "application/vnd.cordon.policy-bundle+json",
+          "signatures": [
+            {
+              "keyid": "7bc2a1a21fba0a1b6a40b953969926e8c56b9fb1cc93e9346f20cd8e4a163ccc",
+              "sig": "BzX/GCrVF+/fF66hwdwtTI71Uyom5iIM+xSjxmnKpK+NMW7Xyac7ICoaDNUN3jgT/BCTE+1bXkTJ6q6LskUkAg=="
+            }
+          ]
+        }
+      ],
+      "delegations": [
+        {
+          "payload": "eyJfdHlwZSI6ImNvcmRvbi5kZWNpc2lvbi1kZWxlZ2F0aW9uL3YxIiwiaXNzdWVkX2F0IjoiMjAyNi0xMS0yNVQxODozNzoyMi44MDM4MzYrMDA6MDAiLCJrZXlzIjpbeyJrZXlpZCI6ImZmZWJiMmU5MmMwOWVmNDliOWYxZmEzODJkYjcwMzI5YTI1ODVkYzRjNDQxY2M0MmRjZjIyMzVmM2ViYmVmZWIiLCJub3RfYmVmb3JlIjoiMjAyNi0xMS0yNVQxODozNzoxOC40OTU1MDArMDA6MDAiLCJwdWJsaWMiOiJlODI2OWQxMmQ3NGNiNzE0ZDU2YzUzZjkyNDBlYTc4ZmQzZGI2MTQ1M2QwNjUxMWNjYWVjYzY2NmI2YjI5MGI0Iiwicm9sZSI6ImRlY2lzaW9uLmNsb3VkIiwidmFsaWRfdW50aWwiOiIyMDI2LTEyLTAyVDE4OjM3OjE4LjQ5NTUwMCswMDowMCIsInZlcnNpb24iOjF9XSwicG9saWN5X2tleWlkIjoiN2JjMmExYTIxZmJhMGExYjZhNDBiOTUzOTY5OTI2ZThjNTZiOWZiMWNjOTNlOTM0NmYyMGNkOGU0YTE2M2NjYyIsInJvb3RfaXNzdWVkX2F0IjoiMjAyNi0xMS0yNVQxODozNzoxOC40OTU1MDArMDA6MDAiLCJyb290X2tleWlkIjoiOTBjY2U0NDhhNWQ4NDYzMDg3Yjc1Y2VhOWM0YmNkMzM2ZDA3MzhkMGI1NGU4NmM0YzM3ZjM1MmYwMTE3ZGM0YyIsInNlcXVlbmNlIjoxLCJ0ZW5hbnQiOiJkZWZhdWx0In0=",
+          "payloadType": "application/vnd.cordon.decision-delegation+json",
+          "signatures": [
+            {
+              "keyid": "7bc2a1a21fba0a1b6a40b953969926e8c56b9fb1cc93e9346f20cd8e4a163ccc",
+              "sig": "FTHCVDS2Obzb0IB6uNcXwzWDq1RNxFsW9uk6V+a0S68S0GfCRIwdbBOeinNIDF9eb2TmPZ8ZpFJ+U/+A3MW3DQ=="
+            }
+          ]
+        }
+      ],
+      "etag": "sha256:535653e50761031b27afd748a7c57aae7680639e0d29c679975cbd03fd63184e",
+      "from_version": 0,
+      "latest_version": 1,
+      "restart": false,
+      "scope": "org:acme/repo:ledger"
+    },
+    "message": "",
+    "status": true
+  },
+  "generated_at": "2026-11-25T18:37:18.521978+00:00",
+  "headers": {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "ETag": "\"sha256:535653e50761031b27afd748a7c57aae7680639e0d29c679975cbd03fd63184e\"",
+    "X-Bundle-Version": "1",
+    "X-Decision-Delegation-Sequence": "1"
+  },
+  "request": "GET /v1/bundles/<scope>?since=0 with Authorization: Bearer <a device token that holds bundles:read>",
+  "root_delegation": {
+    "payload": "eyJfdHlwZSI6ImNvcmRvbi5kZWxlZ2F0aW9uL3YxIiwiaXNzdWVkX2F0IjoiMjAyNi0xMS0yNVQxODozNzoxOC40OTU1MDArMDA6MDAiLCJrZXlzIjpbeyJrZXlpZCI6IjdiYzJhMWEyMWZiYTBhMWI2YTQwYjk1Mzk2OTkyNmU4YzU2YjlmYjFjYzkzZTkzNDZmMjBjZDhlNGExNjNjY2MiLCJub3RfYmVmb3JlIjoiMjAyNi0xMS0yNVQxODozNzoxOC40OTU1MDArMDA6MDAiLCJwdWJsaWMiOiI1Y2E2MGZjMmIwZDJiNzVhNzI5Y2FjZDE4NjY2ZjNhOTFhN2Q2MjQzN2JlNmFjMDVjNzYxMjA3ZGE0NTkzMzQ4Iiwicm9sZSI6InBvbGljeSIsInZhbGlkX3VudGlsIjoiMjAyNy0wMi0yM1QxODozNzoxOC40OTU1MDArMDA6MDAiLCJ2ZXJzaW9uIjoxfV0sInRlbmFudCI6ImRlZmF1bHQifQ==",
+    "payloadType": "application/vnd.cordon.delegation+json",
+    "signatures": [
+      {
+        "keyid": "90cce448a5d8463087b75cea9c4bcd336d0738d0b54e86c4c37f352f0117dc4c",
+        "sig": "RAr99vTjugNdGqB62jbUKkXFh+AbEpP5Sr6Z6UuVG/bdsJWSsoJbJgXduBkddKlRs6S2zLK++uNJTsIXqvdDAg=="
+      }
+    ]
+  },
+  "root_public": "33c585e52925cf83ca1e46afac98aec1a09caca7fb81f4a1f4e1bc621a7982c0",
+  "scope": "org:acme/repo:ledger",
+  "status": 200,
+  "tenant": "default"
+}

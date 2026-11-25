@@ -9,8 +9,9 @@ cannot be reached; a pin holds a point at a version.
 
 from __future__ import annotations
 
+import base64
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -19,9 +20,11 @@ import pytest
 from cordon_scanner.cloud.agent.decision_delegation import (
     DECISION_DELEGATION_SCHEMA,
     DECISION_DELEGATION_TYPE,
+    DecisionDelegation,
 )
 from cordon_scanner.cloud.bundle_chain import BundleChain, BundleError, BundleRefused, Dsse
 from cordon_scanner.cloud.bundle_puller import BundlePuller
+from cordon_scanner.cloud.local_runtime import LocalRuntime
 from cordon_scanner.cloud.local_store import LocalStore
 from cordon_scanner.decide.decision.evidence import EvidenceSet
 from cordon_scanner.intel.provenance._ed25519_signer import Ed25519Signer
@@ -552,3 +555,136 @@ class TestTheHeaderOnAnUnchangedBundle:
         site.point.publish()
         site.pull(2)
         assert site.puller.refusal() is None and site.puller.held_sequence() == 6
+
+
+class TestThePlatformsRecordedAnswerUnderACustomerRoot:
+    """BP-15-15: the platform's own recorded `GET /v1/bundles/<scope>?since=0` answer for an organisation that holds its own root, copied from the
+    backend tree (commit e0f48f83, src/decisions/tests/fixtures/bundle_answer_under_a_customer_root.json, made there with keys made there, no tenant
+    data). The puller and the verifier take exactly that body: the bundle through the root's delegation, the decision delegation the policy key signed,
+    and the sequence header."""
+
+    FIXTURE = Path(__file__).with_name("bundle_answer_under_a_customer_root.json")
+
+    @classmethod
+    def recorded(cls) -> dict[str, Any]:
+        document: dict[str, Any] = json.loads(cls.FIXTURE.read_text(encoding="utf-8"))
+        return document
+
+    @classmethod
+    def device(
+        cls, tmp_path: Path, delegation: object = None
+    ) -> tuple[LocalRuntime, BundlePuller, Any]:
+        recorded = cls.recorded()
+        root = bytes.fromhex(recorded["root_public"])
+        held = delegation if delegation is not None else recorded["root_delegation"]
+        runtime = LocalRuntime(
+            root_public=root,
+            delegation=held,
+            tenant=recorded["tenant"],
+            baseline=Kit.compiled(1, T0 + timedelta(days=3650), default="allow"),
+            store=LocalStore(tmp_path),
+        )
+        body = json.dumps(recorded["body"]).encode()
+        calls: list[str] = []
+
+        def fetch(url: str, headers: dict[str, str]) -> tuple[int, dict[str, str], bytes]:
+            calls.append(url)
+            return 200, dict(recorded["headers"]), body
+
+        puller = BundlePuller(
+            URL,
+            fetch,
+            LocalStore(tmp_path),
+            root_public=root,
+            delegation=held,
+            tenant=recorded["tenant"],
+        )
+        return runtime, puller, recorded
+
+    @staticmethod
+    def moment(recorded: dict[str, Any]) -> datetime:
+        issued = json.loads(base64.b64decode(recorded["body"]["data"]["bundles"][0]["payload"]))[
+            "issued_at"
+        ]
+        return datetime.fromisoformat(issued) + timedelta(minutes=5)
+
+    def test_the_bundle_verifies_through_the_customer_roots_delegation(
+        self, tmp_path: Path
+    ) -> None:
+        _, _, recorded = self.device(tmp_path)
+        state, bundle = BundleChain.accept_bundle(
+            root_public=bytes.fromhex(recorded["root_public"]),
+            delegation=recorded["root_delegation"],
+            envelope=recorded["body"]["data"]["bundles"][0],
+            tenant=recorded["tenant"],
+            now=self.moment(recorded),
+        )
+        assert state == "new" and bundle["version"] == 1
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="the recorded bundle's compiled policy (id `legacy`) carries no expires_at, which LocalRuntime._policy_of refuses; "
+        "when the platform's bundle carries one this flips and the mark is removed",
+    )
+    def test_the_runtime_takes_the_recorded_bundle(self, tmp_path: Path) -> None:
+        runtime, puller, recorded = self.device(tmp_path)
+        assert puller.pull(runtime, self.moment(recorded)) == "new"
+
+    def test_the_decision_delegation_in_that_body_is_accepted_and_kept_before_the_policy_is_read(
+        self, tmp_path: Path
+    ) -> None:
+        runtime, puller, recorded = self.device(tmp_path)
+        with pytest.raises(BundleError, match="no expiry"):
+            puller.pull(runtime, self.moment(recorded))
+        assert puller.refusal() is None
+        assert (
+            puller.held_sequence()
+            == int(recorded["headers"]["X-Decision-Delegation-Sequence"])
+            == 1
+        )
+
+    def test_the_kept_delegation_names_decision_keys_that_are_usable_at_that_time(
+        self, tmp_path: Path
+    ) -> None:
+        runtime, puller, recorded = self.device(tmp_path)
+        now = self.moment(recorded)
+        with pytest.raises(BundleError, match="no expiry"):
+            puller.pull(runtime, now)
+        root = bytes.fromhex(recorded["root_public"])
+        accepted = DecisionDelegation.accept(
+            root, recorded["root_delegation"], recorded["tenant"], puller.decision_delegation()
+        )
+        assert DecisionDelegation.keys(accepted, now, ("decision.cloud",))
+        assert not DecisionDelegation.root_names_decision(
+            root, recorded["root_delegation"], recorded["tenant"]
+        )
+
+    def test_the_header_of_that_answer_does_not_ask_for_another_fetch_once_it_is_held(
+        self, tmp_path: Path
+    ) -> None:
+        runtime, puller, recorded = self.device(tmp_path)
+        now = self.moment(recorded)
+        with pytest.raises(BundleError, match="no expiry"):
+            puller.pull(runtime, now)
+        seen: list[str] = []
+
+        def again(url: str, headers: dict[str, str]) -> tuple[int, dict[str, str], bytes]:
+            seen.append(url)
+            return 304, dict(recorded["headers"]), b""
+
+        second = BundlePuller(
+            URL,
+            again,
+            LocalStore(tmp_path),
+            root_public=bytes.fromhex(recorded["root_public"]),
+            delegation=recorded["root_delegation"],
+            tenant=recorded["tenant"],
+        )
+        assert second.pull(runtime, now) == "unchanged" and len(seen) == 1
+
+    def test_another_roots_delegation_refuses_the_same_body(self, tmp_path: Path) -> None:
+        stranger = Platform()
+        runtime, puller, recorded = self.device(tmp_path, delegation=stranger.delegation())
+        with pytest.raises(BundleError):
+            puller.pull(runtime, self.moment(recorded))
+        assert runtime.held is None and puller.held_sequence() == 0
