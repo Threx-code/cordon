@@ -232,6 +232,80 @@ class TestTheEcosystemsVerifiedOutsideTheRegistryClient:
         assert self.run((self.dependency("bazel", "rules_x", None),)) == rules
 
 
+class TestTerraformProvidersReachTheirVerifier:
+    """Which Terraform dependencies are asked (a provider the lock selected from the public registry), the keyring they are checked
+    against, and what each of the verifier's answers becomes."""
+
+    @staticmethod
+    def dependency(
+        name: str, resolved_from: str | None = None, version: str | None = "3.6.3"
+    ) -> Dependency:
+        return Dependency(
+            purl=f"pkg:terraform/{name}@{version}",
+            ecosystem="terraform",
+            name=name,
+            version=version,
+            direct=True,
+            resolved_from=resolved_from,
+            integrity="zh:" + "a" * 64,
+            declared_in=".terraform.lock.hcl",
+        )
+
+    @staticmethod
+    def stand_in(monkeypatch, outcome: str = "verified") -> list[tuple[str, str, tuple[str, ...]]]:
+        from cordon_scanner.intel.provenance.openpgp import Keyring, OpenPgp
+        from cordon_scanner.intel.provenance.terraform_provenance import (
+            ProviderCheck,
+            TerraformProvenance,
+        )
+
+        asked: list[tuple[str, str, tuple[str, ...]]] = []
+
+        def check(name, version, integrity, keyring):
+            asked.append((name, version, keyring.paths))
+            return ProviderCheck(outcome, "stood in")
+
+        monkeypatch.setattr(OpenPgp, "load", staticmethod(lambda paths: Keyring(paths=paths)))
+        monkeypatch.setattr(TerraformProvenance, "check", staticmethod(check))
+        return asked
+
+    def test_only_a_provider_of_the_public_registry_with_a_version_is_asked(
+        self, monkeypatch
+    ) -> None:
+        asked = self.stand_in(monkeypatch)
+        deps = (
+            self.dependency("hashicorp/random"),
+            self.dependency(
+                "registry.example.invalid/acme/thing", "registry:registry.example.invalid"
+            ),
+            self.dependency("acme/network/aws"),
+            self.dependency("hashicorp/null", version=None),
+        )
+        assert (
+            TestTheEcosystemsVerifiedOutsideTheRegistryClient.run(deps, ("/keys/ring.asc",)) == []
+        )
+        assert asked == [("hashicorp/random", "3.6.3", ("/keys/ring.asc",))]
+
+    @pytest.mark.parametrize(
+        ("outcome", "rules"),
+        [
+            ("verified", []),
+            ("absent", []),
+            ("invalid", [INVALID_RULE]),
+            ("unverifiable", [UNVERIFIED_RULE]),
+            ("unconfigured", [UNVERIFIED_RULE]),
+        ],
+    )
+    def test_each_answer_becomes_its_rule(self, monkeypatch, outcome, rules) -> None:
+        self.stand_in(monkeypatch, outcome)
+        assert (
+            TestTheEcosystemsVerifiedOutsideTheRegistryClient.run(
+                (self.dependency("hashicorp/random"),)
+            )
+            == rules
+        )
+
+
 class TestAnsibleCollectionsReachTheirVerifier:
     """Which Ansible dependencies are checked, and how: the signatures an install recorded, over
     the MANIFEST.json in the tree; else galaxy.ansible.com's, for one exact version from there."""

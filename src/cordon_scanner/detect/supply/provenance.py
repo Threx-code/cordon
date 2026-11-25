@@ -119,6 +119,11 @@ class ProvenanceDetector(BaseDetector):
             "helm": lambda d: (
                 bool(d.version) and (d.resolved_from or "").startswith(("https://", "oci://"))
             ),
+            # A provider the lock file selected from the public registry (`namespace/type`, no other host):
+            # modules and providers from another registry are not asked there.
+            "terraform": lambda d: (
+                bool(d.version) and not d.resolved_from and d.name.count("/") == 1
+            ),
         }
     )
     #: The ecosystems whose provenance is not the registry's attestation, by their verifier.
@@ -128,6 +133,7 @@ class ProvenanceDetector(BaseDetector):
             "bazel": "_verify_bazel",
             "helm": "_verify_helm",
             "ansible": "_verify_ansible",
+            "terraform": "_verify_terraform",
         }
     )
     #: Where a publisher signs every artefact or none, so an unsigned one the project runs is the
@@ -467,6 +473,35 @@ class ProvenanceDetector(BaseDetector):
                 ctx,
                 dependency=dependency,
                 detail=f"the build attestation for {label} could not be verified: {check.detail}",
+            )
+
+    def _verify_terraform(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
+        """A provider's signed checksums against the registry's answer and the operator's keyring
+        (`intel/terraform_provenance`)."""
+        from cordon_scanner.intel.registry import TerraformProvenance
+
+        check = TerraformProvenance.check(
+            dependency.name, dependency.version or "", dependency.integrity, self._keyring_for(ctx)
+        )
+        label = f"{dependency.name}@{dependency.version}"
+        if check.outcome == "verified":
+            ctx.checks.record(dependency.purl, "provenance", "verified")
+        elif check.outcome == "absent":
+            ctx.checks.record(dependency.purl, "provenance", "absent")
+        elif check.outcome == "invalid":
+            ctx.checks.record(dependency.purl, "provenance", "invalid")
+            yield self._finding(
+                INVALID_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"the signed checksums of provider {label} did not verify: {check.detail}",
+            )
+        else:
+            yield self._finding(
+                UNVERIFIED_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"the provenance of provider {label} could not be verified: {check.detail}",
             )
 
     def _keyring_for(self, ctx: ScanContext) -> Keyring:

@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from cordon_scanner.intel.provenance.bazel_provenance import ModuleCheck
     from cordon_scanner.intel.provenance.helm_provenance import ChartCheck
     from cordon_scanner.intel.provenance.homebrew_provenance import BottleCheck
+    from cordon_scanner.intel.provenance.terraform_provenance import ProviderCheck
     from cordon_scanner.intel.store.live_mcp import ServedTool
 
 # Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine
@@ -445,6 +446,14 @@ class ChartProvenance(Protocol):
         integrity: str | None,
         keyring: Keyring,
     ) -> ChartCheck: ...
+
+
+class ProviderProvenance(Protocol):
+    """Whether a Terraform provider's checksums are signed, and list the zip the lock file pinned."""
+
+    def check(
+        self, name: str, version: str, integrity: str | None, keyring: Keyring
+    ) -> ProviderCheck: ...
 
 
 class BottleProvenance(Protocol):

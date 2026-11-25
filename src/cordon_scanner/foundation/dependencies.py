@@ -81,7 +81,19 @@ _USERINFO: Final = re.compile(r"(?<=://)[^/@\s]{1,512}@")
 #: Ecosystems whose registries publish verifiable build provenance Cordon checks (`--online`). The provenance detector reads this same
 #: set (`detect/supply/provenance.py`), so what the inventory calls supported is what is verified.
 PROVENANCE_ECOSYSTEMS: Final = frozenset(
-    {"npm", "pypi", "maven", "gradle", "rubygems", "image", "homebrew", "bazel", "helm", "ansible"}
+    {
+        "npm",
+        "pypi",
+        "maven",
+        "gradle",
+        "rubygems",
+        "image",
+        "homebrew",
+        "bazel",
+        "helm",
+        "ansible",
+        "terraform",
+    }
 )
 #: Registries whose own documentation, read on 2026-11-25, states no build-provenance attestation or signature a client can fetch and verify
 #: for a released package. Each reason names what was read; a registry that begins to publish one moves out of this table into
