@@ -1115,6 +1115,7 @@
   "test_pack_probing.py": "bench/cdi",
   "test_reader_item_closure.py": "bench/cdi",
   "test_featureset.py": "bench/cdi",
+  "test_pipeline_replay.py": "bench/cdi",
   "test_factstore.py": "bench/cdi",
   "test_retrain.py": "bench/cdi",
   "test_start_path.py": "bench/cdi",
