@@ -59,18 +59,20 @@ class Safe:
 
     @classmethod
     def named(cls, source: Any, name: str) -> bool:
-        """A name its registry allows: each `/` part, in as many parts as the source takes (`SEGMENTS`), and each
-        character from the source's own sets (`FIRST`, `REST`) when it states them. Plain set checks, no pattern."""
+        """A name its registry allows. A registry that states its own characters (`FIRST`, `REST`: Homebrew's `@` and
+        `+`, opam's `+`) is checked by those alone, in one part; a package that is a repository (`owner/repo`) by its
+        parts (`SEGMENTS`), each from `SEGMENT`. Plain checks, no pattern over the name."""
+        first = getattr(source, "FIRST", None)
+        if first is not None:
+            rest: str = source.REST
+            if "/" in name or name[0] not in first or any(c not in rest for c in name[1:]):
+                return False
+            return not getattr(source, "SINGLE_HYPHENS", False) or (
+                "--" not in name and not name.endswith("-")
+            )
         parts = name.split("/")
         low, high = getattr(source, "SEGMENTS", (1, 1))
-        if not low <= len(parts) <= high or not all(cls.SEGMENT.fullmatch(p) for p in parts):
-            return False
-        first, rest = getattr(source, "FIRST", None), getattr(source, "REST", "")
-        if first is not None and (name[0] not in first or any(c not in rest for c in name[1:])):
-            return False
-        return not getattr(source, "SINGLE_HYPHENS", False) or (
-            "--" not in name and not name.endswith("-")
-        )
+        return low <= len(parts) <= high and all(cls.SEGMENT.fullmatch(p) for p in parts)
 
     @classmethod
     def ok(cls, source: Any, name: str, version: str) -> bool:

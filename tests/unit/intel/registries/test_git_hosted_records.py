@@ -176,3 +176,32 @@ class TestAHostileName:
         }
         for document in source.documents(name, version):
             assert document.url.split("/")[2] in hosts and ".." not in document.url
+
+
+class TestANameItsRegistryAllows:
+    """Each registry's own characters are allowed (`openssl@3`, `conf-g++`), and nothing else."""
+
+    @pytest.mark.parametrize(
+        ("ecosystem", "name"),
+        [
+            ("homebrew", "openssl@3"),
+            ("homebrew", "gcc@12"),
+            ("homebrew", "libsigc++"),
+            ("opam", "conf-g++"),
+            ("conan", "libsigcpp+"),
+            ("bazel", "rules_cc"),
+            ("vcpkg", "zlib-ng"),
+            ("julia", "JSON3"),
+        ],
+    )
+    def test_a_name_with_its_registrys_own_characters_asks(self, ecosystem: str, name: str) -> None:
+        source = RecordSources.of(ecosystem)
+        assert source is not None
+        assert source.documents(name, "1.0.0") != ()
+
+    @pytest.mark.parametrize("ecosystem", sorted(EXPECTED))
+    @pytest.mark.parametrize("name", ["a%2fb", "a b", "a?b", "a#b", "a\tb", "a/../b"])
+    def test_a_name_with_other_characters_asks_nothing(self, ecosystem: str, name: str) -> None:
+        source = RecordSources.of(ecosystem)
+        assert source is not None
+        assert source.documents(name, "1.0.0") == ()
