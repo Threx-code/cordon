@@ -6,6 +6,7 @@ decision key the tenant root delegated; the device takes it only as that."""
 
 from __future__ import annotations
 
+import argparse
 import base64
 import json
 from datetime import timedelta
@@ -14,9 +15,12 @@ from typing import Any, ClassVar
 
 import pytest
 
+from cordon_scanner.cli.commands.policy import PolicyCommand
 from cordon_scanner.cloud.agent.agent_hook import AgentCalls, AgentHook
 from cordon_scanner.cloud.agent.cloud_decisions import CloudAsk, CloudDecisions
+from cordon_scanner.cloud.agent.decision_delegation import DecisionDelegation
 from cordon_scanner.cloud.agent.decision_envelope import DecisionEnvelope
+from cordon_scanner.cloud.agent.device_runtime import DeviceRuntime
 from cordon_scanner.cloud.bundle_chain import Dsse
 from cordon_scanner.cloud.local_store import LocalStore
 from cordon_scanner.cloud.runtime import CordonRuntime, ScanEvidence, Sources
@@ -56,6 +60,7 @@ class Flow:
         self.asked: list[dict[str, Any]] = []
         self.version: str | None = None
         self.answer: Any = None  # what the platform answers next: (status, body) or an exception
+        self.decision_delegation: object = None  # the second link, under a root the customer holds
 
     def delegated(self) -> dict[str, Any]:
         keys = [
@@ -108,7 +113,7 @@ class Flow:
                     ),
                 )
             ),
-            cloud=CloudDecisions.source(pins, NOW, ask),
+            cloud=CloudDecisions.source(pins, NOW, ask, self.decision_delegation),
             rules_version="rules-1",
         )
         resolvers = {"mcp_server": self.resolve}
@@ -374,3 +379,161 @@ class TestWhatTheDeviceAsksAndTakes(Fixtures):
     ) -> None:
         flow.answer = flow.approved(extra_subjects=(self.OTHER,), extra_first=first)
         assert flow.hook(retry_online=True)[0] == "deny"
+
+
+class TestUnderARootTheCustomerHolds(Fixtures):
+    """BP-15-15: the root names only the policy key; the decision key is the one the policy key delegated."""
+
+    @staticmethod
+    def customer_root(
+        flow: Flow, *, sequence: int = 2, signer: Ed25519Signer | None = None
+    ) -> None:
+        keys = [("policy", flow.platform.policy_key.public)]
+        flow.delegation = Platform.sign(
+            "application/vnd.cordon.delegation+json",
+            {
+                "_type": "cordon.delegation/v1",
+                "tenant": TENANT,
+                "issued_at": T0.isoformat(),
+                "keys": [
+                    {
+                        "keyid": Dsse.keyid(public),
+                        "public": public.hex(),
+                        "role": role,
+                        "not_before": (T0 - timedelta(days=1)).isoformat(),
+                        "version": 1,
+                    }
+                    for role, public in keys
+                ],
+            },
+            flow.platform.root,
+        )
+        flow.decision_delegation = Platform.sign(
+            "application/vnd.cordon.decision-delegation+json",
+            {
+                "_type": "cordon.decision-delegation/v1",
+                "tenant": TENANT,
+                "issued_at": T0.isoformat(),
+                "sequence": sequence,
+                "root_keyid": Dsse.keyid(flow.platform.root.public),
+                "root_issued_at": T0.isoformat(),
+                "policy_keyid": Dsse.keyid(flow.platform.policy_key.public),
+                "keys": [
+                    {
+                        "role": "decision.hook",
+                        "version": 1,
+                        "keyid": Dsse.keyid(DECIDER.public),
+                        "public": DECIDER.public.hex(),
+                        "not_before": (T0 - timedelta(hours=1)).isoformat(),
+                        "valid_until": (T0 + timedelta(days=7)).isoformat(),
+                    }
+                ],
+            },
+            signer or flow.platform.policy_key,
+        )
+
+    def test_a_decision_signed_by_the_key_the_policy_key_delegated_is_taken(
+        self, flow: Flow
+    ) -> None:
+        self.customer_root(flow)
+        flow.answer = (404, {})
+        assert flow.hook(retry_online=True)[0] == "deny"
+        flow.answer = flow.approved()
+        assert flow.hook(retry_online=True)[0] == "allow"
+
+    def test_without_the_decision_delegation_the_decision_key_is_not_trusted(
+        self, flow: Flow
+    ) -> None:
+        self.customer_root(flow)
+        flow.decision_delegation = None
+        flow.answer = flow.approved()
+        assert flow.hook(retry_online=True)[0] == "deny"
+
+    def test_a_decision_delegation_signed_by_a_key_that_is_not_the_policy_key_is_not_trusted(
+        self, flow: Flow
+    ) -> None:
+        self.customer_root(flow, signer=STRANGER)
+        flow.answer = flow.approved()
+        assert flow.hook(retry_online=True)[0] == "deny"
+
+    def test_a_key_the_policy_key_did_not_delegate_is_not_trusted(self, flow: Flow) -> None:
+        self.customer_root(flow)
+        flow.answer = flow.approved(STRANGER)
+        assert flow.hook(retry_online=True)[0] == "deny"
+
+    def test_a_decision_key_the_root_names_itself_needs_no_decision_delegation(
+        self, flow: Flow
+    ) -> None:
+        flow.answer = flow.approved()
+        assert flow.hook(retry_online=True)[0] == "allow"
+
+    def test_the_device_runtime_hands_the_kept_decision_delegation_to_the_decision_source(
+        self, flow: Flow, monkeypatch, tmp_path: Path
+    ) -> None:
+        self.customer_root(flow)
+        store = LocalStore(tmp_path / "device")
+        issued = T0.isoformat()
+        store.put_blob("pin", "root", flow.platform.root.public, issued)
+        store.put_blob("pin", "delegation", json.dumps(flow.delegation).encode(), issued)
+        store.put_blob("pin", "tenant", TENANT.encode(), issued)
+        store.put_blob(
+            "decision-delegation",
+            "decision-delegation",
+            json.dumps(flow.decision_delegation).encode(),
+            issued,
+        )
+        given: list[object] = []
+        real = CloudDecisions.source
+
+        def spy(pins, now, ask, decision_delegation=None):
+            given.append(decision_delegation)
+            return real(pins, now, ask, decision_delegation)
+
+        monkeypatch.setattr(CloudDecisions, "source", staticmethod(spy))
+        ask = CloudAsk("dt", "production", url="https://api.cordon.test", transport=flow.transport)
+        assert DeviceRuntime.open(tmp_path / "device", NOW, cloud=ask) is not None
+        assert given == [flow.decision_delegation]
+
+    def test_a_bundle_and_a_decision_under_a_customer_root_verify_at_a_device_from_the_pull_alone(
+        self, flow: Flow, tmp_path: Path
+    ) -> None:
+        """The whole path: the root signs only the policy key; `policy pull` verifies the bundle and keeps the second link; the device's
+        pins and the kept delegation verify a decision signed by a key only the policy key delegated."""
+        self.customer_root(flow)
+        bundle = flow.platform.publish(flow.policy, issued=T0, expires=flow.expires)
+        body = json.dumps(
+            {
+                "status": True,
+                "message": "ok",
+                "data": {
+                    "restart": False,
+                    "bundles": [bundle],
+                    "delegations": [flow.decision_delegation],
+                },
+            }
+        ).encode()
+        delegation_file = tmp_path / "delegation.json"
+        delegation_file.write_text(json.dumps(flow.delegation), encoding="utf-8")
+        args = argparse.Namespace(
+            policy_command="pull",
+            url="https://store.example.invalid/bundles",
+            root=flow.platform.root.public.hex(),
+            delegation=str(delegation_file),
+            tenant=TENANT,
+            store=str(tmp_path / "device"),
+            replace_root=False,
+        )
+        pulled = PolicyCommand.run(args, fetch=lambda url, headers: (200, {}, body), now=NOW)
+        assert pulled == 0
+        store = LocalStore(tmp_path / "device")
+        pins = DeviceRuntime.pins(store)
+        assert pins is not None and DecisionDelegation.stored(store) is not None
+        call = AgentCalls.of(
+            {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": ADD}}
+        )
+        assert call is not None
+        flow.answer = flow.approved()
+        ask = CloudAsk("dt", "production", url="https://api.cordon.test", transport=flow.transport)
+        source = CloudDecisions.source(pins, NOW, ask, DecisionDelegation.stored(store))
+        decision = source(flow.resolve(call.reference).artifact())
+        assert decision is not None and decision.state == "ALLOW"

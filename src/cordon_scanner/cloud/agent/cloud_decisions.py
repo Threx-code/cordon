@@ -43,9 +43,16 @@ class CloudDecisions:
 
     @classmethod
     def source(
-        cls, pins: tuple[bytes, Any, str], now: datetime, ask: CloudAsk
+        cls,
+        pins: tuple[bytes, Any, str],
+        now: datetime,
+        ask: CloudAsk,
+        decision_delegation: object = None,
     ) -> Callable[[ArtifactRef], Decision | None]:
-        """A decision source for the runtime: the verified platform decision for an artifact, or None."""
+        """A decision source for the runtime: the verified platform decision for an artifact, or None.
+
+        Under a root the customer holds, `decision_delegation` is the one the policy key signed (kept by the bundle puller): a decision
+        verifies through it. Without one, a decision key the root did not name itself is not trusted."""
         root, delegation, tenant = pins
 
         def decide(artifact: ArtifactRef) -> Decision | None:
@@ -67,6 +74,7 @@ class CloudDecisions:
                     delegation=delegation,
                     tenant=tenant,
                     now=now,
+                    decision_delegation=decision_delegation,
                 )
                 return cls.decision(statement, artifact)
             except (CloudError, BundleError, DecisionError, ValueError, KeyError, TypeError):

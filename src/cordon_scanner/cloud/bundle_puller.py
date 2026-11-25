@@ -97,26 +97,15 @@ class BundlePuller:
         self._store.put_blob("etag", self.ETAG_NAME, kept.encode("utf-8"), now.isoformat())
         return state
 
-    DELEGATION_BLOB = "decision-delegation"
     HEADER = "x-decision-delegation-sequence"
 
     def decision_delegation(self) -> object:
         """The decision delegation last accepted, or None: what a decision under a customer root is verified with."""
-        kept = self._store.blob("decision-delegation", self.DELEGATION_BLOB)
-        if kept is None:
-            return None
-        try:
-            return json.loads(kept.data)
-        except ValueError:
-            return None
+        return DecisionDelegation.stored(self._store)
 
     def held_sequence(self) -> int:
         """The highest decision delegation sequence accepted, or 0."""
-        kept = self.decision_delegation()
-        if kept is None:
-            return 0
-        sequence = BundleChain.unverified_payload_document(kept).get("sequence")
-        return sequence if isinstance(sequence, int) and not isinstance(sequence, bool) else 0
+        return DecisionDelegation.sequence_of(self.decision_delegation())
 
     def _take(self, offered: object) -> None:
         """Verify and keep the decision delegation of an answer; a document that fails is refused (`BundleError`) and the one held stays."""
@@ -131,8 +120,8 @@ class BundlePuller:
         )
         if document["sequence"] > held or self.decision_delegation() is None:
             self._store.put_blob(
-                "decision-delegation",
-                self.DELEGATION_BLOB,
+                DecisionDelegation.BLOB,
+                DecisionDelegation.BLOB,
                 json.dumps(envelope, sort_keys=True).encode("utf-8"),
                 str(document["issued_at"]),
             )

@@ -14,11 +14,15 @@ policy key's own end. The keys the document delegates are then used only inside 
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timedelta
-from typing import Any, ClassVar, Final
+from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.cloud.bundle_chain import POLICY_ROLES, BundleChain, BundleError, Dsse
+
+if TYPE_CHECKING:
+    from cordon_scanner.cloud.local_store import LocalStore
 
 DECISION_DELEGATION_TYPE: Final = "application/vnd.cordon.decision-delegation+json"
 DECISION_DELEGATION_SCHEMA: Final = "cordon.decision-delegation/v1"
@@ -35,6 +39,28 @@ class DecisionDelegation:
     PUBLIC: ClassVar[re.Pattern[str]] = re.compile(r"[0-9a-f]{64}")
     #: The longest a delegated decision key may live (the platform's own bound: a workload key is enrolled for a year at most).
     MAX_WINDOW: ClassVar[timedelta] = timedelta(days=366)
+
+    #: The local store's blob kind and name the accepted decision delegation is kept under.
+    BLOB: ClassVar[str] = "decision-delegation"
+
+    @classmethod
+    def stored(cls, store: LocalStore) -> object:
+        """The decision delegation last accepted and kept in `store`, or None. It is verified again whenever it is used."""
+        kept = store.blob(cls.BLOB, cls.BLOB)
+        if kept is None:
+            return None
+        try:
+            return json.loads(kept.data)
+        except ValueError:
+            return None
+
+    @classmethod
+    def sequence_of(cls, envelope: object) -> int:
+        """The sequence a kept envelope says it has (0 for none), read without verifying: only for what was verified before it was kept."""
+        if envelope is None:
+            return 0
+        sequence = BundleChain.unverified_payload_document(envelope).get("sequence")
+        return sequence if isinstance(sequence, int) and not isinstance(sequence, bool) else 0
 
     @classmethod
     def root_names_decision(cls, root_public: bytes, delegation: object, tenant: str) -> bool:
