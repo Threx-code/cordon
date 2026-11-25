@@ -409,6 +409,27 @@ class TestStartStacks:
         StartStacks.disarm(armed)
         assert not armed[1].exists()
 
+    @pytest.mark.parametrize("ahead", [10.0**9, -(10.0**9)], ids=["far ahead", "far behind"])
+    def test_a_deadline_on_another_clock_is_held_inside_the_backstop(
+        self, tmp_path, monkeypatch, ahead
+    ) -> None:
+        """A deadline from a supervisor whose clock differs from the worker's (a spawned worker, a moved test clock)
+        arms within (0, START_BACKSTOP]: never a timeout the platform refuses, never a dump after the worker ends."""
+        import faulthandler
+
+        from cordon_scanner.engine.isolation.supervisor import StartStacks, Worker
+
+        asked = []
+        monkeypatch.setattr(
+            faulthandler, "dump_traceback_later", lambda timeout, **kw: asked.append(timeout)
+        )
+        monkeypatch.setattr(faulthandler, "cancel_dump_traceback_later", lambda: None)
+        armed = StartStacks.arm((str(tmp_path), time.time() + ahead))
+        try:
+            assert asked and 0 < asked[0] <= Worker.START_BACKSTOP
+        finally:
+            StartStacks.disarm(armed)
+
     def test_a_dead_workers_file_under_a_reused_pid_is_replaced(self, tmp_path) -> None:
         from cordon_scanner.engine.isolation.supervisor import StartStacks
 

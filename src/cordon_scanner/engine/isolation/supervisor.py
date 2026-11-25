@@ -403,8 +403,11 @@ class StartStacks:
             handle = os.fdopen(os.open(path, flags, 0o600), "w", encoding="utf-8")
         except OSError:
             return None  # no stacks then, and the worker starts as before
+        # Never later than the start backstop from now: the deadline was read on the supervisor's clock, and a worker
+        # spawned fresh (Windows) reads its own, which a test may have moved; Windows also refuses a timeout past about
+        # 49 days. A dump after the backstop could not help: the worker is ended by then.
         faulthandler.dump_traceback_later(
-            max(deadline - time.time(), 0.1), repeat=False, file=handle
+            min(max(deadline - time.time(), 0.1), Worker.START_BACKSTOP), repeat=False, file=handle
         )
         return handle, path
 
