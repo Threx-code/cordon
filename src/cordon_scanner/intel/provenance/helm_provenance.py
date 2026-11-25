@@ -34,11 +34,11 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Final
+from typing import Final
 
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
-from cordon_scanner.foundation.network.redirects import ClosedErrors
+from cordon_scanner.foundation.network.redirects import ClosedErrors, HttpsRedirects
 
 #: helm `pkg/registry/constants.go`: ProvLayerMediaType, and ChartLayerMediaType with the
 from cordon_scanner.intel.provenance import openpgp
@@ -54,20 +54,6 @@ MAX_CHART_BYTES: Final = 32 << 20
 """cert-manager's chart is 150 KB."""
 MAX_INDEX_BYTES: Final = 64 << 20
 """An index.yaml lists every version of every chart: Bitnami's was 27.5 MB in October 2026."""
-MAX_REDIRECTS: Final = 5
-
-
-class _HttpsRedirects(urllib.request.HTTPRedirectHandler):
-    """A release asset redirects to storage: followed over HTTPS only, a few hops at most."""
-
-    max_redirections = MAX_REDIRECTS
-
-    def redirect_request(
-        self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str
-    ) -> Any:
-        if urllib.parse.urlsplit(newurl).scheme != "https":
-            return None
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 @dataclass(frozen=True)
@@ -84,7 +70,7 @@ class HelmProvenance:
         if urllib.parse.urlsplit(url).scheme != "https":
             raise ValueError("not https")
         request = urllib.request.Request(url, headers={"User-Agent": "cordon-scanner"})  # noqa: S310 - https only
-        opener = urllib.request.build_opener(_HttpsRedirects, ClosedErrors)
+        opener = urllib.request.build_opener(HttpsRedirects, ClosedErrors)
         try:
             with opener.open(request, timeout=TIMEOUT) as response:
                 body: bytes = Download.read(response, limit + 1)

@@ -35,7 +35,7 @@ from typing import Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
-from cordon_scanner.foundation.network.redirects import ClosedErrors
+from cordon_scanner.foundation.network.redirects import ClosedErrors, HttpsRedirects
 from cordon_scanner.intel.provenance import openpgp
 
 API: Final = (
@@ -44,23 +44,9 @@ API: Final = (
 TIMEOUT: Final = 15.0
 MAX_ANSWER_BYTES: Final = 1 << 20
 MAX_SUMS_BYTES: Final = 1 << 20
-MAX_REDIRECTS: Final = 5
 _NAME: Final = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
 _VERSION: Final = re.compile(r"[0-9A-Za-z][0-9A-Za-z.+-]{0,63}")
 _SUM_LINE: Final = re.compile(r"^([0-9a-f]{64})[ \t]+\*?(\S+)$")
-
-
-class _HttpsRedirects(urllib.request.HTTPRedirectHandler):
-    """A release asset may redirect to storage: followed over HTTPS only, a few hops at most."""
-
-    max_redirections = MAX_REDIRECTS
-
-    def redirect_request(
-        self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str
-    ) -> Any:
-        if urllib.parse.urlsplit(newurl).scheme != "https":
-            return None
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 @dataclass(frozen=True)
@@ -77,7 +63,7 @@ class TerraformProvenance:
         if urllib.parse.urlsplit(url).scheme != "https":
             raise ValueError("not https")
         request = urllib.request.Request(url, headers={"User-Agent": "cordon-scanner"})  # noqa: S310 - https only
-        opener = urllib.request.build_opener(_HttpsRedirects, ClosedErrors)
+        opener = urllib.request.build_opener(HttpsRedirects, ClosedErrors)
         try:
             with opener.open(request, timeout=TIMEOUT) as response:
                 body: bytes = Download.read(response, limit + 1)
