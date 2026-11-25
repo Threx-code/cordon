@@ -39,16 +39,38 @@ if TYPE_CHECKING:
     from cordon_scanner.intel.registries.registry_record import RegistryRecord
 
 
+class Chars:
+    LOW: ClassVar[str] = "abcdefghijklmnopqrstuvwxyz"
+    UP: ClassVar[str] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    DIG: ClassVar[str] = "0123456789"
+
+
 class Safe:
     """A name and a version are the scanned package's own text and become part of a URL path: each source states the
     names its registry allows, and anything else (a `..` or empty segment, a `%`, `?`, `#`, a leading `/`, a control
     character) asks for no document, so no request can reach another repository or another route of the host."""
 
-    #: `owner/repo`, as a git host allows them; an action may add a folder inside its repository.
-    REPOSITORY: ClassVar[re.Pattern[str]] = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
     #: A version that goes into a URL: a tag, a commit or a release as hosts name them.
     VERSION: ClassVar[re.Pattern[str]] = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.+~-]{0,127}")
     MAX: ClassVar[int] = 214
+
+    #: One part of a path-like name: a repository owner, a repository, a folder, a module.
+    SEGMENT: ClassVar[re.Pattern[str]] = re.compile(r"[A-Za-z0-9_.-]+")
+
+    @classmethod
+    def named(cls, source: Any, name: str) -> bool:
+        """A name its registry allows: each `/` part, in as many parts as the source takes (`SEGMENTS`), and each
+        character from the source's own sets (`FIRST`, `REST`) when it states them. Plain set checks, no pattern."""
+        parts = name.split("/")
+        low, high = getattr(source, "SEGMENTS", (1, 1))
+        if not low <= len(parts) <= high or not all(cls.SEGMENT.fullmatch(p) for p in parts):
+            return False
+        first, rest = getattr(source, "FIRST", None), getattr(source, "REST", "")
+        if first is not None and (name[0] not in first or any(c not in rest for c in name[1:])):
+            return False
+        return not getattr(source, "SINGLE_HYPHENS", False) or (
+            "--" not in name and not name.endswith("-")
+        )
 
     @classmethod
     def ok(cls, source: Any, name: str, version: str) -> bool:
@@ -56,7 +78,7 @@ class Safe:
             return False
         if any(part in (".", "..", "") for part in name.split("/")):
             return False
-        if not source.NAME.fullmatch(name):
+        if not cls.named(source, name):
             return False
         return not source.VERSION_IN_URL or (
             bool(cls.VERSION.fullmatch(version)) and ".." not in version
@@ -194,7 +216,8 @@ class History:
 class GitRegistrySource(RecordSource):
     """A registry kept in a git repository: the release list from one of its files, the dates from its history."""
 
-    NAME: ClassVar[re.Pattern[str]]
+    FIRST: ClassVar[str]
+    REST: ClassVar[str]
     VERSION_IN_URL: ClassVar[bool] = False
 
     publisher_kind: ClassVar[PublisherKind] = "committer"
@@ -242,7 +265,9 @@ class GitRegistrySource(RecordSource):
 class BazelSource(GitRegistrySource):
     """The Bazel Central Registry: `modules/<name>/metadata.json` (versions, yanked versions, maintainers)."""
 
-    NAME: ClassVar[re.Pattern[str]] = re.compile(r"[a-z][a-z0-9._-]*")
+    #: A module name: lower case, starting with a letter (`rules_cc`, `abseil-cpp`, `protobuf`).
+    FIRST: ClassVar[str] = Chars.LOW
+    REST: ClassVar[str] = Chars.LOW + Chars.DIG + "._-"
 
     ecosystem: ClassVar[str] = "bazel"
     repo: ClassVar[str] = "bazelbuild/bazel-central-registry"
@@ -284,7 +309,8 @@ class BazelSource(GitRegistrySource):
 class JuliaSource(GitRegistrySource):
     """Julia's General registry: `<L>/<Name>/Versions.toml` (each release, and whether it is yanked), `Package.toml`."""
 
-    NAME: ClassVar[re.Pattern[str]] = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
+    FIRST: ClassVar[str] = Chars.LOW + Chars.UP
+    REST: ClassVar[str] = Chars.LOW + Chars.UP + Chars.DIG + "_"
 
     ecosystem: ClassVar[str] = "julia"
     repo: ClassVar[str] = "JuliaRegistries/General"
@@ -314,7 +340,10 @@ class JuliaSource(GitRegistrySource):
 class VcpkgSource(GitRegistrySource):
     """vcpkg's registry: `versions/<l>-/<name>.json`, newest first; a port revision is `<version>#<n>`."""
 
-    NAME: ClassVar[re.Pattern[str]] = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+    FIRST: ClassVar[str] = Chars.LOW + Chars.DIG
+    REST: ClassVar[str] = Chars.LOW + Chars.DIG + "-"
+    #: A hyphen only between two words (`zlib-ng`), never doubled or at the end.
+    SINGLE_HYPHENS: ClassVar[bool] = True
 
     ecosystem: ClassVar[str] = "vcpkg"
     repo: ClassVar[str] = "microsoft/vcpkg"
@@ -371,7 +400,8 @@ class VcpkgSource(GitRegistrySource):
 class OpamSource(GitRegistrySource):
     """opam-repository: `packages/<name>/<name>.<version>/` directories, listed by the host's contents answer."""
 
-    NAME: ClassVar[re.Pattern[str]] = re.compile(r"[A-Za-z0-9][A-Za-z0-9_+-]*")
+    FIRST: ClassVar[str] = Chars.LOW + Chars.UP + Chars.DIG
+    REST: ClassVar[str] = Chars.LOW + Chars.UP + Chars.DIG + "_+-"
 
     ecosystem: ClassVar[str] = "opam"
     repo: ClassVar[str] = "ocaml/opam-repository"
@@ -405,7 +435,8 @@ class ConanSource(GitRegistrySource):
     index drops them; the centre's own answer (`/v2/conans/<name>/<version>/_/_/revisions`) dates a version's first
     revision exactly."""
 
-    NAME: ClassVar[re.Pattern[str]] = re.compile(r"[a-z0-9_][a-z0-9_+.-]*")
+    FIRST: ClassVar[str] = Chars.LOW + Chars.DIG + "_"
+    REST: ClassVar[str] = Chars.LOW + Chars.DIG + "_+.-"
     VERSION_IN_URL: ClassVar[bool] = True
 
     ecosystem: ClassVar[str] = "conan"
@@ -471,7 +502,7 @@ class ConanSource(GitRegistrySource):
             if match and name.lower() in GitHub.commit_fact(commit)[0].lower()
         }
         versions = sorted(
-            set(self.versions(name, listing)[0]) | named,
+            dict.fromkeys([*self.versions(name, listing)[0], *sorted(named)]),
             key=_Sort.key(lambda a, b: Versions.compare("conan", a, b)),
         )
         if version not in versions:
@@ -498,7 +529,8 @@ class HomebrewSource(GitRegistrySource):
     """Homebrew's core tap: the formula's answer (`formulae.brew.sh/api/formula/<name>.json`: the current version,
     deprecated or disabled); every earlier version is a commit of the formula's file (`<name> <version>`)."""
 
-    NAME: ClassVar[re.Pattern[str]] = re.compile(r"[a-z0-9][a-z0-9@+._-]*")
+    FIRST: ClassVar[str] = Chars.LOW + Chars.DIG
+    REST: ClassVar[str] = Chars.LOW + Chars.DIG + "@+._-"
 
     ecosystem: ClassVar[str] = "homebrew"
     repo: ClassVar[str] = "Homebrew/homebrew-core"
@@ -549,7 +581,7 @@ class HomebrewSource(GitRegistrySource):
 class RepositorySource(RecordSource):
     """A package that is a repository (`owner/repo`): its releases, and the repository's own answer."""
 
-    NAME: ClassVar[re.Pattern[str]] = Safe.REPOSITORY
+    SEGMENTS: ClassVar[tuple[int, int]] = (2, 2)
     VERSION_IN_URL: ClassVar[bool] = True
 
     publisher_kind: ClassVar[PublisherKind] = "account"
@@ -632,9 +664,7 @@ class RepositorySource(RecordSource):
 class ActionsSource(RepositorySource):
     """A GitHub Action, `owner/repo` (an action in a subfolder is its repository's): its releases."""
 
-    NAME: ClassVar[re.Pattern[str]] = re.compile(
-        r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*"
-    )
+    SEGMENTS: ClassVar[tuple[int, int]] = (2, 32)
 
     ecosystem: ClassVar[str] = "actions"
 
@@ -664,7 +694,7 @@ class SwiftSource(RepositorySource):
 class NixSource(RecordSource):
     """A Nix input pinned at a commit of `owner/repo`: the commit and the ones before it; the repository's answer."""
 
-    NAME: ClassVar[re.Pattern[str]] = Safe.REPOSITORY
+    SEGMENTS: ClassVar[tuple[int, int]] = (2, 2)
     VERSION_IN_URL: ClassVar[bool] = True
 
     ecosystem: ClassVar[str] = "nix"
@@ -702,9 +732,11 @@ class NixSource(RecordSource):
 class _Sort:
     @staticmethod
     def key(compare: Any) -> Any:
+        """A sort key from a version comparison, made total: two versions it calls equal (`1.0` and `1.0.0`) are ordered
+        by their text, so the order never depends on the order they arrived in."""
         import functools
 
-        return functools.cmp_to_key(compare)
+        return functools.cmp_to_key(lambda a, b: compare(a, b) or (a > b) - (a < b))
 
 
 class _Rename:

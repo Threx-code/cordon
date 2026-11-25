@@ -32,6 +32,7 @@ than by hoping every parser degrades gracefully on its own.
 from __future__ import annotations
 
 import functools
+import itertools
 import re
 from collections.abc import Callable
 from typing import Any, ClassVar, Final
@@ -48,8 +49,6 @@ string is capped at a length check.
 #: A tag with no version in it: a commit (hex with at least one letter: a run of digits alone is a number, such as a
 #: date tag `20241231`) or a name with no digit (`latest`, `bookworm`, `main`).
 _NOT_A_VERSION: Final = re.compile(r"^(?=[0-9a-f]*[a-f])[0-9a-f]{7,64}$|^[^0-9]*$")
-#: An image tag's release and its variant: `1.25.3` and `-debian-12-r0`.
-_TAG_RELEASE: Final = re.compile(r"^v?(\d+(?:\.\d+)*)(.*)$")
 #: A packaging revision is not part of the release: Homebrew's `_1`, vcpkg's `#2`.
 _PACKAGING_REVISION: Final = re.compile(r"(?:_\d+|#\d+)$")
 
@@ -164,7 +163,15 @@ class Versions:
             return Versions._compare_raw(a, b)
 
         def parts(text: str) -> list[str]:
-            return re.findall(r"\d+|[^\d.\-]+", text)
+            # Runs of digits and of other characters; `.` and `-` only separate them (linear, no pattern).
+            found: list[str] = []
+            for digits, run in itertools.groupby(text, str.isdigit):
+                chunk = "".join(run)
+                if digits:
+                    found.append(chunk)
+                else:
+                    found.extend(p for p in chunk.replace("-", ".").split(".") if p)
+            return found
 
         def less(x: str, y: str) -> bool:
             if x.isdigit() and y.isdigit():
@@ -200,13 +207,28 @@ class Versions:
         release, and compares as plain text, "cannot tell"."""
         if _NOT_A_VERSION.match(a) or _NOT_A_VERSION.match(b):
             return Versions._compare_raw(a, b)
-        left, right = _TAG_RELEASE.match(a), _TAG_RELEASE.match(b)
+        left, right = Versions._release_of(a), Versions._release_of(b)
         if left is None or right is None:
             return LibVersion.compare(a, b)
-        released = LibVersion.compare(left.group(1), right.group(1))
+        released = LibVersion.compare(left[0], right[0])
         if released:
             return released
-        return Versions._compare_raw(left.group(2), right.group(2))
+        return Versions._compare_raw(left[1], right[1])
+
+    @staticmethod
+    def _release_of(tag: str) -> tuple[str, str] | None:
+        """An image tag's release and its variant (`1.25.3`, `-debian-12-r0`): dotted numbers from the start, an
+        optional `v` before them; None when the tag does not start with a number."""
+        start = 1 if tag[:1] in ("v", "V") else 0
+        end = start
+        while end < len(tag) and (
+            tag[end].isdigit()
+            or (tag[end] == "." and end + 1 < len(tag) and tag[end + 1].isdigit() and end > start)
+        ):
+            end += 1
+        if end == start or not tag[start].isdigit():
+            return None
+        return tag[start:end], tag[end:]
 
     @staticmethod
     def _debian(ecosystem: str, a: str, b: str) -> int:
@@ -222,7 +244,8 @@ class Versions:
             return ord(c) + 256
 
         def runs(text: str) -> list[str]:
-            return re.findall(r"\d+|\D+", text)
+            # Alternating runs of digits and of everything else (linear, no pattern).
+            return ["".join(run) for _, run in itertools.groupby(text, str.isdigit)]
 
         left, right = runs(a), runs(b)
         if left and left[0][0].isdigit():

@@ -25,16 +25,25 @@ own word for it: `yanked`, `retracted`, `deprecated`, `unlisted`, `archived`, or
 
 from __future__ import annotations
 
+import json
+import re
+import urllib.parse
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
+from cordon_scanner.intel.registries.registry_request import RegistryError
+
 if TYPE_CHECKING:
     from cordon_scanner.intel.registries.registry_record import RegistryRecord
 
 PublisherKind = Literal["account", "namespace", "committer", "none"]
+RATE_LIMITED = re.compile(r"\bHTTP (?:403|429)\b")
+"""What the registry reader says of a refusal for rate."""
+GIT_HOST_API = "api.github.com"
+"""The one host a user-supplied token is sent to."""
 
 
 @dataclass(frozen=True)
@@ -69,6 +78,13 @@ class RecordSource(ABC):
     @abstractmethod
     def documents(self, name: str, version: str) -> tuple[Document, ...]:
         """The documents the record of `name` at `version` is read from."""
+
+    def followed(
+        self, name: str, version: str, documents: Mapping[str, Any]
+    ) -> tuple[Document, ...]:
+        """Documents the first ones point to (the pages of a registration index, the per-version answers of a proxy), asked for once
+        the first round is read; none by default. They are fetched the same way, and passed to `record` beside the first ones."""
+        return ()
 
     @abstractmethod
     def record(
@@ -123,36 +139,80 @@ class RecordBuilder:
         )
 
 
+class RateLimited(RegistryError):
+    """A required document was refused for rate. A `RegistryError` to its callers (`intel acquire` names it and goes on)."""
+
+
 class RecordFetch:
     """Fetching a source's documents: https only, bounded, no redirect, and the registry client's own readers."""
 
     MAX_DOCUMENTS: ClassVar[int] = 8
+    MAX_FOLLOWED: ClassVar[int] = 64
 
     @classmethod
     def documents(
         cls, source: RecordSource, name: str, version: str, *, token: str | None = None
     ) -> dict[str, Any] | None:
         """The documents by URL, or None when a required one is missing (the registry does not hold the name)."""
-        from cordon_scanner.intel.registries.registry_client import RegistryClient
-        from cordon_scanner.intel.registries.registry_http import RegistryHttp
-        from cordon_scanner.intel.registries.registry_request import PackageNotFound
-
         wanted = source.documents(name, version)
         if len(wanted) > cls.MAX_DOCUMENTS:
             raise ValueError(f"a record is read from at most {cls.MAX_DOCUMENTS} documents")
         found: dict[str, Any] = {}
+        if not cls._fetch_into(wanted, found, token):
+            return None
+        more = source.followed(name, version, found)
+        if len(more) > cls.MAX_FOLLOWED:
+            raise ValueError(f"a record follows at most {cls.MAX_FOLLOWED} documents")
+        if more and not cls._fetch_into(more, found, token):
+            return None
+        return found
+
+    @staticmethod
+    def _fetch_into(wanted: tuple[Document, ...], found: dict[str, Any], token: str | None) -> bool:
+        """Fetch each document into `found`; False when a required one is missing."""
+        from cordon_scanner.intel.registries.registry_client import RegistryClient
+        from cordon_scanner.intel.registries.registry_http import RegistryHttp
+        from cordon_scanner.intel.registries.registry_request import PackageNotFound
+
         for document in wanted:
             if document.needs_token and not token:
                 found[document.url] = None
                 continue
             try:
-                found[document.url] = (
-                    RegistryClient._fetch(document.url)
-                    if document.kind == "json"
-                    else RegistryHttp.text(document.url)
-                )
+                if token and urllib.parse.urlsplit(document.url).hostname == GIT_HOST_API:
+                    # The user's own token goes to the host's API and to no other host, and only as the Authorization header.
+                    body = RegistryHttp.get(
+                        document.url,
+                        accept="application/vnd.github+json",
+                        headers={
+                            "Authorization": f"Bearer {token}",
+                            "X-GitHub-Api-Version": "2022-11-28",
+                        },
+                    )
+                    found[document.url] = (
+                        json.loads(body)
+                        if document.kind == "json"
+                        else body.decode("utf-8", "replace")
+                    )
+                else:
+                    found[document.url] = (
+                        RegistryClient._fetch(document.url)
+                        if document.kind == "json"
+                        else RegistryHttp.text(document.url)
+                    )
             except PackageNotFound:
                 if document.required:
-                    return None
+                    return False
                 found[document.url] = None
-        return found
+            except RegistryError as exc:
+                if not RATE_LIMITED.search(str(exc)):
+                    raise
+                # A host that limits requests per address (the git host's API, 60 an hour without a token): a page past the first
+                # that is refused is missing and the record is made of the pages fetched; a document the record cannot do without
+                # is a refusal the caller names, never a record made of less.
+                if document.required:
+                    raise RateLimited(
+                        f"rate limited by {urllib.parse.urlsplit(document.url).hostname}: set CORDON_GITHUB_TOKEN"
+                    ) from exc
+                found[document.url] = None
+        return True

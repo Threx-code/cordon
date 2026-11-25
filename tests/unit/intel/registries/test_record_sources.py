@@ -168,7 +168,9 @@ class TestTheTable:
 
     def test_every_source_asks_https_documents_and_says_what_its_publisher_is(self) -> None:
         for source in RecordSources.SOURCES:
-            documents = source.documents("example", "1.0.0")
+            # A package that is a repository is named `owner/repo`; every other registry names one word.
+            name = "owner/example" if getattr(source, "SEGMENTS", (1, 1))[0] > 1 else "example"
+            documents = source.documents(name, "1.0.0")
             assert documents and all(d.url.startswith("https://") for d in documents), (
                 source.ecosystem
             )
@@ -199,3 +201,119 @@ class TestTheTable:
         assert record.publisher_kind == "account"
         pypi = RecordSources.of("pypi")
         assert pypi is not None and pypi.publisher_kind == "namespace"
+
+
+class TestTheTokenGoesToOneHostOnly:
+    def test_the_authorization_header_is_sent_to_the_hosts_api_and_to_no_other_host(
+        self, monkeypatch
+    ) -> None:
+        from cordon_scanner.intel.registries.registry_http import RegistryHttp
+
+        sent: list[tuple[str, dict[str, str]]] = []
+
+        def get(url: str, *, accept: str = "application/json", headers=None) -> bytes:
+            sent.append((url, dict(headers or {})))
+            return b"{}"
+
+        monkeypatch.setattr(RegistryHttp, "get", staticmethod(get))
+        monkeypatch.setattr(registry_client.RegistryClient, "_fetch", staticmethod(lambda url: {}))
+        documents = (
+            Document("https://api.github.com/repos/o/r/commits", required=False),
+            Document("https://registry.example.invalid/x.json", required=False),
+        )
+        found: dict[str, Any] = {}
+        assert RecordFetch._fetch_into(documents, found, "secret-token")
+        assert [url for url, headers in sent if "Authorization" in headers] == [documents[0].url]
+        assert all(
+            "secret-token" not in "".join(headers.values())
+            for url, headers in sent
+            if "github" not in url
+        )
+
+    def test_without_a_token_nothing_is_sent_to_the_api_with_one(self, monkeypatch) -> None:
+        from cordon_scanner.intel.registries.registry_http import RegistryHttp
+
+        seen: list[dict[str, str]] = []
+        monkeypatch.setattr(
+            RegistryHttp,
+            "get",
+            staticmethod(
+                lambda url, *, accept="x", headers=None: seen.append(headers or {}) or b"{}"
+            ),
+        )
+        monkeypatch.setattr(registry_client.RegistryClient, "_fetch", staticmethod(lambda url: {}))
+        RecordFetch._fetch_into((Document("https://api.github.com/x", required=False),), {}, None)
+        assert seen == []
+
+
+class TestANewCommitterIsNotANewPublisher:
+    def record(self, kind: str) -> RegistryRecord:
+        return RegistryRecord(
+            ecosystem="toy",
+            name="pkg",
+            version="2.0.0",
+            published="2026-01-02T00:00:00",
+            created="2025-01-01T00:00:00",
+            prior_versions=3,
+            publisher="merge-bot",
+            prior_publishers=("alice",),
+            publisher_kind=kind,
+        )
+
+    def test_a_publisher_the_registry_names_who_is_new_is_a_signal(self) -> None:
+        assert self.record("account").facts()["reg_new_publisher"] == 1.0
+
+    def test_a_committer_who_is_new_is_not(self) -> None:
+        assert self.record("committer").facts()["reg_new_publisher"] == 0.0
+
+    def test_a_record_stored_before_the_kind_existed_keeps_the_signal(self) -> None:
+        assert self.record("").facts()["reg_new_publisher"] == 1.0
+
+
+class TestARateLimitedHost:
+    def limited(self, monkeypatch, *, ok: set[str]) -> None:
+        from cordon_scanner.intel.registries.registry_request import RegistryError
+
+        def fetch(url: str) -> Any:
+            if url in ok:
+                return {"fine": True}
+            raise RegistryError("HTTP 403 from api.github.com")
+
+        from cordon_scanner.intel.registries.registry_http import RegistryHttp
+
+        def text(url: str) -> str:
+            raise RegistryError("HTTP 403 from registry.example.invalid")
+
+        monkeypatch.setattr(registry_client.RegistryClient, "_fetch", staticmethod(fetch))
+        monkeypatch.setattr(RegistryHttp, "text", staticmethod(text))
+
+    def test_a_page_past_the_first_that_is_refused_is_missing_and_the_record_goes_on(
+        self, monkeypatch
+    ) -> None:
+        self.limited(monkeypatch, ok={"https://registry.example.invalid/pkg.json"})
+        got = RecordFetch.documents(Toy(), "pkg", "1.0.0")
+        assert got is not None
+        assert got["https://registry.example.invalid/pkg.json"] == {"fine": True}
+        assert got["https://registry.example.invalid/pkg/notes.txt"] is None
+
+    def test_a_required_document_refused_for_rate_is_named_and_makes_no_record(
+        self, monkeypatch
+    ) -> None:
+        from cordon_scanner.intel.registries.record_sources.base import RateLimited
+        from cordon_scanner.intel.registries.registry_request import RegistryError
+
+        self.limited(monkeypatch, ok=set())
+        with pytest.raises(RateLimited, match="set CORDON_GITHUB_TOKEN") as raised:
+            RecordFetch.documents(Toy(), "pkg", "1.0.0", token="secret-token")
+        assert isinstance(raised.value, RegistryError) and "secret-token" not in str(raised.value)
+
+    def test_any_other_failure_is_not_taken_for_a_rate_limit(self, monkeypatch) -> None:
+        from cordon_scanner.intel.registries.registry_request import RegistryError
+
+        monkeypatch.setattr(
+            registry_client.RegistryClient,
+            "_fetch",
+            staticmethod(lambda url: (_ for _ in ()).throw(RegistryError("HTTP 500 from example"))),
+        )
+        with pytest.raises(RegistryError, match="HTTP 500"):
+            RecordFetch.documents(Toy(), "pkg", "1.0.0")

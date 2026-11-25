@@ -129,9 +129,9 @@ class OsvImport:
     DATADOG_SUPPLEMENTED: ClassVar[frozenset[str]] = frozenset({"npm", "pypi", "vscode"})
     """Ecosystems whose OSV export is supplemented by DataDog's malicious-package dataset."""
     NAMED_BY_URL: ClassVar[frozenset[str]] = frozenset({"swift"})
+    """Ecosystems whose OSV package name is a repository URL, keyed here as `owner/name`."""
     NAME_PREFIX: ClassVar[dict[str, str]] = {"image": "bitnami/"}
     """Ecosystems whose OSV package is one publisher's: Bitnami's `nginx` is the image `bitnami/nginx`."""
-    """Ecosystems whose OSV package name is a repository URL, keyed here as `owner/name`."""
 
     @staticmethod
     def _download(url: str, dest: Path, limit: int = MAX_DOWNLOAD_BYTES) -> None:

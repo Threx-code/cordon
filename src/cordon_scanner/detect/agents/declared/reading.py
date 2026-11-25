@@ -109,7 +109,7 @@ class DeclaredCapabilities:
             name = path.rsplit("/", 1)[-1]
             if name == "SKILL.md":
                 found |= cls.of_skill(text)
-            elif name.endswith(".json") or name.endswith((".toml", ".yaml", ".yml")):
+            elif name.endswith((".json", ".toml", ".yaml", ".yml")):
                 found |= cls.of_config(path, text)
             found |= cls.of_code(path, text)
         return frozenset(found)

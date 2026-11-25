@@ -1,0 +1,36 @@
+{
+ "authors": "Akinori MUSHA",
+ "bug_tracker_uri": null,
+ "changelog_uri": null,
+ "dependencies": {
+  "development": [],
+  "runtime": []
+ },
+ "documentation_uri": null,
+ "downloads": 34983368,
+ "funding_uri": null,
+ "gem_uri": "https://rubygems.org/gems/abbrev-0.1.2.gem",
+ "homepage_uri": "https://github.com/ruby/abbrev",
+ "info": "Calculates a set of unique abbreviations for a given set of strings",
+ "licenses": [
+  "Ruby",
+  "BSD-2-Clause"
+ ],
+ "mailing_list_uri": null,
+ "metadata": {
+  "homepage_uri": "https://github.com/ruby/abbrev",
+  "source_code_uri": "https://github.com/ruby/abbrev"
+ },
+ "name": "abbrev",
+ "platform": "ruby",
+ "project_uri": "https://rubygems.org/gems/abbrev",
+ "ruby_abi": null,
+ "sha": "ad1b4eaaaed4cb722d5684d63949e4bde1d34f2a95e20db93aecfe7cbac74242",
+ "source_code_uri": "https://github.com/ruby/abbrev",
+ "spec_sha": "54a9cea40f1d05afb17582a0ebf463213928ed9a0785bac42e59f0e0998de088",
+ "version": "0.1.2",
+ "version_created_at": "2023-12-16T05:04:20.426Z",
+ "version_downloads": 34258792,
+ "wiki_uri": null,
+ "yanked": false
+}

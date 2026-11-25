@@ -753,6 +753,8 @@ Providers and their pinned hashes. Ecosystem id `terraform`.
 │                 names                                                      │
 │ WITH --online   registry: withdrawn releases, version distance, hash       │
 │                 agreement                                                  │
+│                 provenance: whether a build attestation exists, and        │
+│                 verifies                                                   │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 

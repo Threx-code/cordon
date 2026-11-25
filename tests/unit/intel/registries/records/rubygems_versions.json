@@ -1,0 +1,77 @@
+[
+ {
+  "authors": "Akinori MUSHA",
+  "built_at": "2023-12-16T00:00:00.000Z",
+  "created_at": "2023-12-16T05:04:20.426Z",
+  "description": "Calculates a set of unique abbreviations for a given set of strings",
+  "downloads_count": 34258792,
+  "licenses": [
+   "Ruby",
+   "BSD-2-Clause"
+  ],
+  "metadata": {
+   "homepage_uri": "https://github.com/ruby/abbrev",
+   "source_code_uri": "https://github.com/ruby/abbrev"
+  },
+  "number": "0.1.2",
+  "platform": "ruby",
+  "prerelease": false,
+  "requirements": [],
+  "ruby_abi": null,
+  "ruby_version": ">= 2.3.0",
+  "rubygems_version": ">= 0",
+  "sha": "ad1b4eaaaed4cb722d5684d63949e4bde1d34f2a95e20db93aecfe7cbac74242",
+  "spec_sha": "54a9cea40f1d05afb17582a0ebf463213928ed9a0785bac42e59f0e0998de088",
+  "summary": "Calculates a set of unique abbreviations for a given set of strings"
+ },
+ {
+  "authors": "Akinori MUSHA",
+  "built_at": "2022-12-14T00:00:00.000Z",
+  "created_at": "2022-12-14T07:38:29.503Z",
+  "description": "Calculates a set of unique abbreviations for a given set of strings",
+  "downloads_count": 354576,
+  "licenses": [
+   "Ruby",
+   "BSD-2-Clause"
+  ],
+  "metadata": {
+   "homepage_uri": "https://github.com/ruby/abbrev",
+   "source_code_uri": "https://github.com/ruby/abbrev"
+  },
+  "number": "0.1.1",
+  "platform": "ruby",
+  "prerelease": false,
+  "requirements": [],
+  "ruby_abi": null,
+  "ruby_version": ">= 2.3.0",
+  "rubygems_version": ">= 0",
+  "sha": "3724b0d5420f4b26d31795ba28e1ffc58608c37d07a6cb283b548dc0e8b98300",
+  "spec_sha": "16125df5f4834690c9fa0b877bb97c9a8dc1c28d20fc10a434daea5f213e31b7",
+  "summary": "Calculates a set of unique abbreviations for a given set of strings"
+ },
+ {
+  "authors": "Akinori MUSHA",
+  "built_at": "2020-09-18T00:00:00.000Z",
+  "created_at": "2020-09-18T10:23:36.306Z",
+  "description": "Calculates a set of unique abbreviations for a given set of strings",
+  "downloads_count": 369827,
+  "licenses": [
+   "Ruby",
+   "BSD-2-Clause"
+  ],
+  "metadata": {
+   "homepage_uri": "https://github.com/ruby/abbrev",
+   "source_code_uri": "https://github.com/ruby/abbrev"
+  },
+  "number": "0.1.0",
+  "platform": "ruby",
+  "prerelease": false,
+  "requirements": [],
+  "ruby_abi": null,
+  "ruby_version": ">= 2.3.0",
+  "rubygems_version": ">= 0",
+  "sha": "6dd2980cc3fbff5950a63a46f9e5771a2a0235de18cb1f82b5ba0657777125e0",
+  "spec_sha": "65158251fd1caee3e521fd5c5c9a8e7161296e6a5a064a896dff392b36034eff",
+  "summary": "Calculates a set of unique abbreviations for a given set of strings"
+ }
+]

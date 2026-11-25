@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from typing import Any, ClassVar
 
 import pytest
 
@@ -20,7 +21,7 @@ class Fixture:
 
 
 class TestEachCapabilityIsFoundWhereItIsDeclared:
-    CONFIG = {
+    CONFIG: ClassVar[dict[str, dict[str, Any]]] = {
         "network": {"url": "https://tools.example.com/mcp"},
         "shell": {"command": "bash", "args": ["-c", "run-tool"]},
         "filesystem": {
@@ -29,19 +30,19 @@ class TestEachCapabilityIsFoundWhereItIsDeclared:
         },
         "environment": {"command": "node", "args": ["server.js"], "env": {"API_REGION": "eu"}},
     }
-    PYTHON = {
+    PYTHON: ClassVar[dict[str, str]] = {
         "network": "import requests\nrequests.get(url)\n",
         "shell": "import subprocess\nsubprocess.run(['ls'])\n",
         "filesystem": "with open(path) as handle:\n    data = handle.read()\n",
         "environment": "import os\ntoken = os.environ['TOKEN']\n",
     }
-    JAVASCRIPT = {
+    JAVASCRIPT: ClassVar[dict[str, str]] = {
         "network": "const r = await fetch(url);\n",
         "shell": "const cp = require('child_process');\ncp.execSync('ls');\n",
         "filesystem": "import { readFileSync } from 'fs';\nreadFileSync(p);\n",
         "environment": "const key = process.env.API_KEY;\n",
     }
-    SKILL = {
+    SKILL: ClassVar[dict[str, str]] = {
         "network": "---\nname: s\ndescription: d\nallowed-tools: WebFetch\n---\nBody\n",
         "shell": "---\nname: s\ndescription: d\nallowed-tools: Bash(git status:*), Read\n---\nBody\n",
         "filesystem": "---\nname: s\ndescription: d\nallowed-tools: [Read, Edit]\n---\nBody\n",

@@ -767,6 +767,7 @@ class ParallelScanner:
         from cordon_scanner.engine.isolation.analysis_facts import (
             CampaignFacts,
             CapabilityNames,
+            ExecutableFacts,
             WorkerAnalysis,
             WorkerSummaries,
         )
@@ -775,6 +776,7 @@ class ParallelScanner:
         WorkerSummaries.produce(unit)
         CapabilityNames.produce(unit)
         CampaignFacts.produce(unit, ctx)
+        ExecutableFacts.produce(unit)
         return produced, windowed, intact, (acc.complete, tuple(acc.content_gaps))
 
     @staticmethod

@@ -78,9 +78,9 @@ class Accumulator:
     """False once a package has more members than `MAX_CAMPAIGN_PATHS`: its layout facet is then not computed."""
     campaign_manifest: tuple[str, str] | None = None
     """`(ecosystem, path)` of the package's root manifest; its facets come from the worker that read it."""
-    executables: dict[str, dict[str, Any]] = field(default_factory=dict)
-    """The record of each native executable scanned (`ExecutableRecord`), by the file's digest: one per distinct file, at most
-    `MAX_BINARIES`. Read by the facts export (`package.executables`)."""
+    native_paths: dict[str, str] = field(default_factory=dict)
+    """Each native file's digest by its path, at most `MAX_BINARIES` of them: where its executable record (`executable.record`,
+    read in the worker, never here) is found among the facts."""
     tool_lists: list[list[dict[str, Any]]] = field(default_factory=list)
     """Each JSON file that declares a whole MCP tool list (`DeclaredTools`), for the facts export (`package.tool_list`)."""
     files_skipped: int = 0
@@ -277,16 +277,8 @@ class Accumulator:
                 self.binaries.add(content.sha256)
             elif content.sha256 not in self.binaries:
                 self.binaries_complete = False
-            if content.sha256 not in self.executables and len(self.executables) < self.MAX_BINARIES:
-                from cordon_scanner.detect.registry import ExecutableRecord
-
-                record = ExecutableRecord.of(
-                    content.raw,
-                    whole=not content.truncated,
-                    reason="truncated" if content.truncated else None,
-                )
-                if record is not None:
-                    self.executables[content.sha256] = record
+            if path not in self.native_paths and len(self.native_paths) < self.MAX_BINARIES:
+                self.native_paths[path] = content.sha256
         if self.reuse_keys:
             self._reuse(path, content, opens)
             self._campaign(path)
@@ -382,6 +374,18 @@ class Accumulator:
         elif key not in into:
             self.reuse_complete = False
 
+    def executable_records(self) -> tuple[dict[str, Any], ...]:
+        """The record of each native executable, from its worker's `executable.record` fact (the parent reads no executable): one per
+        distinct file by its digest, at most `MAX_BINARIES`, in digest order."""
+        import json
+
+        found: dict[str, dict[str, Any]] = {}
+        for path, digest in sorted(self.native_paths.items()):
+            for text in self.facts.get(path, {}).get("executable.record", ()):
+                if digest not in found and len(found) < self.MAX_BINARIES:
+                    found[digest] = json.loads(text)
+        return tuple(found[k] for k in sorted(found))
+
     def tool_list(self) -> tuple[dict[str, Any], ...] | None:
         """The one tool list the package declares as data, or None when there is none or more than one."""
         return tuple(self.tool_lists[0]) if len(self.tool_lists) == 1 else None
@@ -396,7 +400,7 @@ class Accumulator:
             "instruction_files": self.instruction_files,
             "binaries": tuple(sorted(self.binaries)),
             "binaries_complete": self.binaries_complete,
-            "executables": tuple(self.executables[k] for k in sorted(self.executables)),
+            "executables": self.executable_records(),
             "tool_list": self.tool_list(),
             "reuse_code": tuple(sorted(self.reuse_code)) if self.reuse_keys else None,
             "reuse_hooks": tuple(sorted(self.reuse_hooks)) if self.reuse_keys else None,

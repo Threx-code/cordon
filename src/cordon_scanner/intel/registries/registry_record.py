@@ -41,7 +41,7 @@ from cordon_scanner.foundation.files.atomic import AtomicFile
 STORE_VERSION: Final = 1
 ECOSYSTEMS: Final = frozenset(
     {
-        "npm", "pypi",
+        "npm", "pypi", "cargo", "rubygems", "hex", "pub",
         "bazel", "julia", "vcpkg", "opam", "conan", "homebrew", "actions", "swift", "nix",
     }
 )  # fmt: skip
@@ -259,8 +259,13 @@ class RegistryRecord:
         published = self._when(self.published)
         created = self._when(self.created)
         age_days = (published - created).total_seconds() / 86400 if published and created else 0.0
+        # Only where `publisher` names who published the release: a git-hosted registry's committer is whoever merged it (often a
+        # bot), and a change of committer says nothing about a change of publisher.
         new_publisher = bool(
-            self.publisher and self.prior_publishers and self.publisher not in self.prior_publishers
+            self.publisher_kind in ("", "account", "namespace")
+            and self.publisher
+            and self.prior_publishers
+            and self.publisher not in self.prior_publishers
         )
         return {
             "reg_known": 1.0,
@@ -333,26 +338,6 @@ class RegistryRecord:
         # Staged under its own name, never a shared `.tmp` (`AtomicFile`).
         AtomicFile.write(path, json.dumps(self.to_dict(), sort_keys=True))
         return path
-
-    # -- acquiring (network; `intel acquire` only) --------------------------------------
-
-    @classmethod
-    def acquire(
-        cls, ecosystem: str, name: str, version: str, *, token: str | None = None
-    ) -> RegistryRecord | None:
-        """Fetch the name's registry documents and keep the record as of `version`. Network. Every ecosystem is read through
-        its `RecordSource` (`record_sources/`): the same fetch, the same builder, the same store."""
-        from cordon_scanner.intel.registries.record_sources.base import RecordFetch
-        from cordon_scanner.intel.registries.record_sources.table import RecordSources
-
-        source = RecordSources.of(ecosystem)
-        if source is None:
-            return None
-        documents = RecordFetch.documents(source, name, version, token=token)
-        record = source.record(name, version, documents) if documents is not None else None
-        if record is not None:
-            record.save()
-        return record
 
 
 __all__ = ["ECOSYSTEMS", "INSTALL_HOOKS", "STORE_VERSION", "RegistryRecord"]
