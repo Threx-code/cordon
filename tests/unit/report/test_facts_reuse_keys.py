@@ -62,3 +62,93 @@ class TestAScanAskedForReuseKeys:
 class TestAnOrdinaryScan:
     def test_its_facts_record_carries_no_reuse_block(self, tmp_path):
         assert "reuse" not in Package.facts(Package.tree(tmp_path), reuse=False)["package"]
+
+
+class Collect:
+    @staticmethod
+    def accumulator():
+        from cordon_scanner.engine.pipeline.accumulator import Accumulator
+
+        return Accumulator(reuse_keys=True)
+
+    @staticmethod
+    def truncated(path: str, raw: bytes):
+        from dataclasses import replace
+
+        from cordon_scanner.foundation.content import FileContent
+        from cordon_scanner.foundation.limits import DEFAULT_LIMITS
+
+        small = replace(DEFAULT_LIMITS, max_file_bytes=64, max_stream_bytes=64)
+        content = FileContent.from_bytes(path, raw, small)
+        assert content.truncated and content.streamed is None
+        return content
+
+
+class TestTheKeysAreTheDetectorsForEveryKindOfFile:
+    def test_an_archive_members_key_is_its_whole_files_fingerprint(self, tmp_path):
+        import io
+        import tarfile
+
+        archive = tmp_path / "demo-1.0.0.tgz"
+        with tarfile.open(archive, "w:gz") as tar:
+            for name, data in (
+                (
+                    "package/package.json",
+                    json.dumps(
+                        {"name": "demo", "version": "1.0.0", "scripts": {"postinstall": HOOK}}
+                    ).encode(),
+                ),
+                ("package/index.js", CODE),
+            ):
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+        reuse = Package.facts(archive, reuse=True)["package"]["reuse"]
+        assert reuse["code"] == [ReuseIndex.fingerprint(CODE).hex()] and reuse["hook"] == [
+            HookShape.key(HOOK).hex()
+        ]
+
+    def test_a_file_held_only_in_part_is_keyed_from_its_file_on_disk_as_the_detector_does(
+        self, tmp_path
+    ):
+        whole = CODE * 20
+        on_disk = tmp_path / "big.js"
+        on_disk.write_bytes(whole)
+        acc = Collect.accumulator()
+        acc.scanned("big.js", Collect.truncated("big.js", whole), opens=str(on_disk))
+        assert acc.reuse_code == {ReuseIndex.fingerprint(whole).hex()} and acc.reuse_complete
+
+    def test_a_file_held_only_in_part_with_nothing_on_disk_says_its_keys_are_a_part(self):
+        acc = Collect.accumulator()
+        acc.scanned("big.js", Collect.truncated("big.js", CODE * 20))
+        assert acc.reuse_code == set() and acc.reuse_complete is False
+
+    def test_past_the_bound_the_keys_stop_and_say_so(self, monkeypatch):
+        from cordon_scanner.engine.pipeline.accumulator import Accumulator
+        from cordon_scanner.foundation.content import FileContent
+
+        monkeypatch.setattr(Accumulator, "MAX_REUSE", 2)
+        acc = Collect.accumulator()
+        for i in range(3):
+            body = CODE + f"// variant {i}\n".encode()
+            acc.scanned(f"f{i}.js", FileContent.from_bytes(f"f{i}.js", body))
+        assert len(acc.reuse_code) == 2 and acc.reuse_complete is False
+
+    def test_a_manifest_that_cannot_be_read_says_its_hooks_are_unknown(self):
+        from cordon_scanner.foundation.content import FileContent
+
+        broken = b'{"name": "demo", "scripts": {"postinstall": "node install.js"'
+        acc = Collect.accumulator()
+        acc.scanned("package.json", FileContent.from_bytes("package.json", broken))
+        assert acc.reuse_hooks == set() and acc.reuse_complete is False
+
+    def test_a_manifest_past_its_bound_says_its_hooks_are_unknown(self):
+        from cordon_scanner.foundation.content import FileContent
+        from cordon_scanner.intel.malware.reuse_index import ReuseKeys
+
+        big = json.dumps(
+            {"scripts": {"postinstall": HOOK}, "pad": "x" * (ReuseKeys.MAX_MANIFEST + 10)}
+        ).encode()
+        acc = Collect.accumulator()
+        acc.scanned("package.json", FileContent.from_bytes("package.json", big))
+        assert acc.reuse_hooks == set() and acc.reuse_complete is False

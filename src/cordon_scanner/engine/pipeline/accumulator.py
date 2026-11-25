@@ -235,7 +235,9 @@ class Accumulator:
     MAX_BINARIES: ClassVar[int] = 4096
     MAX_REUSE: ClassVar[int] = 4096
 
-    def scanned(self, path: str, content: FileContent | None = None) -> None:
+    def scanned(
+        self, path: str, content: FileContent | None = None, opens: str | None = None
+    ) -> None:
         """One more file scanned, counted under its extension; past `MAX_EXTENSIONS` distinct ones, the rest count as `other`.
         With its content, a native file is also recorded by the digest of the whole file (`binaries`), and a JSON file
         that declares a whole tool list is kept (`tool_lists`)."""
@@ -261,26 +263,36 @@ class Accumulator:
             elif content.sha256 not in self.binaries:
                 self.binaries_complete = False
         if self.reuse_keys:
-            self._reuse(path, content)
+            self._reuse(path, content, opens)
         declared = DeclaredTools.of(path, content.raw) if not content.truncated else None
         if declared is not None:
             self.tool_lists.append(declared)
 
-    def _reuse(self, path: str, content: FileContent) -> None:
-        """The file's reuse keys, by the rule the code-reuse detector looks them up by (`ReuseKeys`)."""
+    def _reuse(self, path: str, content: FileContent, opens: str | None = None) -> None:
+        """The file's reuse keys, by the rule and from the bytes the code-reuse detector looks them up by (`ReuseKeys`):
+        the whole file, from what is held, its spill, or its file on disk (`opens`)."""
         from cordon_scanner.analysis.shared.languages import LanguageRegistry
         from cordon_scanner.foundation.formats.scanned_json import ScannedJson
         from cordon_scanner.intel.malware.reuse_index import ReuseIndex, ReuseKeys
 
         keys: list[bytes] = []
         if ReuseKeys.is_code(path, content.is_binary, LanguageRegistry.of_file(path, content)):
+            digest: bytes | None = None
             if not content.truncated:
                 digest = ReuseIndex.fingerprint(content.raw)
             elif content.streamed is not None:
                 digest = ReuseIndex.fingerprint(content.streamed)
             else:
-                self.reuse_complete = False
-                digest = None
+                source = content.spill.path if content.spill is not None else opens
+                if source is None:
+                    self.reuse_complete = (
+                        False  # the whole file is nowhere to be read: its key is unknown
+                    )
+                else:
+                    try:
+                        digest = ReuseKeys.fingerprint_file(source)
+                    except OSError:
+                        self.reuse_complete = False
             if digest is not None:
                 self._keep(self.reuse_code, digest.hex())
         if ReuseKeys.is_root_manifest(path):
@@ -290,6 +302,9 @@ class Accumulator:
             try:
                 manifest = ScannedJson.loads(content.raw)
             except (ValueError, RecursionError):
+                self.reuse_complete = (
+                    False  # unreadable here (malformed or too deep): its hooks are unknown
+                )
                 return
             keys = [key for _, key in ReuseKeys.hook_keys(manifest)]
         for key in keys:

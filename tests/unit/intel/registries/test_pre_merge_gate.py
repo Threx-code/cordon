@@ -77,10 +77,13 @@ class TestTheReasonCodes:
         change.malicious = ["MAL-2025-1"]
         change.vulnerable = [("GHSA-aaaa", "critical"), ("GHSA-bbbb", "low")]
         change.release = [
-            ("MALWARE.DROPPER.001", "critical", "downloads and runs"),
+            ("SUSPECT.A.001", "critical", "downloads and runs"),
             ("SUSPECT.X.001", "high", "odd"),
         ]
-        assert [code for code, _ in change.reasons()] == ["R100", "R404", "R400", "R401"]
+        change.categories = {"SUSPECT.A.001": "malicious"}
+        assert [code for code, _ in change.reasons()] == ["R100", "R404", "R400", "R401"], (
+            "by category, not name"
+        )
         assert PackageChange("added", "npm", "fine", None, "1.0.0").reasons() == []
 
     def test_each_reason_is_an_error_annotation_titled_with_its_code(self) -> None:
@@ -168,7 +171,25 @@ class TestThePullRequest:
         action = (Path(__file__).resolve().parents[4] / "action" / "action.yml").read_text(
             encoding="utf-8"
         )
-        assert (
-            "--annotations cordon-review.annotations" in action
-            and "cat cordon-review.annotations" in action
+        assert 'rm -f "$notes"' in action and '--annotations "$notes"' in action, "removed first"
+        assert '2> "$RUNNER_TEMP/cordon-review.err"' in action, "stderr never reaches the runner"
+        assert 'if [ "$code" -le 1 ]' in action, "only a finished review is printed"
+
+
+class TestTheCodesAndVersionsDecideReads:
+    def test_a_rule_with_its_own_code_keeps_it(self) -> None:
+        from cordon_scanner.decide.decision.reason_map import ReasonMap
+
+        rule = next(iter(ReasonMap.TABLE))
+        change = PackageChange("added", "npm", "x", None, "1.0.0")
+        change.release = [(rule, "high", "m")]
+        assert change.reasons()[0][0] == ReasonMap.TABLE[rule]
+
+    def test_an_unlocked_range_is_not_a_pinned_version(self) -> None:
+        from cordon_scanner.foundation.results import Dependency
+
+        ranged = Dependency(purl="pkg:npm/ms", ecosystem="npm", name="ms", declared_spec="^2.0.0")
+        action = Dependency(
+            purl="pkg:github/actions/checkout@v4", ecosystem="actions", name="actions/checkout"
         )
+        assert GraphDiff.pinned_at(ranged) is None and GraphDiff.pinned_at(action) == "v4"

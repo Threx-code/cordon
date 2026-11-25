@@ -13,8 +13,7 @@ prefix is held.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
-from pathlib import Path
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.detect.base import BaseDetector, DetectorRequirements, FileUnit, Unit
@@ -40,7 +39,6 @@ if TYPE_CHECKING:
     from cordon_scanner.intel.base import ReuseMatch
 
 REUSE_RULE = "MALWARE.CODE.REUSE.001"
-CHUNK = 1 << 20
 
 
 class CodeReuseDetector(BaseDetector):
@@ -141,15 +139,9 @@ class CodeReuseDetector(BaseDetector):
         if source is None:
             return None
         try:
-            return ReuseIndex.fingerprint_chunks(CodeReuseDetector._chunks(source))
+            return ReuseKeys.fingerprint_file(source)
         except OSError:
             return None
-
-    @staticmethod
-    def _chunks(path: str) -> Iterator[bytes]:
-        with Path(path).open("rb") as handle:
-            while chunk := handle.read(CHUNK):
-                yield chunk
 
     def _finding(
         self, unit: FileUnit, ctx: ScanContext, group: ReuseMatch, *, hook: str | None = None

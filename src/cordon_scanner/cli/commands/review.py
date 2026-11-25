@@ -75,6 +75,8 @@ class PackageChange:
     """`(rule id, severity, message)` from comparing the two releases, or scanning an added one."""
     compared: str = ""
     """Why the releases were or were not compared."""
+    categories: dict[str, str] = field(default_factory=dict)
+    """Each release finding's category by rule id, where the scan gave one (an added package's own scan)."""
 
     BLOCKING: ClassVar[frozenset[str]] = frozenset({"critical", "high"})
 
@@ -90,14 +92,23 @@ class PackageChange:
         """`(reason code, why)` for each thing that makes this change blocking, in the codes `decide()` gives: known
         malware R100, a known high or critical vulnerability R404, a changed release's malicious behaviour R400 or
         other blocking behaviour R401."""
-        out = [("R100", f"known malware {m}") for m in self.malicious]
+        out: list[tuple[str, str]] = [("R100", f"known malware {m}") for m in self.malicious]
         out += [("R404", f"{i} ({s})") for i, s in self.vulnerable if s in self.BLOCKING]
         out += [
-            ("R400" if rule.startswith("MALWARE.") else "R401", f"{rule} ({s}): {m}")
+            (self.code_of(rule), f"{rule} ({s}): {m}")
             for rule, s, m in self.release
             if s in self.BLOCKING
         ]
         return out
+
+    def code_of(self, rule: str) -> str:
+        """The code `decide()` gives a finding: the rule's own (`ReasonMap`), else R400 for a malicious finding, R401
+        for any other (a release comparison's changes carry no category, which `decide()` reads as R401 too)."""
+        from cordon_scanner.decide.decision.reason_map import ReasonMap
+
+        return ReasonMap.of(rule) or (
+            "R400" if self.categories.get(rule) == "malicious" else "R401"
+        )
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -164,12 +175,17 @@ class GraphDiff:
             .dependencies
         )
 
+    #: The kinds pinned by a ref rather than a resolved version: a workflow action and a container image.
+    PINNED_BY_REF: ClassVar[frozenset[str]] = frozenset({"actions", "image"})
+
     @staticmethod
     def pinned_at(dependency: Dependency) -> str | None:
         """What a dependency is pinned at: its version, else the ref it is declared at (an action's `@v4` or commit, an
         image's tag), so repinning an action or an image is a change the review sees."""
         if dependency.version:
             return dependency.version
+        if dependency.ecosystem not in GraphDiff.PINNED_BY_REF:
+            return None  # an unlocked range is not a version: it never enters the diff as one
         if dependency.declared_spec:
             return dependency.declared_spec
         tail = dependency.purl.rpartition("@")[2] if "@" in dependency.purl else ""
@@ -289,12 +305,16 @@ class ChangeReview:
                     new_path.write_bytes(newer.data)
                     new_result = Scanner(config).scan(new_path)
                     if change.old is None:
-                        change.release = [
-                            (f.rule_id, f.severity.name.lower(), f.message)
+                        kept = [
+                            f
                             for f in new_result.active
                             if f.severity.value >= Severity.MEDIUM.value
                             and f.category.value in ("malicious", "suspicious")
                         ][:10]
+                        change.release = [
+                            (f.rule_id, f.severity.name.lower(), f.message) for f in kept
+                        ]
+                        change.categories = {f.rule_id: f.category.value for f in kept}
                         change.compared = f"{change.name} {change.new} scanned from {change.ecosystem}, digest verified"
                         continue
                     older = RegistryClient.package_archive(
