@@ -34,6 +34,8 @@ from cordon_scanner.cli.commands.agent import AgentCommand
 from cordon_scanner.cli.commands.baseline import BaselineCommand
 from cordon_scanner.cli.commands.bundle import BundleCommand
 from cordon_scanner.cli.commands.config import ConfigCommand
+from cordon_scanner.cli.commands.decision.decide import DecideCommand
+from cordon_scanner.cli.commands.decision.pr_comment import PrCommentCommand
 from cordon_scanner.cli.commands.guard import GuardCommand
 from cordon_scanner.cli.commands.intel import IntelCommand
 from cordon_scanner.cli.commands.inventory import InventoryCommand
@@ -104,14 +106,12 @@ class CommandLine:
         from cordon_scanner.cli.commands.suppressions import SuppressCommand
         from cordon_scanner.engine.netguard import NetworkGuard
 
-        # Before anything can connect: with CORDON_PUBLIC_NETWORK_ONLY set, no name this process
-        # resolves may lead inside the network (`core.netguard`).
+        # Before anything connects: with CORDON_PUBLIC_NETWORK_ONLY set, no name may lead inside (netguard).
         NetworkGuard.install_if_enabled()
         arguments = list(sys.argv[1:] if argv is None else argv)
         handed = cls._front_end(arguments)
         if handed is not None:
             return handed
-
         parser = CommandParser.build()
         args = parser.parse_args(argv)
 
@@ -133,6 +133,8 @@ class CommandLine:
             "baseline": BaselineCommand.run,
             "bundle": BundleCommand.run,
             "policy": PolicyCommand.run,
+            "decide": DecideCommand.run,
+            "pr-comment": PrCommentCommand.run,
             "report": ReportCommand.run,
             "advisories": AdvisoriesCommand.run,
             "intel": IntelCommand.run,

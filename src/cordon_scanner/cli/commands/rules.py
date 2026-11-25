@@ -27,6 +27,9 @@ class RulesCommand:
         rules_sub = rules_cmd.add_subparsers(dest="rules_command", metavar="<action>")
         rules_sub.add_parser("list", help="list every loaded rule")
         rules_sub.add_parser("test", help="run every rule's declared samples")
+        rules_sub.add_parser(
+            "learned", help="the learned detectors of the installed bundle, read offline"
+        )
         diff = rules_sub.add_parser(
             "diff", help="compare rule packs and report removal or weakening"
         )
@@ -47,6 +50,14 @@ class RulesCommand:
         from cordon_scanner.engine.registry import Registry
         from cordon_scanner.foundation.config.resolver import ConfigResolver
         from cordon_scanner.rules.loader import RuleLoader, RuleSet
+
+        if args.rules_command == "learned":
+            from datetime import date
+
+            from cordon_scanner.rules.learned_view import LearnedView
+
+            print("\n".join(LearnedView.lines(date.today())))
+            return int(ExitCode.CLEAN)
 
         packs = RuleLoader.load_builtin()
         rule_set = RuleSet(packs)

@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from typing import Any, ClassVar
 
+from bench.cdi.factstore import FactStore
 from bench.cdi.gate import Gate
 
 
@@ -40,9 +41,23 @@ class PreTest:
         legit_units: int,
         milliseconds: float,
         budget_ms: float,
+        store: FactStore | None = None,
+        reads: Collection[str] = (),
+        term_version: str = "",
     ) -> dict[str, Any]:
-        """`{"decision": "proceed" | "drop", "reasons": [...], numbers...}` for one candidate in one ecosystem."""
+        """`{"decision": "proceed" | "drop" | "refused", "reasons": [...], numbers...}` for one candidate in one ecosystem.
+
+        With the `store` the numbers were measured on, a candidate that reads a fact the store lacks, or terms of another
+        version, is refused before any number is read: it stops here with the reason."""
         out_of_family = sorted(set(families_caught) - {own_family})
+        if store is not None and (why := store.refuses(reads, term_version)) is not None:
+            return {
+                "candidate": candidate,
+                "ecosystem": ecosystem,
+                "decision": "refused",
+                "reasons": [why],
+                "families_out_of_family": out_of_family,
+            }
         _, upper = Gate.wilson(legit_hits, legit_units)
         reasons = []
         if len(out_of_family) < cls.MIN_FAMILIES:

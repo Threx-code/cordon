@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable, MutableMapping
+from collections.abc import Callable, Collection, MutableMapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -53,6 +53,18 @@ class FactStore:
                 self.made.append((digest, reader.name))
             out[reader.name] = json.loads(found)
         return out
+
+    def refuses(self, reads: Collection[str], term_version: str) -> str | None:
+        """Why a candidate may not be measured against this store, or None.
+
+        A candidate that reads a fact no reader of this store makes, or reads terms of another version than the store was
+        made under, would be tested on facts that do not hold what it reads: it is refused, never read as absent."""
+        new = sorted(set(reads) - {reader.name for reader in self.readers})
+        if new:
+            return f"the candidate reads facts this store does not have: {', '.join(new)}; rebuild the store at the candidate's head"
+        if term_version != self.term_version:
+            return f"the candidate reads terms of version {term_version}, the store holds {self.term_version}; rebuild the store"
+        return None
 
 
 __all__ = ["FactStore", "Reader"]

@@ -289,6 +289,10 @@ class LocalStore:
             sent += 1
         return Drained(sent, len(self._outbox()))
 
+    def discard(self, item: Pending) -> None:
+        """Remove one waiting upload: a newer one replaces it."""
+        self._path_of(item).unlink(missing_ok=True)
+
     def refused(self) -> int:
         """How many uploads were refused because the outbox was full."""
         try:

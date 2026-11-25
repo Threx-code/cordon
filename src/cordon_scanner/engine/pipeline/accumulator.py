@@ -64,6 +64,9 @@ class Accumulator:
     binaries_complete: bool = True
     """False when a native file could not be hashed whole (a truncated one with no digest of its whole) or there were
     more than `MAX_BINARIES`: the list is then a part, and says so."""
+    executables: dict[str, dict[str, Any]] = field(default_factory=dict)
+    """The record of each native executable scanned (`ExecutableRecord`), by the file's digest: one per distinct file, at most
+    `MAX_BINARIES`. Read by the facts export (`package.executables`)."""
     tool_lists: list[list[dict[str, Any]]] = field(default_factory=list)
     """Each JSON file that declares a whole MCP tool list (`DeclaredTools`), for the facts export (`package.tool_list`)."""
     files_skipped: int = 0
@@ -251,6 +254,16 @@ class Accumulator:
                 self.binaries.add(content.sha256)
             elif content.sha256 not in self.binaries:
                 self.binaries_complete = False
+            if content.sha256 not in self.executables and len(self.executables) < self.MAX_BINARIES:
+                from cordon_scanner.detect.registry import ExecutableRecord
+
+                record = ExecutableRecord.of(
+                    content.raw,
+                    whole=not content.truncated,
+                    reason="truncated" if content.truncated else None,
+                )
+                if record is not None:
+                    self.executables[content.sha256] = record
         declared = DeclaredTools.of(path, content.raw) if not content.truncated else None
         if declared is not None:
             self.tool_lists.append(declared)
@@ -269,6 +282,7 @@ class Accumulator:
             "instruction_files": self.instruction_files,
             "binaries": tuple(sorted(self.binaries)),
             "binaries_complete": self.binaries_complete,
+            "executables": tuple(self.executables[k] for k in sorted(self.executables)),
             "tool_list": self.tool_list(),
         }
 

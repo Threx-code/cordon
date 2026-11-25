@@ -654,6 +654,17 @@ jobs:
           fi
           head -8 notes.md
 
+      - name: Write the sums and a statement for each artefact
+        # `SHA256SUMS` and one in-toto statement per wheel, sdist and vsix, attached beside them, so a downloader
+        # checks the bytes with `scripts/release/verify_artifacts.py` on the release's files. The signature on the
+        # artefacts is the build-provenance attestation, checked live (`gh attestation verify`).
+        run: |
+          set -euo pipefail
+          python3 scripts/release/write_release_records.py artefacts/records \
+            artefacts/dist/*.whl artefacts/dist/*.tar.gz artefacts/*.vsix \
+            --repo "$GITHUB_REPOSITORY" --commit "$GITHUB_SHA" \
+            --run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
       - name: Publish it
         # The wheel and sdist are attached as well as being on PyPI: a release
         # page that carries the artefacts is what a signature is verified
@@ -666,11 +677,12 @@ jobs:
             --title "$GITHUB_REF_NAME" \
             --notes-file notes.md \
             --verify-tag \
-            artefacts/dist/* artefacts/*.vsix \
+            artefacts/dist/* artefacts/*.vsix artefacts/records/* \
             || {
               # A re-run: the page exists. The .vsix this run built and attested replaces the earlier one, so the file on
-              # the page is always the one whose provenance names this run.
+              # the page is always the one whose provenance names this run; its sums and statement are replaced with it.
               gh release upload "$GITHUB_REF_NAME" artefacts/*.vsix --clobber
+              gh release upload "$GITHUB_REF_NAME" artefacts/records/* --clobber
               gh release edit "$GITHUB_REF_NAME" --notes-file notes.md
             }
 

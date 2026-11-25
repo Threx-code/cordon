@@ -63,3 +63,55 @@ class TestFactsAreKeptByWhatMadeThem:
         store.facts("unit-0", b"a")
         store.facts("unit-1", b"a")
         assert len(store.made) == 6
+
+
+class TestACandidateReadingANewFactIsRefused:
+    def test_a_fact_the_store_has_is_admitted(self) -> None:
+        store = FactStore(Kit.readers(), "1")
+        assert store.refuses({"flows", "hooks"}, "1") is None
+
+    def test_a_fact_no_reader_of_the_store_makes_is_refused_and_named(self) -> None:
+        reason = FactStore(Kit.readers(), "1").refuses({"flows", "environment_gate"}, "1")
+        assert reason is not None and "environment_gate" in reason and "rebuild" in reason
+
+    def test_terms_of_another_version_are_refused(self) -> None:
+        reason = FactStore(Kit.readers(), "1").refuses({"flows"}, "2")
+        assert reason is not None and "version 2" in reason
+
+    def test_the_pre_test_stops_a_refused_candidate_with_the_reason(self) -> None:
+        from bench.cdi.pretest import PreTest
+
+        store = FactStore(Kit.readers(), "1")
+        out = PreTest.decide(
+            "cdi.code.env_gate",
+            "npm",
+            families_caught=["a", "b", "c", "d"],
+            own_family="z",
+            legit_hits=0,
+            legit_units=5000,
+            milliseconds=1.0,
+            budget_ms=10.0,
+            store=store,
+            reads={"flows", "environment_gate"},
+            term_version="1",
+        )
+        assert out["decision"] == "refused" and "environment_gate" in out["reasons"][0]
+        assert "legit" not in out
+
+    def test_a_candidate_the_store_admits_is_decided_on_its_numbers(self) -> None:
+        from bench.cdi.pretest import PreTest
+
+        out = PreTest.decide(
+            "cdi.x",
+            "npm",
+            families_caught=["a", "b", "c", "d"],
+            own_family="z",
+            legit_hits=0,
+            legit_units=5000,
+            milliseconds=1.0,
+            budget_ms=10.0,
+            store=FactStore(Kit.readers(), "1"),
+            reads={"flows"},
+            term_version="1",
+        )
+        assert out["decision"] == "proceed"

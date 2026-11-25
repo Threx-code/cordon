@@ -37,7 +37,7 @@ class AgentCalls:
     """Which of the four gated calls a hook input is."""
 
     INSTALL: ClassVar[re.Pattern[str]] = re.compile(
-        r"^\s*(?:(?:npm|pnpm|bun)\s+(?:install|i|add)|yarn\s+add|pip3?\s+install|uv\s+(?:pip\s+install|add))\s+(?P<spec>[^\s-][^\s]{0,200})"
+        r"^\s*(?:(?P<npm>(?:npm|pnpm|bun)\s+(?:install|i|add)|yarn\s+add)|(?P<pypi>pip3?\s+install|uv\s+(?:pip\s+install|add)))\s+(?P<spec>[^\s-][^\s]{0,200})"
     )
     MCP_ADD: ClassVar[re.Pattern[str]] = re.compile(
         r"^\s*claude\s+mcp\s+add\b(?P<rest>.{0,2000})$", re.S
@@ -68,7 +68,8 @@ class AgentCalls:
             return AgentCall("add_mcp", "mcp_server", added.group("rest").strip())
         installed = cls.INSTALL.match(text)
         if installed:
-            return AgentCall("install", "package", installed.group("spec"))
+            ecosystem = "npm" if installed.group("npm") else "pypi"
+            return AgentCall("install", "package", f"{ecosystem}:{installed.group('spec')}")
         return AgentCall("run_command", "command", text)
 
 
@@ -108,6 +109,27 @@ class ApprovalRequests:
 class AgentHook:
     """The answer a pre-tool hook gives its agent."""
 
+    @staticmethod
+    def _ask(
+        runtime: CordonRuntime,
+        call: AgentCall,
+        clock: datetime,
+        environment: str,
+        scope_path: tuple[str, ...],
+        *,
+        online: bool,
+    ) -> Outcome:
+        return runtime.run(
+            call.resolver,
+            call.reference,
+            POINT,
+            clock,
+            environment=environment,
+            scope_path=scope_path,
+            actor=ACTOR,
+            online=online,
+        )
+
     DENIED: ClassVar[tuple[str, ...]] = ("BLOCK", "REVIEW")
 
     @staticmethod
@@ -129,19 +151,16 @@ class AgentHook:
         environment: str,
         scope_path: tuple[str, ...] = (),
         approver: str = "your approver",
+        retry_online: bool = False,
     ) -> dict[str, Any]:
+        """The agent's answer. With `retry_online`, a denial is asked once more of the platform (the runtime's cloud source), so
+        an approval given since is seen: the retry of an approved call decides ALLOW (R901)."""
         call = AgentCalls.of(hook_input)
         if call is None:
             return cls.answer("allow")
-        outcome = runtime.run(
-            call.resolver,
-            call.reference,
-            POINT,
-            clock,
-            environment=environment,
-            scope_path=scope_path,
-            actor=ACTOR,
-        )
+        outcome = cls._ask(runtime, call, clock, environment, scope_path, online=False)
+        if outcome.decision.state in cls.DENIED and retry_online:
+            outcome = cls._ask(runtime, call, clock, environment, scope_path, online=True)
         decision = outcome.decision
         if decision.state not in cls.DENIED:
             return cls.answer("allow")

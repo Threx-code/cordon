@@ -210,7 +210,11 @@ class RestrictedYamlParser:
             # `https://...` and `10:30` -- a mapping always has a space after
             # the colon, or nothing at all.
             return False
-        return bool(head) and all(c.isalnum() or c in "_-." for c in head)
+        # A term written for a version of its meaning is `name@3`: the one `@` a key may hold, followed by digits only.
+        name, at, version = head.partition("@")
+        if at and not (version.isascii() and version.isdigit() and len(version) <= 4):
+            return False
+        return bool(name) and all(c.isalnum() or c in "_-." for c in name)
 
     @staticmethod
     def _parse_sequence(
