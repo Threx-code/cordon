@@ -10,7 +10,11 @@ What is refused, each as a `BundleError`: a decision delegation not signed by a 
 tenant; not bound to this root (its `root_keyid`) and to this exact root delegation (its `root_issued_at`, both required); a sequence below
 the highest held (an older one replayed; an equal one is the same document); a policy key not valid when it was issued; any key that is not a
 decision role, whose `keyid` is not the sha256 of its public key, that has no zoned `not_before` and `valid_until`, or whose end is past the
-policy key's own end. The keys the document delegates are then used only inside their own windows, whatever the document says of itself."""
+policy key's own end. The keys the document delegates are then used only inside their own windows, whatever the document says of itself.
+
+`issued_at` is not a freshness signal: the platform serves the same document, with the same `issued_at`, until the set of keys it names
+changes. A key taken out of a later document stops being honoured at the latest when its own window ends, which is what bounds a device
+that has not pulled."""
 
 from __future__ import annotations
 

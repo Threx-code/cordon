@@ -436,9 +436,8 @@ class TestTheDelegationServedWithTheBundle:
         site.served.sequence = 3
         stranger = Ed25519Signer(Kit.seed("puller-stranger"))
         site.served.platform = Platform(policy_key=stranger, root=site.point.platform.root)
-        with pytest.raises(BundleError):
-            site.pull()
-        assert site.puller.held_sequence() == 0
+        assert site.pull() == "new"  # the bundle is still taken
+        assert site.puller.held_sequence() == 0 and site.puller.refusal()
 
     def test_a_lower_sequence_replayed_is_refused_and_the_higher_stays(
         self, tmp_path: Path
@@ -448,9 +447,8 @@ class TestTheDelegationServedWithTheBundle:
         site.pull()
         site.served.sequence = 4
         site.point.publish()
-        with pytest.raises(BundleError, match="older"):
-            site.pull(1)
-        assert site.puller.held_sequence() == 5
+        assert site.pull(1) == "new" and site.point.held() == 2
+        assert site.puller.held_sequence() == 5 and "older" in (site.puller.refusal() or "")
 
     def test_a_key_past_the_policy_keys_window_is_refused(self, tmp_path: Path) -> None:
         site = Site(tmp_path)
@@ -482,9 +480,9 @@ class TestTheDelegationServedWithTheBundle:
             delegation=short,
             tenant=TENANT,
         )
-        with pytest.raises(BundleError, match="past the policy key"):
-            puller.pull(site.point.runtime, T0)
+        assert puller.pull(site.point.runtime, T0) == "new"
         assert puller.held_sequence() == 0
+        assert "past the policy key" in (puller.refusal() or "")
 
 
 class TestTheHeaderOnAnUnchangedBundle:
@@ -532,9 +530,8 @@ class TestTheHeaderOnAnUnchangedBundle:
             {"_type": DECISION_DELEGATION_SCHEMA, "sequence": sequence},
             Ed25519Signer(Kit.seed("forger")),
         )
-        with pytest.raises(BundleError):
-            site.pull(1)
-        assert site.puller.held_sequence() == 1
+        assert site.pull(1) == "unchanged"
+        assert site.puller.held_sequence() == 1 and site.puller.refusal()
 
     def test_a_puller_given_no_root_never_fetches_for_the_header(self, tmp_path: Path) -> None:
         site = Site(tmp_path)
@@ -542,3 +539,16 @@ class TestTheHeaderOnAnUnchangedBundle:
         site.served.sequence = 7
         plain.pull(site.point.runtime, T0)
         assert site.served.whole_calls == 0 and plain.held_sequence() == 0
+
+    def test_a_good_delegation_after_a_refused_one_clears_the_refusal(self, tmp_path: Path) -> None:
+        site = Site(tmp_path)
+        site.served.sequence = 5
+        site.pull()
+        site.served.sequence = 4
+        site.point.publish()
+        site.pull(1)
+        assert site.puller.refusal()
+        site.served.sequence = 6
+        site.point.publish()
+        site.pull(2)
+        assert site.puller.refusal() is None and site.puller.held_sequence() == 6

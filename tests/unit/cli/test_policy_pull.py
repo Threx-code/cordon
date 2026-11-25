@@ -148,9 +148,24 @@ class TestTheDecisionDelegationIsKept:
         kept = DecisionDelegation.stored(LocalStore(tmp_path / "store"))
         assert DecisionDelegation.sequence_of(kept) == 3
 
-    def test_one_signed_by_another_key_is_refused_and_nothing_is_kept(self, tmp_path: Path) -> None:
+    def test_one_signed_by_another_key_does_not_stop_the_bundle_and_is_reported(
+        self, tmp_path: Path, capsys
+    ) -> None:
         platform = Platform()
         bundle = Pull.bundle(platform, timedelta(days=1))
         forged = self.delegation(Platform(policy_key=Ed25519Signer(Kit.seed("forger"))), 3)
-        assert Pull.run(tmp_path, platform, Site([bundle], [forged])) != 0
+        assert Pull.run(tmp_path, platform, Site([bundle], [forged])) == 0
+        seen = capsys.readouterr()
+        assert Pull.kept(tmp_path)  # the verified bundle is applied
         assert DecisionDelegation.stored(LocalStore(tmp_path / "store")) is None
+        assert "decision delegation refused:" in seen.err
+        assert "policy bundle: new; decision delegation refused:" in seen.out
+
+    def test_the_delegation_held_stays_when_a_later_one_is_refused(self, tmp_path: Path) -> None:
+        platform = Platform()
+        good = Site([Pull.bundle(platform, timedelta(days=1))], [self.delegation(platform, 5)])
+        assert Pull.run(tmp_path, platform, good) == 0
+        older = Site([Pull.bundle(platform, timedelta(days=2))], [self.delegation(platform, 4)])
+        assert Pull.run(tmp_path, platform, older) == 0
+        kept = DecisionDelegation.stored(LocalStore(tmp_path / "store"))
+        assert DecisionDelegation.sequence_of(kept) == 5

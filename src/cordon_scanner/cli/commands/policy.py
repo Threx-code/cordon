@@ -138,5 +138,14 @@ class PolicyCommand:
                 "pin", "delegation", json.dumps(delegation, sort_keys=True).encode(), issued
             )
             store.put_blob("pin", "tenant", args.tenant.encode("utf-8"), issued)
-        print(f"policy bundle: {state}")
+        refused = puller.refusal()
+        if refused:
+            print(
+                f"{PROGRAM}: decision delegation refused: {refused}; the one held is kept",
+                file=sys.stderr,
+            )
+        print(
+            f"policy bundle: {state}"
+            + (f"; decision delegation refused: {refused}" if refused else "")
+        )
         return int(ExitCode.CLEAN) if state != "unreachable" else int(ExitCode.SCANNER_ERROR)

@@ -83,7 +83,7 @@ class BundlePuller:
         if status != 200:
             return "unreachable"
         data = self._data(body)
-        self._take(data.get("delegations"))
+        self._take(data.get("delegations"), now)
         self._follow_header(answered, headers, now)
         offered, held_back = self._offered(data)
         if not offered:
@@ -107,17 +107,40 @@ class BundlePuller:
         """The highest decision delegation sequence accepted, or 0."""
         return DecisionDelegation.sequence_of(self.decision_delegation())
 
-    def _take(self, offered: object) -> None:
-        """Verify and keep the decision delegation of an answer; a document that fails is refused (`BundleError`) and the one held stays."""
+    REFUSED = "refused"
+
+    def refusal(self) -> str | None:
+        """Why the last decision delegation the store served was refused, or None: kept beside the delegation until a later one is accepted."""
+        kept = self._store.blob(DecisionDelegation.BLOB, self.REFUSED)
+        reason = kept.data.decode("utf-8") if kept is not None else ""
+        return reason or None
+
+    def _refuse(self, problem: BundleError, now: datetime) -> None:
+        """A delegation that fails verification is never kept and never stops the policy bundle: the one held stays, the reason is kept for
+        the status, and `pull` reports it (`policy pull` warns on stderr)."""
+        self._store.put_blob(
+            DecisionDelegation.BLOB,
+            self.REFUSED,
+            str(problem)[:300].encode("utf-8"),
+            now.isoformat(),
+        )
+
+    def _take(self, offered: object, now: datetime) -> None:
+        """Verify and keep the decision delegation of an answer. A document that fails is refused (`_refuse`): the one held stays and the
+        bundles of the answer are still taken. One that verifies clears an earlier refusal."""
         if self._root is None or not isinstance(offered, list) or not offered:
             return
         held = self.held_sequence()
         envelope = offered[0]
-        if DecisionDelegation.root_names_decision(self._root, self._delegation, self._tenant):
+        try:
+            if DecisionDelegation.root_names_decision(self._root, self._delegation, self._tenant):
+                return
+            document = DecisionDelegation.accept(
+                self._root, self._delegation, self._tenant, envelope, min_sequence=held
+            )
+        except BundleError as problem:
+            self._refuse(problem, now)
             return
-        document = DecisionDelegation.accept(
-            self._root, self._delegation, self._tenant, envelope, min_sequence=held
-        )
         if document["sequence"] > held or self.decision_delegation() is None:
             self._store.put_blob(
                 DecisionDelegation.BLOB,
@@ -125,6 +148,7 @@ class BundlePuller:
                 json.dumps(envelope, sort_keys=True).encode("utf-8"),
                 str(document["issued_at"]),
             )
+        self._store.put_blob(DecisionDelegation.BLOB, self.REFUSED, b"", now.isoformat())
 
     def _follow_header(
         self, answered: Mapping[str, str], headers: dict[str, str], now: datetime
@@ -140,7 +164,10 @@ class BundlePuller:
         except Exception:  # noqa: BLE001 -- failing to ask leaves what is held
             return
         if status == 200:
-            self._take(self._whole(body).get("delegations"))
+            try:
+                self._take(self._whole(body).get("delegations"), now)
+            except BundleError as problem:
+                self._refuse(problem, now)
 
     @staticmethod
     def _whole(body: bytes) -> dict[str, Any]:
