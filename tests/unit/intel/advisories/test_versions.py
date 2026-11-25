@@ -344,3 +344,27 @@ class TestNixComparesAsNixDoes:
             versions.Versions._nix("nix", "1." + "9" * 5000 + "a", "1." + "1" + "0" * 5000 + "a")
             == -1
         )
+
+
+class TestAnImageTagsVariant:
+    """`1.25.3-debian-12-r0` is release 1.25.3 of a variant, not a pre-release of it."""
+
+    @pytest.mark.parametrize(
+        ("earlier", "later"),
+        [
+            ("1.25.3", "1.25.3-debian-12-r0"),
+            ("1.25.2-debian-12-r5", "1.25.3-debian-12-r0"),
+            ("1.25.3-debian-12-r0", "1.25.3-debian-12-r1"),
+            ("3.12.9-slim", "3.12.10"),
+        ],
+    )
+    def test_the_release_orders_first(self, earlier: str, later: str) -> None:
+        assert versions.Versions.compare("image", earlier, later) == -1
+
+    def test_a_variant_at_the_fixed_release_is_not_affected(self) -> None:
+        assert not versions.Versions.in_range(
+            "image", "1.25.3-debian-12-r0", introduced="0", fixed="1.25.3"
+        )
+        assert versions.Versions.in_range(
+            "image", "1.25.2-debian-12-r9", introduced="0", fixed="1.25.3"
+        )

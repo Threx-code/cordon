@@ -48,6 +48,8 @@ string is capped at a length check.
 #: A tag with no version in it: a commit (hex with at least one letter: a run of digits alone is a number, such as a
 #: date tag `20241231`) or a name with no digit (`latest`, `bookworm`, `main`).
 _NOT_A_VERSION: Final = re.compile(r"^(?=[0-9a-f]*[a-f])[0-9a-f]{7,64}$|^[^0-9]*$")
+#: An image tag's release and its variant: `1.25.3` and `-debian-12-r0`.
+_TAG_RELEASE: Final = re.compile(r"^v?(\d+(?:\.\d+)*)(.*)$")
 #: A packaging revision is not part of the release: Homebrew's `_1`, vcpkg's `#2`.
 _PACKAGING_REVISION: Final = re.compile(r"(?:_\d+|#\d+)$")
 
@@ -192,11 +194,19 @@ class Versions:
 
     @staticmethod
     def _tag(ecosystem: str, a: str, b: str) -> int:
-        """An image tag or a Nix input's pin: ordered as a release when both carry one (`3.12.1-slim`, `v1.2.0`); a
-        name (`latest`) or a commit has no version, and compares as plain text, "cannot tell"."""
+        """An image tag: its release (`1.25.3`) and its variant (`-debian-12-r0`, `-slim`, `-alpine`). Releases compare
+        as releases; a variant is not a pre-release, so of two equal releases the variant decides only between
+        themselves (`1.25.3-debian-12-r0` is release 1.25.3, never before it). A name (`latest`) or a commit has no
+        release, and compares as plain text, "cannot tell"."""
         if _NOT_A_VERSION.match(a) or _NOT_A_VERSION.match(b):
             return Versions._compare_raw(a, b)
-        return LibVersion.compare(a, b)
+        left, right = _TAG_RELEASE.match(a), _TAG_RELEASE.match(b)
+        if left is None or right is None:
+            return LibVersion.compare(a, b)
+        released = LibVersion.compare(left.group(1), right.group(1))
+        if released:
+            return released
+        return Versions._compare_raw(left.group(2), right.group(2))
 
     @staticmethod
     def _debian(ecosystem: str, a: str, b: str) -> int:
