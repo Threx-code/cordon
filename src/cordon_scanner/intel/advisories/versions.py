@@ -45,30 +45,11 @@ bound is checked before any regex or split runs, so the cost of a pathological
 string is capped at a length check.
 """
 
-#: SemVer, by each ecosystem's own rule: Hex (Elixir's `Version`), Swift packages, Helm charts (Chart.yaml's
-#: version must be SemVer 2), Terraform modules and providers, Ansible collections, Julia (`VersionNumber`), and
-#: GitHub Actions' release tags (`v4`, `v4.1.2`; a commit pin is not ordered and falls back to "cannot tell").
-_SEMVER_ECOSYSTEMS = frozenset(
-    {
-        "npm", "cargo", "gomod", "nuget", "pub", "composer", "cocoapods",
-        "hex", "swift", "helm", "terraform", "ansible", "julia", "actions",
-    }
-)  # fmt: skip
-#: Ecosystems whose own versions are upstream releases with no scheme of their own, compared the way
-#: Repology compares versions across every distribution (libversion): what NVD's ranges, written in
-#: upstream releases, are matched with. A packaging revision is not part of the release: Homebrew's
-#: `_1`, vcpkg's `#2`.
-#: CRAN (`package_version`: numbers split by `.` or `-`), Hackage (the PVP: dotted numbers), the Bazel Central
-#: Registry (dotted parts that may be words, `1.2.3.bcr.1`), image tags (`3.12.1-slim`) and Nix inputs pinned at a
-#: release tag are ordered the same way. A tag that is a name (`latest`, `bookworm`) or an input pinned at a commit
-#: has no version in it, and compares as "cannot tell".
-_LIBVERSION_ECOSYSTEMS = frozenset(
-    {"homebrew", "vcpkg", "conan", "conda", "cpe", "cran", "hackage", "bazel"}
-)
-_TAG_ECOSYSTEMS = frozenset({"image", "nix"})
-_NOT_A_VERSION: Final = re.compile(r"^[0-9a-f]{7,64}$|^[^0-9]*$")
+#: A tag with no version in it: a commit (hex with at least one letter: a run of digits alone is a number, such as a
+#: date tag `20241231`) or a name with no digit (`latest`, `bookworm`, `main`).
+_NOT_A_VERSION: Final = re.compile(r"^(?=[0-9a-f]*[a-f])[0-9a-f]{7,64}$|^[^0-9]*$")
+#: A packaging revision is not part of the release: Homebrew's `_1`, vcpkg's `#2`.
 _PACKAGING_REVISION: Final = re.compile(r"(?:_\d+|#\d+)$")
-_MAVEN_ECOSYSTEMS = frozenset({"maven", "gradle"})
 
 _TokenKey = tuple[int, int, str]
 """The shape every token-comparison key here reduces to: a category (numeric
@@ -80,16 +61,46 @@ both Maven's and RubyGems' key functions."""
 class Versions:
     """Ordering versions within an ecosystem."""
 
-    #: Each ecosystem's version scheme, by the method that compares under it; an ecosystem not here
-    #: is compared as raw strings. A new scheme is an entry and a method.
+    #: Every ecosystem's version scheme, by the method that compares under it, one entry each (a key not here, such
+    #: as an advisory's own `cpe`, is compared as raw strings). A new ecosystem is an entry; a new scheme, a method.
+    #:   _semver      SemVer, by each ecosystem's own rule: Hex (Elixir's `Version`), Helm (Chart.yaml's version
+    #:                must be SemVer 2), Julia (`VersionNumber`), Actions' release tags (`v4`, `v4.1.2`, read
+    #:                loosely: `v4` is `4.0.0`)
+    #:   _libversion  upstream releases with no scheme of their own, compared as Repology compares them across
+    #:                distributions, which is what NVD's ranges are written in; also CRAN (`package_version`), Hackage
+    #:                (the PVP) and the Bazel Central Registry (`1.2.3.bcr.1`)
+    #:   _tag         an image tag or a Nix input's pin: a release when both carry one, else "cannot tell"
+    #:   _debian      opam's order, which is Debian's
     SCHEMES: ClassVar[dict[str, str]] = {
+        "npm": "_semver",
         "pypi": "_pep440",
+        "cargo": "_semver",
         "rubygems": "_rubygems",
-        **dict.fromkeys(_MAVEN_ECOSYSTEMS, "_maven"),
-        **dict.fromkeys(_SEMVER_ECOSYSTEMS, "_semver"),
-        **dict.fromkeys(_LIBVERSION_ECOSYSTEMS, "_libversion"),
+        "nuget": "_semver",
+        "gomod": "_semver",
+        "maven": "_maven",
+        "gradle": "_maven",
+        "composer": "_semver",
+        "pub": "_semver",
+        "hex": "_semver",
+        "cocoapods": "_semver",
+        "swift": "_semver",
+        "conda": "_libversion",
+        "cran": "_libversion",
+        "conan": "_libversion",
+        "vcpkg": "_libversion",
+        "homebrew": "_libversion",
+        "nix": "_tag",
+        "julia": "_semver",
+        "hackage": "_libversion",
         "opam": "_debian",
-        **dict.fromkeys(_TAG_ECOSYSTEMS, "_tag"),
+        "helm": "_semver",
+        "terraform": "_semver",
+        "ansible": "_semver",
+        "actions": "_semver",
+        "image": "_tag",
+        "bazel": "_libversion",
+        "cpe": "_libversion",
     }
 
     @staticmethod
@@ -173,10 +184,12 @@ class Versions:
         for i in range(max(len(left), len(right))):
             x = left[i] if i < len(left) else ""
             y = right[i] if i < len(right) else ""
-            if i % 2:
-                nx, ny = int(x or 0), int(y or 0)
-                if nx != ny:
-                    return -1 if nx < ny else 1
+            if (
+                i % 2
+            ):  # digits: by value, without int() (a run of thousands of digits is valid text)
+                nx, ny = x.lstrip("0"), y.lstrip("0")
+                if (len(nx), nx) != (len(ny), ny):
+                    return -1 if (len(nx), nx) < (len(ny), ny) else 1
                 continue
             for j in range(max(len(x), len(y))):
                 cx = order(x[j]) if j < len(x) else 0

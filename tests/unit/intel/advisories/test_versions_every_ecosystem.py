@@ -49,6 +49,12 @@ class TestEveryEcosystem:
         assert set(EcosystemRegistry.BY_ID) <= set(Versions.SCHEMES)
 
     @pytest.mark.parametrize("ecosystem", sorted(ORDERED))
+    def test_a_version_of_thousands_of_digits_never_raises(self, ecosystem: str) -> None:
+        huge = "1." + "9" * 5000
+        assert Versions.compare(ecosystem, huge, "1.0") in (-1, 0, 1)
+        assert Versions.compare(ecosystem, "1." + "9" * 200, "1." + "9" * 199) in (-1, 1)
+
+    @pytest.mark.parametrize("ecosystem", sorted(ORDERED))
     def test_it_orders_by_its_own_scheme(self, ecosystem: str) -> None:
         earlier, later = ORDERED[ecosystem]
         assert Versions.compare(ecosystem, earlier, later) == -1
@@ -81,3 +87,21 @@ class TestATagWithoutAVersion:
     @pytest.mark.parametrize("other", ["latest", "3f2a9c1d0b7e4a5f6c8d9e0a1b2c3d4e5f6a7b8c"])
     def test_a_name_or_a_commit_compares_as_text(self, ecosystem: str, other: str) -> None:
         assert Versions.compare(ecosystem, "1.0.0", other) == (-1 if other > "1.0.0" else 1)
+
+    def test_the_debian_comparer_orders_huge_digit_runs_without_int(self) -> None:
+        a, b = "1." + "9" * 5000, "1." + "1" + "0" * 5000
+        assert Versions._debian("opam", a, b) == -1
+
+
+class TestTagsThatAreNumbers:
+    def test_a_date_tag_is_a_version_not_a_commit(self) -> None:
+        assert Versions.compare("image", "20241130", "20241231") == -1
+
+
+class TestActionsTags:
+    def test_a_major_tag_orders_with_a_full_one(self) -> None:
+        assert Versions.compare("actions", "v4", "v4.1.2") == -1
+        assert Versions.compare("actions", "v4.1.2", "v5") == -1
+
+    def test_a_branch_name_compares_as_text(self) -> None:
+        assert Versions.compare("actions", "main", "v4") == (-1 if "main" < "v4" else 1)

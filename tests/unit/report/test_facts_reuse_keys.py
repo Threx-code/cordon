@@ -298,6 +298,19 @@ class TestTheParentNeverParsesTheManifest:
         assert acc.campaign_manifest == ("cargo", "demo.tar.gz!demo-1.0.0/Cargo.toml")
         assert acc.campaign()["deps"] == "a" * 16
 
+    def test_with_two_root_manifests_the_first_ones_facets_are_used(self):
+        from cordon_scanner.engine.pipeline.accumulator import Accumulator
+
+        acc = Accumulator(reuse_keys=True)
+        acc._campaign("demo.tar.gz!demo-1.0.0/Cargo.toml")
+        acc._campaign("demo.tar.gz!demo-1.0.0/pyproject.toml")
+        acc.facts["demo.tar.gz!demo-1.0.0/Cargo.toml"] = {"campaign.facet": [["deps", "a" * 16]]}
+        acc.facts["demo.tar.gz!demo-1.0.0/pyproject.toml"] = {
+            "campaign.facet": [["deps", "b" * 16]]
+        }
+        assert acc.campaign()["ecosystem"] == "cargo"
+        assert acc.campaign()["deps"] == "a" * 16
+
     def test_a_tree_past_the_path_cap_has_no_layout(self):
         from cordon_scanner.engine.pipeline.accumulator import Accumulator
 
