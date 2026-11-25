@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from pathlib import Path
 from typing import ClassVar
 
@@ -156,6 +157,9 @@ class TestTheTreeDigestOfARelease:
             self.FILES
         )
 
+    @pytest.mark.skipif(
+        sys.platform == "win32", reason="a Windows file has no execute bit to record"
+    )
     def test_an_executable_file_on_disk_is_recorded_with_the_execute_mode(
         self, tmp_path: Path
     ) -> None:
