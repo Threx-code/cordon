@@ -1011,6 +1011,7 @@
   "test_language_model_judge.py": "detect/agents",
   "test_judge_only_adds.py": "detect/agents",
   "test_verdict_bounds.py": "decide",
+  "test_exception_max_age.py": "decide/decision",
   "test_mcp_refit.py": "decide",
   "test_claim_guards.py": "detect/agents",
   "test_code_and_instructions.py": "decide",

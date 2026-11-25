@@ -32,6 +32,8 @@ class Defaults(JsonRecord):
     default: str = "allow"
     max_intel_age_s: int | None = None
     bundle_max_age_s: int | None = None
+    exception_max_age_s: int | None = None
+    """The longest an approval or exception may be granted for under this policy; None leaves the platform's own limit."""
     warn_until_measured: tuple[str, ...] = ()
     clock_bucket_s: int = 60
     serve_last_allow_s: int | None = None

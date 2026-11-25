@@ -89,6 +89,7 @@ class DefaultsSource(JsonRecord):
     default: str | None = None
     max_intel_age: str | int | None = None
     bundle_max_age: str | int | None = None
+    exception_max_age: str | int | None = None
     warn_until_measured: tuple[str, ...] | None = None
     clock_bucket_s: int | None = None
     degrade: DegradeSource | None = None

@@ -6,7 +6,7 @@ compiler rejects, naming the exact field and the parent, a child that
 ```
   restates a rule of a mandatory parent (by id)      disables one of its rules
   weakens on_incomplete, unresolved or on_gaps       weakens the default outcome or `exceptions`
-  loosens max_intel_age or bundle_max_age (or drops it)   adds an ecosystem to warn_until_measured
+  loosens max_intel_age, bundle_max_age or exception_max_age (or drops it)   adds an ecosystem to warn_until_measured
 ```
 
 A child that is not under a mandatory parent may override what its parent states.
@@ -97,6 +97,9 @@ class DefaultsMerge:
             bundle_max_age_s=cls._age(
                 base.bundle_max_age_s, child.bundle_max_age, "bundle_max_age", strict, who
             ),
+            exception_max_age_s=cls._age(
+                base.exception_max_age_s, child.exception_max_age, "exception_max_age", strict, who
+            ),
             warn_until_measured=cls._measured(
                 base.warn_until_measured, child.warn_until_measured, strict, who
             ),
@@ -132,6 +135,9 @@ class DefaultsMerge:
                 ),
                 bundle_max_age_s=DefaultsMerge._smaller(
                     merged.bundle_max_age_s, other.bundle_max_age_s
+                ),
+                exception_max_age_s=DefaultsMerge._smaller(
+                    merged.exception_max_age_s, other.exception_max_age_s
                 ),
                 warn_until_measured=tuple(
                     sorted(set(merged.warn_until_measured) & set(other.warn_until_measured))

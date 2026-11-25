@@ -178,7 +178,7 @@ class Cases:
                         "defaults.default",
                     )
                 )
-        for name in ("max_intel_age", "bundle_max_age"):
+        for name in ("max_intel_age", "bundle_max_age", "exception_max_age"):
             for parent_age, child_age in itertools.product(
                 ("1h", "1d", "72h", "7d"), ("2d", "30d", "8d", "100h", "none", 10_000_000)
             ):
