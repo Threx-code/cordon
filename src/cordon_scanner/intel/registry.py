@@ -60,6 +60,10 @@ ROLES: dict[str, tuple[str, str]] = {
     "BazelProvenance": ("cordon_scanner.intel.provenance.bazel_provenance", "BazelProvenance"),
     "GoSumdb": ("cordon_scanner.intel.provenance.gosumdb", "GoSumdb"),
     "HackageTuf": ("cordon_scanner.intel.provenance.releases.hackage_tuf", "HackageTuf"),
+    "OpenVsxSignature": (
+        "cordon_scanner.intel.provenance.releases.openvsx_signature",
+        "OpenVsxSignature",
+    ),
     "NuGetSignature": (
         "cordon_scanner.intel.provenance.releases.nuget_signature",
         "NuGetSignature",
@@ -195,6 +199,9 @@ if TYPE_CHECKING:
         hackage_tuf as _intel_provenance_releases_hackage_tuf,
     )
     from cordon_scanner.intel.provenance.releases import (
+        openvsx_signature as _intel_provenance_releases_openvsx_signature,
+    )
+    from cordon_scanner.intel.provenance.releases import (
         nuget_signature as _intel_provenance_releases_nuget_signature,
     )
     from cordon_scanner.intel.registries import installers as _intel_registries_installers
@@ -253,6 +260,9 @@ if TYPE_CHECKING:
         _intel_provenance_releases_github_attestations.GitHubAttestations
     )
     HackageTuf: ModuleProvenance = _intel_provenance_releases_hackage_tuf.HackageTuf
+    OpenVsxSignature: ModuleProvenance = (
+        _intel_provenance_releases_openvsx_signature.OpenVsxSignature
+    )
     NuGetSignature: ModuleProvenance = _intel_provenance_releases_nuget_signature.NuGetSignature
     GitHubRepository: RepositoryHeads = _intel_provenance_github_repository.GitHubRepository
     HelmProvenance: ChartProvenance = _intel_provenance_helm_provenance.HelmProvenance
@@ -352,6 +362,7 @@ __all__ = [
     "McpApprovals",
     "NuGetSignature",
     "OfficialInstallers",
+    "OpenVsxSignature",
     "OpenPgp",
     "OsvImport",
     "PackageNotFound",
