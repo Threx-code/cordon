@@ -28,7 +28,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Final
 
-REQUIRED_COVERAGE: Final = 0.98
+REQUIRED_COVERAGE: Final = 1.0
 
 UNIVERSAL: Final[dict[str, str]] = {
     "UNI-01": "Discovery: every manifest, lockfile, workspace and configuration file is recognised",
