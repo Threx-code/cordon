@@ -124,6 +124,8 @@ class ProvenanceDetector(BaseDetector):
             "terraform": lambda d: (
                 bool(d.version) and not d.resolved_from and d.name.count("/") == 1
             ),
+            # A module the checksum database records: a version from the public proxy, not a `replace` to a path or another module.
+            "gomod": lambda d: bool(d.version) and not (d.local or d.resolved_from),
         }
     )
     #: The ecosystems whose provenance is not the registry's attestation, by their verifier.
@@ -134,6 +136,7 @@ class ProvenanceDetector(BaseDetector):
             "helm": "_verify_helm",
             "ansible": "_verify_ansible",
             "terraform": "_verify_terraform",
+            "gomod": "_verify_gomod",
         }
     )
     #: Where a publisher signs every artefact or none, so an unsigned one the project runs is the
@@ -606,6 +609,31 @@ class ProvenanceDetector(BaseDetector):
             return Path(path).expanduser().stat().st_mtime
         except OSError:
             return -1.0
+
+    def _verify_gomod(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
+        """A module's record in the Go checksum database, in the signed tree, against the `h1:` go.sum pins
+        (`intel/provenance/gosumdb`)."""
+        from cordon_scanner.intel.registry import GoSumdb
+
+        label = f"{dependency.name}@{dependency.version}"
+        check = GoSumdb.check(dependency.name, dependency.version or "", dependency.integrity)
+        if check.outcome in ("verified", "absent"):
+            ctx.checks.record(dependency.purl, "provenance", check.outcome)
+        elif check.outcome == "invalid":
+            ctx.checks.record(dependency.purl, "provenance", "invalid")
+            yield self._finding(
+                INVALID_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"the checksum database's record of {label} did not verify: {check.detail}",
+            )
+        else:
+            yield self._finding(
+                UNVERIFIED_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"{label}'s record in the checksum database could not be verified: {check.detail}",
+            )
 
     def _verify_bazel(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
         """A BCR module's attestations against what the lock pinned (`intel/bazel_provenance`)."""

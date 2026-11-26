@@ -42,7 +42,7 @@ result that was never checked.
 | `conan` | `conanfile.txt`, `conanfile.py`, `profiles/default`, `conan/profiles/*`, `remotes.json`, `conanws.yml`, `conanws.yaml` | `conan.lock` | NVD, upstream | yes | yes | -- | 93 |
 | `conda` | `environment.yml`, `environment.yaml`, `meta.yaml`, `.condarc` | `conda-lock.yml`, `conda-lock.yaml`, `explicit*.txt`, `conda-*.lock` | NVD, upstream | yes | yes | -- | 120 |
 | `cran` | `DESCRIPTION`, `renv/settings.json`, `PACKAGES` | `renv.lock` | yes | yes | yes | -- | 3,808 |
-| `gomod` | `go.mod`, `go.work` | `go.mod`, `go.sum`, `go.work.sum`, `vendor/modules.txt` | yes | yes | yes | -- | 89 |
+| `gomod` | `go.mod`, `go.work` | `go.mod`, `go.sum`, `go.work.sum`, `vendor/modules.txt` | yes | yes | yes | yes | 89 |
 | `gradle` | `build.gradle`, `build.gradle.kts`, `settings.gradle`, `settings.gradle.kts`, `gradle/libs.versions.toml`, `gradle/wrapper/gradle-wrapper.properties` | `gradle.lockfile`, `buildscript-gradle.lockfile`, `settings-gradle.lockfile`, `gradle/dependency-locks/*.lockfile`, `gradle/verification-metadata.xml` | yes | yes | yes | yes | 110 |
 | `hackage` | `*.cabal`, `cabal.project`, `stack.yaml`, `package.yaml` | `cabal.project.freeze`, `stack.yaml.lock` | yes | yes | yes | -- | 48 |
 | `helm` | `Chart.yaml`, `Chart.lock`, `requirements.lock` | `Chart.lock`, `requirements.lock`, `charts/*.tgz` | upstream | yes | yes | yes | 57 |

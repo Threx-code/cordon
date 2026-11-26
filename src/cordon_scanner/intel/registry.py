@@ -58,6 +58,7 @@ ROLES: dict[str, tuple[str, str]] = {
         "YOUNG_DEPENDENCY_DAYS",
     ),
     "BazelProvenance": ("cordon_scanner.intel.provenance.bazel_provenance", "BazelProvenance"),
+    "GoSumdb": ("cordon_scanner.intel.provenance.gosumdb", "GoSumdb"),
     "GitHubRepository": ("cordon_scanner.intel.provenance.github_repository", "GitHubRepository"),
     "HelmProvenance": ("cordon_scanner.intel.provenance.helm_provenance", "HelmProvenance"),
     "TerraformProvenance": (
@@ -169,6 +170,7 @@ if TYPE_CHECKING:
     from cordon_scanner.intel.provenance import (
         github_repository as _intel_provenance_github_repository,
     )
+    from cordon_scanner.intel.provenance import gosumdb as _intel_provenance_gosumdb
     from cordon_scanner.intel.provenance import helm_provenance as _intel_provenance_helm_provenance
     from cordon_scanner.intel.provenance import (
         homebrew_provenance as _intel_provenance_homebrew_provenance,
@@ -228,6 +230,7 @@ if TYPE_CHECKING:
 
     # The detectors' ports (intel/base.py, review 27 F2).
     BazelProvenance: ModuleProvenance = _intel_provenance_bazel_provenance.BazelProvenance
+    GoSumdb: ModuleProvenance = _intel_provenance_gosumdb.GoSumdb
     GitHubRepository: RepositoryHeads = _intel_provenance_github_repository.GitHubRepository
     HelmProvenance: ChartProvenance = _intel_provenance_helm_provenance.HelmProvenance
     TerraformProvenance: ProviderProvenance = (
@@ -313,6 +316,7 @@ __all__ = [
     "FeedClient",
     "FeedStore",
     "GitHubRepository",
+    "GoSumdb",
     "HallucinatedPackages",
     "HelmProvenance",
     "HomebrewProvenance",

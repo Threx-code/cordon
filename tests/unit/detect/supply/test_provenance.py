@@ -306,6 +306,67 @@ class TestTerraformProvidersReachTheirVerifier:
         )
 
 
+class TestGoModulesReachTheChecksumDatabase:
+    """Which Go dependencies are asked (a version from the public proxy, not a `replace`), the h1 they are asked about, and what
+    each of the verifier's answers becomes."""
+
+    @staticmethod
+    def dependency(version: str | None = "v0.9.1", **fields: object) -> Dependency:
+        base: dict[str, object] = {
+            "purl": f"pkg:golang/github.com/pkg/errors@{version}",
+            "ecosystem": "gomod",
+            "name": "github.com/pkg/errors",
+            "version": version,
+            "direct": True,
+            "integrity": "h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=",
+            "declared_in": "go.mod",
+        }
+        base.update(fields)
+        return Dependency(**base)  # type: ignore[arg-type]
+
+    @staticmethod
+    def stand_in(monkeypatch, outcome: str = "verified") -> list[tuple[str, str, str | None]]:
+        from cordon_scanner.intel.provenance.bazel_provenance import ModuleCheck
+        from cordon_scanner.intel.provenance.gosumdb import GoSumdb
+
+        asked: list[tuple[str, str, str | None]] = []
+
+        def check(name, version, integrity):
+            asked.append((name, version, integrity))
+            return ModuleCheck(outcome, "stood in")
+
+        monkeypatch.setattr(GoSumdb, "check", staticmethod(check))
+        return asked
+
+    def test_only_a_version_from_the_public_proxy_is_asked_with_the_h1_go_sum_pins(
+        self, monkeypatch
+    ) -> None:
+        asked = self.stand_in(monkeypatch)
+        deps = (
+            self.dependency(),
+            self.dependency(None),
+            self.dependency(resolved_from="https://goproxy.example.invalid"),
+            self.dependency(local=True),
+        )
+        assert TestTheEcosystemsVerifiedOutsideTheRegistryClient.run(deps) == []
+        assert asked == [
+            ("github.com/pkg/errors", "v0.9.1", "h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=")
+        ]
+
+    @pytest.mark.parametrize(
+        ("outcome", "rules"),
+        [
+            ("verified", []),
+            ("absent", []),
+            ("invalid", [INVALID_RULE]),
+            ("unverifiable", [UNVERIFIED_RULE]),
+        ],
+    )
+    def test_each_answer_becomes_its_rule(self, monkeypatch, outcome, rules) -> None:
+        self.stand_in(monkeypatch, outcome)
+        assert TestTheEcosystemsVerifiedOutsideTheRegistryClient.run((self.dependency(),)) == rules
+
+
 class TestAnsibleCollectionsReachTheirVerifier:
     """Which Ansible dependencies are checked, and how: the signatures an install recorded, over
     the MANIFEST.json in the tree; else galaxy.ansible.com's, for one exact version from there."""
