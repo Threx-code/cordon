@@ -471,9 +471,10 @@ class TestTheChainItself:
         assert child.defaults.incomplete_for("production") == "block"
 
 
-class TestTheExceptionLimit:
-    """`defaults.exception_max_age`: the longest an approval or exception may be granted for. It compiles to seconds, a child may shorten it but
-    never lengthen or drop it under a mandatory parent, and of two parents the shorter limit holds."""
+class TestTheExceptionAgeLimit:
+    """A policy may set the longest an approval or exception can be granted for (`defaults.exception_max_age`): it
+    compiles to seconds, a child may shorten it but never lengthen or drop it under a mandatory parent, and of two
+    parents the shorter limit holds."""
 
     def test_it_compiles_to_seconds(self) -> None:
         compiled = Policies.parent({**Policies.PARENT_DEFAULTS, "exception_max_age": "30d"})

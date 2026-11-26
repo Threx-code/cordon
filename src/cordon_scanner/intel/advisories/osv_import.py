@@ -103,6 +103,8 @@ ECOSYSTEM_OSV_NAMES: dict[str, str] = {
     "hackage": "Hackage",
     "julia": "Julia",
     "opam": "opam",
+    # Bitnami's images, keyed `bitnami/<application>` as an image reference names them; Bitnami names the application.
+    "image": "Bitnami",
 }
 """No entry for `gradle` -- it shares Maven's data, the same way
 `intel/advisories.py._SHARED_DATA` maps it, so syncing `maven` is sufficient.
@@ -128,6 +130,9 @@ class OsvImport:
     """Ecosystems whose OSV export is supplemented by DataDog's malicious-package dataset."""
     NAMED_BY_URL: ClassVar[frozenset[str]] = frozenset({"swift"})
     """Ecosystems whose OSV package name is a repository URL, keyed here as `owner/name`."""
+    NAME_PREFIX: ClassVar[dict[str, str]] = {"image": "bitnami/"}
+    """Ecosystems whose OSV package is one publisher's: Bitnami's `nginx` is the image `bitnami/nginx`. Bitnami is the
+    only such source: its records name the application, in lower case."""
 
     @staticmethod
     def _download(url: str, dest: Path, limit: int = MAX_DOWNLOAD_BYTES) -> None:
@@ -653,6 +658,8 @@ class OsvImport:
         below `ecosystems` in the layering; `tests/unit/intel/advisories/test_osv_import.py` asserts
         the two agree on real URLs so the duplication cannot drift.
         """
+        if ecosystem in OsvImport.NAME_PREFIX:
+            return OsvImport.NAME_PREFIX[ecosystem] + osv_name.strip().lower()
         if ecosystem not in OsvImport.NAMED_BY_URL:
             return osv_name
         parts = [part for part in osv_name.strip().removesuffix(".git").split("/") if part]

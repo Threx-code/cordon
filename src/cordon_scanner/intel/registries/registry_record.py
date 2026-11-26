@@ -60,6 +60,15 @@ ECOSYSTEMS: Final = frozenset(
         "gomod",
         "maven",
         "gradle",
+        "bazel",
+        "julia",
+        "vcpkg",
+        "opam",
+        "conan",
+        "homebrew",
+        "actions",
+        "swift",
+        "nix",
     }
 )
 #: npm's lifecycle scripts that run on the installing machine.

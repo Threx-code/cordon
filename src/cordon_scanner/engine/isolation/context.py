@@ -315,7 +315,7 @@ class ContextRun:
                 FileUnit(content=content, language=language, project=project, opens=opens)
             )
         self.walked = len(self.units)
-        self.acc = Accumulator(finding_cap=self.engine.config.limits.max_findings)
+        self.acc = Accumulator.for_config(self.engine.config)
         self.dependencies: tuple[Dependency, ...] = ()
         self.ingested: tuple[Dependency, ...] = ()
         self.inventory_hooks: Any = None

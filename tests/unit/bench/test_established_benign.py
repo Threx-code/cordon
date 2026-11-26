@@ -12,8 +12,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-
 from bench.model.established import Established
+
 from cordon_scanner.intel.registries.popular import PackageIntel
 from support import ROOT
 
@@ -60,7 +60,12 @@ class TestWhoIsEstablished:
 class Corpus:
     """A benign file of four units and a malware file of one, and what the trainer is told about them."""
 
-    UNITS = ("npm/fresh-helper-1.0.0.tgz", "npm/old-helper-1.0.0.tgz", "npm/unknown-helper-1.0.0.tgz", f"npm/{TestWhoIsEstablished.POPULAR}-1.0.0.tgz")
+    UNITS = (
+        "npm/fresh-helper-1.0.0.tgz",
+        "npm/old-helper-1.0.0.tgz",
+        "npm/unknown-helper-1.0.0.tgz",
+        f"npm/{TestWhoIsEstablished.POPULAR}-1.0.0.tgz",
+    )
 
     @staticmethod
     def row(unit: str) -> dict:
@@ -68,13 +73,42 @@ class Corpus:
 
     @classmethod
     def arguments(cls, tmp_path: Path, established: Path | None) -> argparse.Namespace:
-        benign, malware, corpus = tmp_path / "benign.jsonl", tmp_path / "malware.jsonl", tmp_path / "corpus.txt"
-        benign.write_text("".join(json.dumps(cls.row(u)) + "\n" for u in cls.UNITS), encoding="utf-8")
-        malware.write_text(json.dumps({**cls.row("npm/evil-1.0.0.tgz"), "findings": [["MALWARE.X.001", "critical", "high", "malicious", "p/i.js", 1, "h"]]}) + "\n", encoding="utf-8")
+        benign, malware, corpus = (
+            tmp_path / "benign.jsonl",
+            tmp_path / "malware.jsonl",
+            tmp_path / "corpus.txt",
+        )
+        benign.write_text(
+            "".join(json.dumps(cls.row(u)) + "\n" for u in cls.UNITS), encoding="utf-8"
+        )
+        malware.write_text(
+            json.dumps(
+                {
+                    **cls.row("npm/evil-1.0.0.tgz"),
+                    "findings": [
+                        ["MALWARE.X.001", "critical", "high", "malicious", "p/i.js", 1, "h"]
+                    ],
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
         corpus.write_text("\n".join(cls.UNITS) + "\n", encoding="utf-8")
         return argparse.Namespace(
-            adjudication=[], benchmark=None, benign=benign, corpus=corpus, eco=None, family_map=None, features=[], labelled=[],
-            malware=malware, override=[], registry=[], registry_scans=[], registry_units=None, established=established,
+            adjudication=[],
+            benchmark=None,
+            benign=benign,
+            corpus=corpus,
+            eco=None,
+            family_map=None,
+            features=[],
+            labelled=[],
+            malware=malware,
+            override=[],
+            registry=[],
+            registry_scans=[],
+            registry_units=None,
+            established=established,
         )
 
     @staticmethod
@@ -83,9 +117,14 @@ class Corpus:
         lines = [
             {"file": "npm/fresh-helper-1.0.0.tgz", "first_published": Days.ago(10)},
             {"file": "npm/old-helper-1.0.0.tgz", "first_published": Days.ago(400)},
-            {"file": f"npm/{TestWhoIsEstablished.POPULAR}-1.0.0.tgz", "first_published": Days.ago(2)},
+            {
+                "file": f"npm/{TestWhoIsEstablished.POPULAR}-1.0.0.tgz",
+                "first_published": Days.ago(2),
+            },
         ]
-        path.write_text("".join(json.dumps(line) + "\n" for line in lines) + "not json\n", encoding="utf-8")
+        path.write_text(
+            "".join(json.dumps(line) + "\n" for line in lines) + "not json\n", encoding="utf-8"
+        )
         return path
 
     @staticmethod
@@ -96,8 +135,14 @@ class Corpus:
 class TestTheTrainerTakesOnlyEstablishedBenignUnits:
     def test_with_the_ages_a_fresh_and_an_unknown_unit_do_not_train(self, tmp_path: Path) -> None:
         data, _ = VerdictTrain.load(Corpus.arguments(tmp_path, Corpus.ages(tmp_path)))
-        assert Corpus.benign(data) == {"npm/old-helper-1.0.0.tgz", f"npm/{TestWhoIsEstablished.POPULAR}-1.0.0.tgz"}
-        assert sorted(VerdictTrain.not_established) == ["npm/fresh-helper-1.0.0.tgz", "npm/unknown-helper-1.0.0.tgz"]
+        assert Corpus.benign(data) == {
+            "npm/old-helper-1.0.0.tgz",
+            f"npm/{TestWhoIsEstablished.POPULAR}-1.0.0.tgz",
+        }
+        assert sorted(VerdictTrain.not_established) == [
+            "npm/fresh-helper-1.0.0.tgz",
+            "npm/unknown-helper-1.0.0.tgz",
+        ]
 
     def test_without_the_ages_nothing_is_left_out_as_before(self, tmp_path: Path) -> None:
         data, _ = VerdictTrain.load(Corpus.arguments(tmp_path, None))

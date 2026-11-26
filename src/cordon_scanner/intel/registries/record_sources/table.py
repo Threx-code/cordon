@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+from cordon_scanner.intel.registries.record_sources import git_hosted
 from cordon_scanner.intel.registries.record_sources.ansible import AnsibleSource
 from cordon_scanner.intel.registries.record_sources.base import RecordSource
 from cordon_scanner.intel.registries.record_sources.cargo import CargoSource
@@ -49,6 +50,7 @@ class RecordSources:
         GomodSource(),
         MavenSource(),
         GradleSource(),
+        *git_hosted.SOURCES,
     )
 
     @classmethod

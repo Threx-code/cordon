@@ -194,7 +194,7 @@ class Units:
                 self.over_memory(acc)
                 return True, selected
 
-            acc.scanned(entry.rel_path, loaded)
+            acc.scanned(entry.rel_path, loaded, opens=str(entry.real_path.absolute()))
             acc.bytes_scanned += len(loaded.raw)
 
             language = Units.language_of(entry, implied_languages, loaded)

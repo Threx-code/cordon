@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import re
 from pathlib import PurePosixPath
+from typing import ClassVar
 
 from cordon_scanner.ecosystems.base import (
     DeclaredDependency,
@@ -102,6 +103,9 @@ class PypiRequirement:
                 body, marker = body[: split.start()], body[split.end() :]
         elif ";" in body:
             body, _, marker = body.partition(";")
+        address = PypiRequirement.address_name(body)
+        if address is not None:
+            return address, (), body.strip(), (marker or "").strip() or None, True
         matched = _PEP508_NAME.match(body)
         if not matched:
             return None
@@ -120,6 +124,36 @@ class PypiRequirement:
         if spec.startswith("(") and spec.endswith(")"):
             spec = spec[1:-1].strip()
         return name, extras, spec or "*", (marker or "").strip() or None, False
+
+    #: The archive endings a direct-URL requirement's file can have; a wheel is named before its first `-`.
+    ARCHIVES: ClassVar[tuple[str, ...]] = (".tar.gz", ".tar.bz2", ".tar.xz", ".tgz", ".zip", ".tar")
+
+    @staticmethod
+    def address_name(body: str) -> str | None:
+        """The name pip gives a requirement written as a bare address (`git+https://…`, `https://…/z-1.2.tar.gz`): its
+        `#egg=` fragment, else the wheel's, archive's or repository's own name. None when the text is not an address,
+        or names nothing (then the line is read as an ordinary requirement)."""
+        first = body.split(None, 1)[0] if body.split() else ""
+        scheme, sep, rest = first.partition("://")
+        if (
+            not sep
+            or not scheme
+            or not all(c.isalnum() or c in "+.-" for c in scheme)
+            or not scheme[0].isalpha()
+        ):
+            return None
+        egg = _EGG.search(first)
+        if egg:
+            return egg.group(1)
+        path = rest.split("#", 1)[0].split("?", 1)[0]
+        last = path.rstrip("/").rpartition("/")[2].split("@", 1)[0]
+        if last.endswith(".whl"):
+            return last.split("-", 1)[0] or None
+        for ending in PypiRequirement.ARCHIVES:
+            if last.endswith(ending):
+                stem, dash, version = last[: -len(ending)].rpartition("-")
+                return (stem if dash and version[:1].isdigit() else last[: -len(ending)]) or None
+        return last.removesuffix(".git") or None
 
     @staticmethod
     def declared(text: str, scope: Scope, field_name: str) -> DeclaredDependency | None:

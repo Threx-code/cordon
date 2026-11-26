@@ -263,6 +263,16 @@ class DigestShapes:
             and all(c in "0123456789abcdef" for c in value)
         )
 
+    @staticmethod
+    def campaign_facet(value: Any) -> bool:
+        """[facet, digest]: a campaign fingerprint's manifest or dependency facet, read in the worker."""
+        return (
+            isinstance(value, list)
+            and len(value) == 2
+            and value[0] in ("manifest", "deps")
+            and DigestShapes.digest(value[1])
+        )
+
 
 class ExecutableShapes:
     """An executable's record (`ExecutableRecord`, read in the worker), crossing as one canonical JSON string: its keys are exactly
@@ -322,6 +332,7 @@ class Facts:
         "cap.all": Shapes.capability,
         "net.host": DigestShapes.digest,
         "net.domain": DigestShapes.digest,
+        "campaign.facet": DigestShapes.campaign_facet,
         "executable.record": ExecutableShapes.record,
         "cap.error": Shapes.marker,
         "cap.download": Shapes.marker,

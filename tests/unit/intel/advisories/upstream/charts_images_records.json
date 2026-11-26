@@ -1,0 +1,235 @@
+{
+ "chart_index_excerpt": "apiVersion: v1\nentries:\n  cert-manager:\n  - annotations:\n      artifacthub.io/license: Apache-2.0\n      artifacthub.io/prerelease: \"false\"\n      artifacthub.io/signKey: |\n        fingerprint: 1020CF3C033D4F35BAE1C19E1226061C665DF13E\n        url: https://cert-manager.io/public-keys/cert-manager-keyring-2021-09-20-1020CF3C033D4F35BAE1C19E1226061C665DF13E.gpg\n    apiVersion: v1\n    appVersion: v1.14.5\n    created: \"2024-04-25T11:26:36.393506187Z\"\n    description: A Helm chart for cert-manager\n    digest: 865bd97a0c1f13d52099f25b74f3c560972206bf52603818b00bc6c5c4278d5a\n    home: https://github.com/cert-manager/cert-manager\n    icon: https://raw.githubusercontent.com/cert-manager/cert-manager/d53c0b9270f8cd90d908460d69502694e1838f5f/logo/logo-small.png\n    keywords:\n    - cert-manager\n    - kube-lego\n    - letsencrypt\n    - tls\n    kubeVersion: '>= 1.22.0-0'\n    maintainers:\n    - email: cert-manager-maintainers@googlegroups.com\n      name: cert-manager-maintainers\n      url: https://cert-manager.io\n    name: cert-manager\n    sources:\n    - https://github.com/cert-manager/cert-manager\n    urls:\n    - charts/cert-manager-v1.14.5.tgz\n    version: v1.14.5\n  - annotations:\n      artifacthub.io/license: Apache-2.0\n      artifacthub.io/prerelease: \"false\"\n      artifacthub.io/signKey: |\n        fingerprint: 1020CF3C033D4F35BAE1C19E1226061C665DF13E\n        url: https://cert-manager.io/public-keys/cert-manager-keyring-2021-09-20-1020CF3C033D4F35BAE1C19E1226061C665DF13E.gpg\n    apiVersion: v1\n    appVersion: v1.14.4\n    created: \"2024-03-08T12:22:18.291479388Z\"\n    description: A Helm chart for cert-manager\n    digest: 5775fdbc1881d6e510df76d38753af54b86bd14caa8edb28fdbb79527042dede\n    home: https://github.com/cert-manager/cert-manager\n    icon: https://raw.githubusercontent.com/cert-manager/cert-manager/d53c0b9270f8cd90d908460d69502694e1838f5f/logo/logo-small.png\n    keywords:\n    - cert-manager\n    - kube-lego\n    - letsencrypt\n    - tls\n    kubeVersion: '>= 1.22.0-0'\n    maintainers:\n    - email: cert-manager-maintainers@googlegroups.com\n      name: cert-manager-maintainers\n      url: https://cert-manager.io\n    name: cert-manager\n    sources:\n    - https://github.com/cert-manager/cert-manager\n    urls:\n    - charts/cert-manager-v1.14.4.tgz\n    version: v1.14.4\n  cert-manager-approver-policy:\n  - annotations:\n      artifacthub.io/alternativeName: approver-policy\n      artifacthub.io/category: security\n      artifacthub.io/license: Apache-2.0\n      artifacthub.io/prerelease: \"false\"\n      artifacthub.io/recommendations: |\n        - url: https://artifacthub.io/packages/helm/cert-manager/cert-manager\n        - url: https://artifacthub.io/packages/helm/cert-manager/trust-manager\n    apiVersion: v2\n    appVersion: v0.29.0\n    created: \"2026-10-27T12:08:28.825810084Z\"\n    description: approver-policy is a CertificateRequest approver for cert-manager\n    digest: 26ed4380e709a6e0ef87bd9a5e4633806f66bc39896977143be17e2e4aa9d766\n    home: https://cert-manager.io/docs/policy/approval/approver-policy\n    icon: https://raw.githubusercontent.com/cert-manager/community/4d35a69437d21b76322157e6284be4cd64e6d2b7/logo/logo-small.png\n    keywords:\n    - cert-manager\n    - policy\n    maintainers:\n    - email: cert-manager-maintainers@googlegroups.com\n      name: cert-manager-maintainers\n      url: https://cert-manager.io\n    name: cert-manager-approver-policy\n    sources:\n    - https://github.com/cert-manager/approver-policy\n    type: application\n    urls:\n    - charts/cert-manager-approver-policy-v0.29.0.tgz\n    version: v0.29.0\n",
+ "image": {
+  "config": {
+   "architecture": "amd64",
+   "config": {
+    "AttachStderr": false,
+    "AttachStdin": false,
+    "AttachStdout": false,
+    "Cmd": [
+     "traefik"
+    ],
+    "Domainname": "",
+    "Entrypoint": [
+     "/entrypoint.sh"
+    ],
+    "Env": [
+     "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    ],
+    "ExposedPorts": {
+     "80/tcp": {}
+    },
+    "Hostname": "",
+    "Image": "sha256:222dedc1261f4972c75e746adb7b71b21fc65d69af5c916dca0acb8e9efc3129",
+    "Labels": {
+     "org.opencontainers.image.description": "A modern reverse-proxy",
+     "org.opencontainers.image.documentation": "https://docs.traefik.io",
+     "org.opencontainers.image.source": "https://github.com/traefik/traefik",
+     "org.opencontainers.image.title": "Traefik",
+     "org.opencontainers.image.url": "https://traefik.io",
+     "org.opencontainers.image.vendor": "Traefik Labs",
+     "org.opencontainers.image.version": "v3.0.4"
+    },
+    "OnBuild": null,
+    "OpenStdin": false,
+    "StdinOnce": false,
+    "Tty": false,
+    "User": "",
+    "Volumes": null,
+    "WorkingDir": ""
+   },
+   "container": "7d319cbbf51401bee16af0c505458a110421c8d812626bfaa9a6ad4b75db2f93",
+   "container_config": {
+    "AttachStderr": false,
+    "AttachStdin": false,
+    "AttachStdout": false,
+    "Cmd": [
+     "/bin/sh",
+     "-c",
+     "#(nop) ",
+     "LABEL org.opencontainers.image.vendor=Traefik Labs org.opencontainers.image.url=https://traefik.io org.opencontainers.image.source=https://github.com/traefik/traefik org.opencontainers.image.title=Traefik org.opencontainers.image.description=A modern reverse-proxy org.opencontainers.image.version=v3.0.4 org.opencontainers.image.documentation=https://docs.traefik.io"
+    ],
+    "Domainname": "",
+    "Entrypoint": [
+     "/entrypoint.sh"
+    ],
+    "Env": [
+     "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    ],
+    "ExposedPorts": {
+     "80/tcp": {}
+    },
+    "Hostname": "7d319cbbf514",
+    "Image": "sha256:222dedc1261f4972c75e746adb7b71b21fc65d69af5c916dca0acb8e9efc3129",
+    "Labels": {
+     "org.opencontainers.image.description": "A modern reverse-proxy",
+     "org.opencontainers.image.documentation": "https://docs.traefik.io",
+     "org.opencontainers.image.source": "https://github.com/traefik/traefik",
+     "org.opencontainers.image.title": "Traefik",
+     "org.opencontainers.image.url": "https://traefik.io",
+     "org.opencontainers.image.vendor": "Traefik Labs",
+     "org.opencontainers.image.version": "v3.0.4"
+    },
+    "OnBuild": null,
+    "OpenStdin": false,
+    "StdinOnce": false,
+    "Tty": false,
+    "User": "",
+    "Volumes": null,
+    "WorkingDir": ""
+   },
+   "created": "2024-07-02T22:20:26.19602003Z",
+   "docker_version": "23.0.11",
+   "history": [
+    {
+     "created": "2024-06-20T20:16:57.940229876Z",
+     "created_by": "/bin/sh -c #(nop) ADD file:33ebe56b967747a97dcec01bc2559962bee8823686c9739d26be060381bbb3ca in / "
+    },
+    {
+     "created": "2024-06-20T20:16:58.064410339Z",
+     "created_by": "/bin/sh -c #(nop)  CMD [\"/bin/sh\"]",
+     "empty_layer": true
+    },
+    {
+     "created": "2024-06-21T02:35:15.506957851Z",
+     "created_by": "/bin/sh -c apk --no-cache add ca-certificates tzdata"
+    },
+    {
+     "created": "2024-07-02T22:20:25.266223641Z",
+     "created_by": "/bin/sh -c set -ex; \tapkArch=\"$(apk --print-arch)\"; \tcase \"$apkArch\" in \t\tarmhf) arch='armv6' ;; \t\taarch64) arch='arm64' ;; \t\tx86_64) arch='amd64' ;; \t\triscv64) arch='riscv64' ;; \t\ts390x) arch='s390x' ;; \t\tppc64le) arch='ppc64le' ;; \t\t*) echo >&2 \"error: unsupported architecture: $apkArch\"; exit 1 ;; \tesac; \twget --quiet -O /tmp/traefik.tar.gz \"https://github.com/traefik/traefik/releases/download/v3.0.4/traefik_v3.0.4_linux_$arch.tar.gz\"; \ttar xzvf /tmp/traefik.tar.gz -C /usr/local/bin traefik; \trm -f /tmp/traefik.tar.gz; \tchmod +x /usr/local/bin/traefik"
+    },
+    {
+     "created": "2024-07-02T22:20:25.756835524Z",
+     "created_by": "/bin/sh -c #(nop) COPY file:59a219a1fb7a9dc894a7a9a4718fa97fd24adb0a4a6455240ec2ab0183da796e in / "
+    },
+    {
+     "created": "2024-07-02T22:20:25.864954959Z",
+     "created_by": "/bin/sh -c #(nop)  EXPOSE 80",
+     "empty_layer": true
+    },
+    {
+     "created": "2024-07-02T22:20:25.978268406Z",
+     "created_by": "/bin/sh -c #(nop)  ENTRYPOINT [\"/entrypoint.sh\"]",
+     "empty_layer": true
+    },
+    {
+     "created": "2024-07-02T22:20:26.086857836Z",
+     "created_by": "/bin/sh -c #(nop)  CMD [\"traefik\"]",
+     "empty_layer": true
+    },
+    {
+     "created": "2024-07-02T22:20:26.19602003Z",
+     "created_by": "/bin/sh -c #(nop)  LABEL org.opencontainers.image.vendor=Traefik Labs org.opencontainers.image.url=https://traefik.io org.opencontainers.image.source=https://github.com/traefik/traefik org.opencontainers.image.title=Traefik org.opencontainers.image.description=A modern reverse-proxy org.opencontainers.image.version=v3.0.4 org.opencontainers.image.documentation=https://docs.traefik.io",
+     "empty_layer": true
+    }
+   ],
+   "os": "linux",
+   "rootfs": {
+    "diff_ids": [
+     "sha256:94e5f06ff8e3d4441dc3cd8b090ff38dc911bfa8ebdb0dc28395bc98f82f983f",
+     "sha256:6e2310d517910ccc3ceb9ca99c621ba63e05e0301dad7c508cac33d6b8ec5d73",
+     "sha256:d9055b10d766a8feec8df32ad9f3e243fe986edb22bd09e6417526901752d90e",
+     "sha256:64d7de16d92ebe5b3575aca2e429662c45aafde5567d3709916ec789d1e58010"
+    ],
+    "type": "layers"
+   }
+  },
+  "index": {
+   "manifests": [
+    {
+     "digest": "sha256:9214fcecc5833b4df2bfe6bf92714f35220d79a4c5c626931701dbbdb555f86b",
+     "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+     "platform": {
+      "architecture": "amd64",
+      "os": "linux"
+     },
+     "size": 1157
+    },
+    {
+     "digest": "sha256:9a8b6b163ff9e16ee1904d985ac71bdf7bba0121a714b4721c9636bb917ef112",
+     "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+     "platform": {
+      "architecture": "arm",
+      "os": "linux",
+      "variant": "v6"
+     },
+     "size": 1157
+    },
+    {
+     "digest": "sha256:a72b31d2f6c4153ea52642f603d453d750220436ea32468ac91b477a6f9f2f91",
+     "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+     "platform": {
+      "architecture": "arm64",
+      "os": "linux",
+      "variant": "v8"
+     },
+     "size": 1157
+    },
+    {
+     "digest": "sha256:06fa4fb3ad3a7a05363eb344aee5eee17b345bfc5978e1b10a422d88d959c712",
+     "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+     "platform": {
+      "architecture": "ppc64le",
+      "os": "linux"
+     },
+     "size": 1157
+    },
+    {
+     "digest": "sha256:12a7cc4232b5b7fe027673da8c096144525f59a8eabc87e52260aac0ec5a1219",
+     "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+     "platform": {
+      "architecture": "riscv64",
+      "os": "linux"
+     },
+     "size": 1157
+    },
+    {
+     "digest": "sha256:effb085c1096492c605af7639cf23b897a47d67885a2766f63a7c86c39fe21ca",
+     "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+     "platform": {
+      "architecture": "s390x",
+      "os": "linux"
+     },
+     "size": 1157
+    }
+   ],
+   "mediaType": "application/vnd.docker.distribution.manifest.list.v2+json",
+   "schemaVersion": 2
+  },
+  "manifest": {
+   "config": {
+    "digest": "sha256:7a4ed730cae1fd3aea7db703c77c5f27cc5550748e492cd963a386f409562568",
+    "mediaType": "application/vnd.docker.container.image.v1+json",
+    "size": 4655
+   },
+   "layers": [
+    {
+     "digest": "sha256:ec99f8b99825a742d50fb3ce173d291378a46ab54b8ef7dd75e5654e2a296e99",
+     "mediaType": "application/vnd.docker.image.rootfs.diff.tar.gzip",
+     "size": 3623844
+    },
+    {
+     "digest": "sha256:8168e2be9d205d7f8b76990ad5a6d495782753c0a87dd78d23354d85a5429be1",
+     "mediaType": "application/vnd.docker.image.rootfs.diff.tar.gzip",
+     "size": 463144
+    },
+    {
+     "digest": "sha256:4c4266770910efb770c6a364e5c3df8dce8f41084200d0e626a649d4355f5ad5",
+     "mediaType": "application/vnd.docker.image.rootfs.diff.tar.gzip",
+     "size": 43383361
+    },
+    {
+     "digest": "sha256:67e108beaf7ab999124e5a818a055627c77fc914d4219428894ee145e04d44ac",
+     "mediaType": "application/vnd.docker.image.rootfs.diff.tar.gzip",
+     "size": 369
+    }
+   ],
+   "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+   "schemaVersion": 2
+  },
+  "manifest_digest": "sha256:9214fcecc5833b4df2bfe6bf92714f35220d79a4c5c626931701dbbdb555f86b",
+  "name": "traefik",
+  "tag": "v3.0.4"
+ }
+}

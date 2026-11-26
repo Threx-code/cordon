@@ -457,8 +457,13 @@ class TestTenantsShareTheAnalysisAndNeverTheDecision:
         second, _ = self.tenant(tmp_path / "b", DENY)
         assert World.run(first).decision.inputs_digest == World.run(second).decision.inputs_digest
 
-    def test_the_analysis_is_kept_under_the_same_key_whatever_the_policy(self, tmp_path: Path) -> None:
-        (lenient, store_a), (strict, store_b) = self.tenant(tmp_path / "a", None), self.tenant(tmp_path / "b", DENY)
+    def test_the_analysis_is_kept_under_the_same_key_whatever_the_policy(
+        self, tmp_path: Path
+    ) -> None:
+        (lenient, store_a), (strict, store_b) = (
+            self.tenant(tmp_path / "a", None),
+            self.tenant(tmp_path / "b", DENY),
+        )
         World.run(lenient)
         World.run(strict)
         assert store_a.scan_keys and store_a.scan_keys == store_b.scan_keys

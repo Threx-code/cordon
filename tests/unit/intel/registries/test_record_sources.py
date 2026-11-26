@@ -178,8 +178,10 @@ class TestTheTable:
 
     def test_every_source_asks_https_documents_and_says_what_its_publisher_is(self) -> None:
         for source in RecordSources.SOURCES:
+            # A package that is a repository is named `owner/repo`; every other registry names one word.
+            fallback = "owner/example" if getattr(source, "SEGMENTS", (1, 1))[0] > 1 else "example"
             documents = source.documents(
-                NAMES.get(source.ecosystem, "example"),
+                NAMES.get(source.ecosystem, fallback),
                 "v1.0.0" if source.ecosystem == "gomod" else "1.0.0",
             )
             assert documents and all(d.url.startswith("https://") for d in documents), (

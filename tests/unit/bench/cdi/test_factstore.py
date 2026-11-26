@@ -122,7 +122,10 @@ class TestTheLegitimateStoreIsRebuiltPerHead:
 
     @staticmethod
     def newer() -> list[Reader]:
-        return [*Kit.readers(hooks="2"), Reader("urls", "1", lambda data: {"urls": data.count(b"http")})]
+        return [
+            *Kit.readers(hooks="2"),
+            Reader("urls", "1", lambda data: {"urls": data.count(b"http")}),
+        ]
 
     def old(self) -> tuple[FactStore, dict[str, str]]:
         kept: dict[str, str] = {}
@@ -135,9 +138,14 @@ class TestTheLegitimateStoreIsRebuiltPerHead:
         rebuilt, record = old.rebuild(UNITS, self.newer(), "1", "bbbb222")
         assert (record.units, record.made, record.kept) == (5, 10, 10)
         assert sorted({reader for _, reader in rebuilt.made}) == ["hooks", "urls"]
-        assert record.readers == {"flows": "1", "hooks": "2", "words": "1", "urls": "1"} and record.head == "bbbb222"
+        assert (
+            record.readers == {"flows": "1", "hooks": "2", "words": "1", "urls": "1"}
+            and record.head == "bbbb222"
+        )
 
-    def test_the_old_store_refuses_a_candidate_that_reads_the_new_fact_and_the_rebuilt_one_admits_it(self) -> None:
+    def test_the_old_store_refuses_a_candidate_that_reads_the_new_fact_and_the_rebuilt_one_admits_it(
+        self,
+    ) -> None:
         old, _ = self.old()
         rebuilt, _ = old.rebuild(UNITS, self.newer(), "1", "bbbb222")
         assert "urls" in (old.refuses({"urls"}, "1") or "")
@@ -153,7 +161,11 @@ class TestTheLegitimateStoreIsRebuiltPerHead:
         old, _ = self.old()
         units = {**UNITS, "unit-x": None}
         rebuilt, record = old.rebuild(units, Kit.readers(), "1", "bbbb222")
-        assert record.unread == ("unit-x",) and record.units == 6 and (record.made, record.kept) == (0, 15)
+        assert (
+            record.unread == ("unit-x",)
+            and record.units == 6
+            and (record.made, record.kept) == (0, 15)
+        )
         assert all(digest != "unit-x" for digest, _ in rebuilt.made)
 
     def test_the_rebuild_leaves_the_old_store_as_it_was(self) -> None:

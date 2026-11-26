@@ -34,6 +34,7 @@ ROLES: dict[str, tuple[str, str]] = {
     "Ed25519": ("cordon_scanner.intel.provenance._ed25519", "Ed25519"),
     "FeedClient": ("cordon_scanner.intel.malware.feed", "FeedClient"),
     "ReuseIndex": ("cordon_scanner.intel.malware.reuse_index", "ReuseIndex"),
+    "ReuseKeys": ("cordon_scanner.intel.malware.reuse_index", "ReuseKeys"),
     "LICENSE_UNKNOWN": ("cordon_scanner.intel.store.licenses", "LicenseCategory.UNKNOWN"),
     "LicenseClassifier": ("cordon_scanner.intel.store.licenses", "LicenseClassifier"),
     "MoreRegistries": ("cordon_scanner.intel.registries.more_registries", "MoreRegistries"),
@@ -145,6 +146,7 @@ if TYPE_CHECKING:
         RemovedNameList,
         RepositoryHeads,
         ReuseIndexes,
+        ReuseKeyRules,
         RuleAddresses,
         SignatureCheck,
         ToolApprovals,
@@ -204,6 +206,7 @@ if TYPE_CHECKING:
     Ed25519: SignatureCheck = _intel_provenance__ed25519.Ed25519
     FeedClient: FeedStatus = _intel_malware_feed.FeedClient
     ReuseIndex: ReuseIndexes = _intel_malware_reuse_index.ReuseIndex
+    ReuseKeys: ReuseKeyRules = _intel_malware_reuse_index.ReuseKeys
     LICENSE_UNKNOWN: enum.Enum = _intel_store_licenses.LicenseCategory.UNKNOWN
     LicenseClassifier: LicenseExpressions = _intel_store_licenses.LicenseClassifier
     MoreRegistries: RegistryVersions = _intel_registries_more_registries.MoreRegistries

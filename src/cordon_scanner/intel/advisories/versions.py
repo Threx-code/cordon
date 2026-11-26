@@ -32,6 +32,7 @@ than by hoping every parser degrades gracefully on its own.
 from __future__ import annotations
 
 import functools
+import itertools
 import re
 from collections.abc import Callable
 from typing import Any, ClassVar, Final
@@ -45,14 +46,11 @@ bound is checked before any regex or split runs, so the cost of a pathological
 string is capped at a length check.
 """
 
-_SEMVER_ECOSYSTEMS = frozenset({"npm", "cargo", "gomod", "nuget", "pub", "composer", "cocoapods"})
-#: Ecosystems whose own versions are upstream releases with no scheme of their own, compared the way
-#: Repology compares versions across every distribution (libversion): what NVD's ranges, written in
-#: upstream releases, are matched with. A packaging revision is not part of the release: Homebrew's
-#: `_1`, vcpkg's `#2`.
-_LIBVERSION_ECOSYSTEMS = frozenset({"homebrew", "vcpkg", "conan", "conda", "cpe"})
+#: A tag with no version in it: a commit (hex with at least one letter: a run of digits alone is a number, such as a
+#: date tag `20241231`) or a name with no digit (`latest`, `bookworm`, `main`).
+_NOT_A_VERSION: Final = re.compile(r"^(?=[0-9a-f]*[a-f])[0-9a-f]{7,64}$|^[^0-9]*$")
+#: A packaging revision is not part of the release: Homebrew's `_1`, vcpkg's `#2`.
 _PACKAGING_REVISION: Final = re.compile(r"(?:_\d+|#\d+)$")
-_MAVEN_ECOSYSTEMS = frozenset({"maven", "gradle"})
 
 _TokenKey = tuple[int, int, str]
 """The shape every token-comparison key here reduces to: a category (numeric
@@ -64,14 +62,47 @@ both Maven's and RubyGems' key functions."""
 class Versions:
     """Ordering versions within an ecosystem."""
 
-    #: Each ecosystem's version scheme, by the method that compares under it; an ecosystem not here
-    #: is compared as raw strings. A new scheme is an entry and a method.
+    #: Every ecosystem's version scheme, by the method that compares under it, one entry each (a key not here, such
+    #: as an advisory's own `cpe`, is compared as raw strings). A new ecosystem is an entry; a new scheme, a method.
+    #:   _semver      SemVer, by each ecosystem's own rule: Hex (Elixir's `Version`), Helm (Chart.yaml's version
+    #:                must be SemVer 2), Julia (`VersionNumber`), Actions' release tags (`v4`, `v4.1.2`, read
+    #:                loosely: `v4` is `4.0.0`)
+    #:   _libversion  upstream releases with no scheme of their own, compared as Repology compares them across
+    #:                distributions, which is what NVD's ranges are written in; also CRAN (`package_version`), Hackage
+    #:                (the PVP) and the Bazel Central Registry (`1.2.3.bcr.1`)
+    #:   _tag         an image tag: a release when both carry one, else "cannot tell"
+    #:   _nix         Nix's own `builtins.compareVersions`, for an input pinned at a release; a commit or a name, as text
+    #:   _debian      opam's order, which is Debian's
     SCHEMES: ClassVar[dict[str, str]] = {
+        "npm": "_semver",
         "pypi": "_pep440",
+        "cargo": "_semver",
         "rubygems": "_rubygems",
-        **dict.fromkeys(_MAVEN_ECOSYSTEMS, "_maven"),
-        **dict.fromkeys(_SEMVER_ECOSYSTEMS, "_semver"),
-        **dict.fromkeys(_LIBVERSION_ECOSYSTEMS, "_libversion"),
+        "nuget": "_semver",
+        "gomod": "_semver",
+        "maven": "_maven",
+        "gradle": "_maven",
+        "composer": "_semver",
+        "pub": "_semver",
+        "hex": "_semver",
+        "cocoapods": "_semver",
+        "swift": "_semver",
+        "conda": "_libversion",
+        "cran": "_libversion",
+        "conan": "_libversion",
+        "vcpkg": "_libversion",
+        "homebrew": "_libversion",
+        "nix": "_nix",
+        "julia": "_semver",
+        "hackage": "_libversion",
+        "opam": "_debian",
+        "helm": "_semver",
+        "terraform": "_semver",
+        "ansible": "_semver",
+        "actions": "_semver",
+        "image": "_tag",
+        "bazel": "_libversion",
+        "cpe": "_libversion",
     }
 
     @staticmethod
@@ -122,6 +153,158 @@ class Versions:
     @staticmethod
     def _semver(ecosystem: str, a: str, b: str) -> int:
         return Versions._compare_keys(Versions._semver_key(a), Versions._semver_key(b), a, b)
+
+    @staticmethod
+    def _nix(ecosystem: str, a: str, b: str) -> int:
+        """Nix's `builtins.compareVersions`: components split at `.` and `-` and between digits and letters; two numbers
+        compare by value, `pre` is below everything, a number is above a word, words compare as text, and a version that
+        runs out of components is the lower. A commit or a name has no version: compared as text."""
+        if _NOT_A_VERSION.match(a) or _NOT_A_VERSION.match(b):
+            return Versions._compare_raw(a, b)
+
+        def parts(text: str) -> list[str]:
+            # Runs of digits and of other characters; `.` and `-` only separate them (linear, no pattern).
+            found: list[str] = []
+            for digits, run in itertools.groupby(text, str.isdigit):
+                chunk = "".join(run)
+                if digits:
+                    found.append(chunk)
+                else:
+                    found.extend(p for p in chunk.replace("-", ".").split(".") if p)
+            return found
+
+        def less(x: str, y: str) -> bool:
+            if x.isdigit() and y.isdigit():
+                nx, ny = x.lstrip("0"), y.lstrip("0")
+                return (len(nx), nx) < (len(ny), ny)
+            if x == "" and y.isdigit():
+                return True
+            if x == "pre" and y != "pre":
+                return True
+            if y == "pre":
+                return False
+            if y.isdigit():
+                return True
+            if x.isdigit():
+                return False
+            return x < y
+
+        left, right = parts(a), parts(b)
+        for i in range(max(len(left), len(right))):
+            x = left[i] if i < len(left) else ""
+            y = right[i] if i < len(right) else ""
+            if less(x, y):
+                return -1
+            if less(y, x):
+                return 1
+        return 0
+
+    @staticmethod
+    def _tag(ecosystem: str, a: str, b: str) -> int:
+        """An image tag: its release (`1.25.3`) and its variant (`-debian-12-r0`, `-slim`, `-alpine`). Releases compare
+        as releases; a variant is not a pre-release, so of two equal releases the variant decides only between
+        themselves (`1.25.3-debian-12-r0` is release 1.25.3, never before it). A name (`latest`) or a commit has no
+        release, and compares as plain text, "cannot tell"."""
+        if _NOT_A_VERSION.match(a) or _NOT_A_VERSION.match(b):
+            return Versions._compare_raw(a, b)
+        left, right = Versions._release_of(a), Versions._release_of(b)
+        if left is None or right is None or Versions._pre(left[1]) or Versions._pre(right[1]):
+            # No release to read, or a pre-release (`-rc1`, `-beta2`): ordered as releases are, before its release.
+            return LibVersion.compare(a, b)
+        released = LibVersion.compare(left[0], right[0])
+        if released:
+            return released
+        return Versions._variant_order(left[1], right[1])
+
+    #: The words that make a tag's suffix a pre-release of its release rather than a variant of it.
+    PRE_RELEASE: ClassVar[tuple[str, ...]] = (
+        "rc",
+        "alpha",
+        "beta",
+        "pre",
+        "dev",
+        "snapshot",
+        "preview",
+        "a",
+        "b",
+    )
+
+    @staticmethod
+    def _pre(variant: str) -> bool:
+        """Whether a tag's suffix is a pre-release: its first word, after the separator, is a pre-release marker."""
+        word = ""
+        for char in variant.lstrip("-._+").lower():
+            if not char.isalpha():
+                break
+            word += char
+        return word in Versions.PRE_RELEASE
+
+    @staticmethod
+    def _variant_order(x: str, y: str) -> int:
+        """Two variants of one release (`-debian-12-r2`, `-debian-12-r10`): runs of digits by value, the rest as text."""
+        left = ["".join(r) for _, r in itertools.groupby(x, str.isdigit)]
+        right = ["".join(r) for _, r in itertools.groupby(y, str.isdigit)]
+        for p, q in zip(left, right, strict=False):
+            if p.isdigit() and q.isdigit():
+                np_, nq = p.lstrip("0"), q.lstrip("0")
+                if (len(np_), np_) != (len(nq), nq):
+                    return -1 if (len(np_), np_) < (len(nq), nq) else 1
+            elif p != q:
+                return -1 if p < q else 1
+        return (len(left) > len(right)) - (len(left) < len(right))
+
+    @staticmethod
+    def _release_of(tag: str) -> tuple[str, str] | None:
+        """An image tag's release and its variant (`1.25.3`, `-debian-12-r0`): dotted numbers from the start, an
+        optional `v` before them; None when the tag does not start with a number."""
+        start = 1 if tag[:1] in ("v", "V") else 0
+        end = start
+        while end < len(tag) and (
+            tag[end].isdigit()
+            or (tag[end] == "." and end + 1 < len(tag) and tag[end + 1].isdigit() and end > start)
+        ):
+            end += 1
+        if end == start or not tag[start].isdigit():
+            return None
+        return tag[start:end], tag[end:]
+
+    @staticmethod
+    def _debian(ecosystem: str, a: str, b: str) -> int:
+        """opam's ordering, which is Debian's: alternating runs of non-digits and digits. Non-digit runs compare
+        character by character, `~` before the end of the run, the end before letters, letters before every other
+        character; digit runs compare as numbers."""
+
+        def order(c: str) -> int:
+            if c == "~":
+                return -1
+            if c.isalpha():
+                return ord(c)
+            return ord(c) + 256
+
+        def runs(text: str) -> list[str]:
+            # Alternating runs of digits and of everything else (linear, no pattern).
+            return ["".join(run) for _, run in itertools.groupby(text, str.isdigit)]
+
+        left, right = runs(a), runs(b)
+        if left and left[0][0].isdigit():
+            left.insert(0, "")
+        if right and right[0][0].isdigit():
+            right.insert(0, "")
+        for i in range(max(len(left), len(right))):
+            x = left[i] if i < len(left) else ""
+            y = right[i] if i < len(right) else ""
+            # Digits: by value, without int() (a run of thousands of digits is valid text).
+            if i % 2:
+                nx, ny = x.lstrip("0"), y.lstrip("0")
+                if (len(nx), nx) != (len(ny), ny):
+                    return -1 if (len(nx), nx) < (len(ny), ny) else 1
+                continue
+            for j in range(max(len(x), len(y))):
+                cx = order(x[j]) if j < len(x) else 0
+                cy = order(y[j]) if j < len(y) else 0
+                if cx != cy:
+                    return -1 if cx < cy else 1
+        return 0
 
     @staticmethod
     def _libversion(ecosystem: str, a: str, b: str) -> int:

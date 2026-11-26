@@ -215,6 +215,21 @@ class ReuseIndexes(Protocol):
     def hook_key(self, command: str) -> bytes | None: ...
 
 
+class ReuseKeyRules(Protocol):
+    """What the engine and the code-reuse detector use of the class `ReuseKeys`: which files and hooks have a reuse
+    key, and the key of a file on disk."""
+
+    MAX_MANIFEST: int
+    NOT_CODE: frozenset[str]
+    NOT_CODE_SUFFIXES: tuple[str, ...]
+    INSTALL_HOOKS: tuple[str, ...]
+
+    def is_code(self, path: str, is_binary: bool, language: str | None) -> bool: ...
+    def is_root_manifest(self, path: str) -> bool: ...
+    def hook_keys(self, manifest: object) -> list[tuple[str, bytes]]: ...
+    def fingerprint_file(self, path: str) -> bytes | None: ...
+
+
 class FeedStatus(Protocol):
     """What the engine uses of the class `FeedClient`."""
 
@@ -591,6 +606,12 @@ class CampaignFacets(Protocol):
     """What a detector uses of the class `CampaignFingerprint`."""
 
     def of(self, manifest: Mapping[str, Any], paths: Iterable[str]) -> dict[str, str | None]: ...
+    def of_manifest(
+        self, ecosystem: str, content: Any, paths: Iterable[str]
+    ) -> dict[str, str | None]: ...
+    def root_manifest(self, path: str) -> str | None: ...
+    def content_facets(self, ecosystem: str, content: Any) -> dict[str, str | None]: ...
+    def layout_of(self, ecosystem: str, paths: Iterable[str]) -> str | None: ...
 
 
 class CampaignSiblings(Protocol):
