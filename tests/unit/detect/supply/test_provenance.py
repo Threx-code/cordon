@@ -387,7 +387,7 @@ class TestActionsReachTheirAttestation:
     @staticmethod
     def stand_in(monkeypatch, outcome: str = "verified") -> list[tuple[str, str]]:
         from cordon_scanner.intel.provenance.bazel_provenance import ModuleCheck
-        from cordon_scanner.intel.provenance.github_attestations import GitHubAttestations
+        from cordon_scanner.intel.provenance.releases.github_attestations import GitHubAttestations
 
         asked: list[tuple[str, str]] = []
 
@@ -409,6 +409,55 @@ class TestActionsReachTheirAttestation:
         )
         assert TestTheEcosystemsVerifiedOutsideTheRegistryClient.run(deps) == []
         assert asked == [("sigstore/cosign-installer", "v4.1.4")]
+
+    @pytest.mark.parametrize(
+        ("outcome", "rules"),
+        [
+            ("verified", []),
+            ("absent", []),
+            ("invalid", [INVALID_RULE]),
+            ("unverifiable", [UNVERIFIED_RULE]),
+        ],
+    )
+    def test_each_answer_becomes_its_rule(self, monkeypatch, outcome, rules) -> None:
+        self.stand_in(monkeypatch, outcome)
+        assert TestTheEcosystemsVerifiedOutsideTheRegistryClient.run((self.dependency(),)) == rules
+
+
+class TestNuGetPackagesReachTheirSignature:
+    """A package of nuget.org at a version is asked for its repository signature; a path or a private feed's package is not."""
+
+    @staticmethod
+    def dependency(version: str | None = "1.0.3", **more) -> Dependency:
+        return Dependency(
+            purl=f"pkg:nuget/IsExternalInit@{version}",
+            ecosystem="nuget",
+            name="IsExternalInit",
+            version=version,
+            direct=True,
+            declared_in="app.csproj",
+            **more,
+        )
+
+    @staticmethod
+    def stand_in(monkeypatch, outcome: str = "verified") -> list[tuple[str, str]]:
+        from cordon_scanner.intel.provenance.bazel_provenance import ModuleCheck
+        from cordon_scanner.intel.provenance.releases.nuget_signature import NuGetSignature
+
+        asked: list[tuple[str, str]] = []
+
+        def check(name, version, integrity):
+            asked.append((name, version))
+            return ModuleCheck(outcome, "stood in")
+
+        monkeypatch.setattr(NuGetSignature, "check", staticmethod(check))
+        return asked
+
+    def test_only_a_published_version_is_asked(self, monkeypatch) -> None:
+        asked = self.stand_in(monkeypatch)
+        deps = (self.dependency(), self.dependency(None), self.dependency(local=True))
+        assert TestTheEcosystemsVerifiedOutsideTheRegistryClient.run(deps) == []
+        assert asked == [("IsExternalInit", "1.0.3")]
 
     @pytest.mark.parametrize(
         ("outcome", "rules"),

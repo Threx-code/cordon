@@ -15,8 +15,8 @@ from typing import Any
 
 import pytest
 
-from cordon_scanner.intel.provenance.cms import Authority, CmsError, TimestampToken
-from cordon_scanner.intel.provenance.github_attestations import (
+from cordon_scanner.intel.provenance.releases.cms import Authority, CmsError, TimestampToken
+from cordon_scanner.intel.provenance.releases.github_attestations import (
     GitHubAttestations,
     GitHubRoot,
     Release,

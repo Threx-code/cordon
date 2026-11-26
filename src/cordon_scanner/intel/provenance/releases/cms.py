@@ -41,6 +41,8 @@ class Signer:
     signed_attributes: bytes
     algorithm: str
     signature: bytes
+    #: The unsigned attributes: (attribute id, one value). Time-stamp tokens and counter-signatures arrive here.
+    unsigned: tuple[tuple[str, Der], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -145,15 +147,37 @@ class Cms:
             at += 1
         algorithm = fields[at].expect(Der.SEQUENCE).children()[0].oid()
         signature = fields[at + 1].expect(Der.OCTET_STRING).body
+        unsigned: list[tuple[str, Der]] = []
+        if len(fields) > at + 2:
+            if fields[at + 2].tag != 0xA1 or len(fields) > at + 3:
+                raise CmsError(
+                    "a SignerInfo with something other than unsigned attributes after the signature"
+                )
+            for attribute in fields[at + 2].children():
+                pair = attribute.expect(Der.SEQUENCE).children()
+                unsigned.extend(
+                    (pair[0].oid(), value) for value in pair[1].expect(Der.SET).children()
+                )
+            if len(unsigned) > cls.MAX_ATTRIBUTES:
+                raise CmsError("unsigned attributes of an unreasonable size")
         return Signer(
-            issuer, serial, key_id, digest, attributes, signed_attributes, algorithm, signature
+            issuer,
+            serial,
+            key_id,
+            digest,
+            attributes,
+            signed_attributes,
+            algorithm,
+            signature,
+            tuple(unsigned),
         )
 
     @classmethod
     def signature_ok(
-        cls, signer: Signer, certificate: Certificate, content: bytes, content_type: str
+        cls, signer: Signer, certificate: Certificate, content: bytes, content_type: str | None
     ) -> bool:
-        """The attributes bind this content and the signature over them verifies under the certificate's key."""
+        """The attributes bind this content and the signature over them verifies under the certificate's key.
+        A counter-signature carries no content type (RFC 5652 11.4): pass None for it."""
         if not signer.signed_attributes:
             return False
         try:
@@ -162,7 +186,11 @@ class Cms:
                 .expect(Der.OCTET_STRING)
                 .body
             )
-            kind = Der.parse(signer.attributes.get(cls.CONTENT_TYPE, b"")).oid()
+            kind = (
+                Der.parse(signer.attributes[cls.CONTENT_TYPE]).oid()
+                if cls.CONTENT_TYPE in signer.attributes
+                else None
+            )
         except DerError:
             return False
         if kind != content_type or stated != hashlib.new(signer.digest, content).digest():
@@ -218,7 +246,15 @@ class TimestampToken:
             status = response[0].expect(Der.SEQUENCE).children()
             if not status or status[0].integer() not in (0, 1):
                 raise CmsError("a time-stamp response that does not grant a stamp")
-            signed = Cms.parse(response[1])
+            return cls.verify_token(response[1], data, authorities)
+        except DerError as exc:
+            raise CmsError(f"the time-stamp is not well formed: {exc}") from exc
+
+    @classmethod
+    def verify_token(cls, token: Der, data: bytes, authorities: list[Authority]) -> Stamp:
+        """The stamp in a time-stamp token (the CMS ContentInfo itself: a response's token, or a signature's unsigned attribute)."""
+        try:
+            signed = Cms.parse(token)
             if signed.content_type != cls.TST_INFO or len(signed.signers) != 1:
                 raise CmsError("a token that is not one TSTInfo with one signer")
             stamp = cls.info(signed.content)
@@ -248,25 +284,53 @@ class TimestampToken:
                 continue
             if cls.TIME_STAMPING not in certificate.extended_key_usages():
                 continue
-            if not cls._chain_holds(certificate, authority, stamp.time):
+            if not CertificatePath.holds(
+                certificate, authority.chain, stamp.time, signed.certificates
+            ):
                 continue
             if Cms.signature_ok(signer, certificate, signed.content, cls.TST_INFO):
                 return
             raise CmsError("the signature over the stamp does not verify")
         raise CmsError("the stamp was not signed by a pinned time-stamping authority")
 
-    @staticmethod
-    def _chain_holds(certificate: Certificate, authority: Authority, when: dt.datetime) -> bool:
-        """`certificate` is one of the authority's or signed by one that is, up to the self-signed root, each link valid at `when`."""
-        chain = authority.chain
-        if certificate in chain or any(c.raw == certificate.raw for c in chain):
-            position = next(i for i, c in enumerate(chain) if c.raw == certificate.raw)
-            below = chain[position:]
-        else:
-            issuer = next((c for c in chain if c.subject == certificate.issuer), None)
-            if issuer is None or not certificate.signed_by(issuer.public_key()):
+
+class CertificatePath:
+    """A certificate's path to a pinned chain: each link signed by the next, every one valid at one time."""
+
+    MAX_DEPTH: ClassVar[int] = 6
+
+    @classmethod
+    def holds(
+        cls,
+        certificate: Certificate,
+        pinned: tuple[Certificate, ...],
+        when: dt.datetime,
+        pool: tuple[Certificate, ...] = (),
+    ) -> bool:
+        """`certificate` is a pinned one, or is signed (through intermediates from `pool`, which is untrusted and only
+        supplies certificates to try) by one; the pinned chain then runs to its self-signed root. Every certificate on the
+        way is valid at `when`, and each above the first is a CA."""
+        anchors = {c.raw: i for i, c in enumerate(pinned)}
+        path = [certificate]
+        while path[-1].raw not in anchors:
+            if len(path) > cls.MAX_DEPTH:
                 return False
-            below = chain[chain.index(issuer) :]
+            current = path[-1]
+            seen = {p.raw for p in path}
+            parent = next(
+                (
+                    c
+                    for c in (*pinned, *pool)
+                    if c.raw not in seen
+                    and c.subject == current.issuer
+                    and current.signed_by(c.public_key())
+                ),
+                None,
+            )
+            if parent is None or not parent.is_ca():
+                return False
+            path.append(parent)
+        below = pinned[anchors[path[-1].raw] :]
         for child, parent in itertools.pairwise(below):
             if (
                 child.issuer != parent.subject
@@ -276,7 +340,8 @@ class TimestampToken:
                 return False
         top = below[-1]
         return (
-            all(c.valid_at(when) for c in below)
+            all(c.valid_at(when) for c in [*path, *below[1:]])
+            # The root is trusted because it is pinned, not by its own signature: DigiCert's older roots are self-signed
+            # with SHA-1, which proves nothing a pin does not.
             and top.subject == top.issuer
-            and top.signed_by(top.public_key())
         )

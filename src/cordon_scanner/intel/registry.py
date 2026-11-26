@@ -59,8 +59,12 @@ ROLES: dict[str, tuple[str, str]] = {
     ),
     "BazelProvenance": ("cordon_scanner.intel.provenance.bazel_provenance", "BazelProvenance"),
     "GoSumdb": ("cordon_scanner.intel.provenance.gosumdb", "GoSumdb"),
+    "NuGetSignature": (
+        "cordon_scanner.intel.provenance.releases.nuget_signature",
+        "NuGetSignature",
+    ),
     "GitHubAttestations": (
-        "cordon_scanner.intel.provenance.github_attestations",
+        "cordon_scanner.intel.provenance.releases.github_attestations",
         "GitHubAttestations",
     ),
     "GitHubRepository": ("cordon_scanner.intel.provenance.github_repository", "GitHubRepository"),
@@ -172,9 +176,6 @@ if TYPE_CHECKING:
         bazel_provenance as _intel_provenance_bazel_provenance,
     )
     from cordon_scanner.intel.provenance import (
-        github_attestations as _intel_provenance_github_attestations,
-    )
-    from cordon_scanner.intel.provenance import (
         github_repository as _intel_provenance_github_repository,
     )
     from cordon_scanner.intel.provenance import gosumdb as _intel_provenance_gosumdb
@@ -185,6 +186,12 @@ if TYPE_CHECKING:
     from cordon_scanner.intel.provenance import openpgp as _intel_provenance_openpgp
     from cordon_scanner.intel.provenance import (
         terraform_provenance as _intel_provenance_terraform_provenance,
+    )
+    from cordon_scanner.intel.provenance.releases import (
+        github_attestations as _intel_provenance_releases_github_attestations,
+    )
+    from cordon_scanner.intel.provenance.releases import (
+        nuget_signature as _intel_provenance_releases_nuget_signature,
     )
     from cordon_scanner.intel.registries import installers as _intel_registries_installers
     from cordon_scanner.intel.registries import names as _intel_registries_names
@@ -238,7 +245,10 @@ if TYPE_CHECKING:
     # The detectors' ports (intel/base.py, review 27 F2).
     BazelProvenance: ModuleProvenance = _intel_provenance_bazel_provenance.BazelProvenance
     GoSumdb: ModuleProvenance = _intel_provenance_gosumdb.GoSumdb
-    GitHubAttestations: ModuleProvenance = _intel_provenance_github_attestations.GitHubAttestations
+    GitHubAttestations: ModuleProvenance = (
+        _intel_provenance_releases_github_attestations.GitHubAttestations
+    )
+    NuGetSignature: ModuleProvenance = _intel_provenance_releases_nuget_signature.NuGetSignature
     GitHubRepository: RepositoryHeads = _intel_provenance_github_repository.GitHubRepository
     HelmProvenance: ChartProvenance = _intel_provenance_helm_provenance.HelmProvenance
     TerraformProvenance: ProviderProvenance = (
@@ -334,6 +344,7 @@ __all__ = [
     "LiveMcp",
     "LiveMcpError",
     "McpApprovals",
+    "NuGetSignature",
     "OfficialInstallers",
     "OpenPgp",
     "OsvImport",

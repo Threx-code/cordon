@@ -291,6 +291,8 @@ Workflows and the actions they use, pinned or not. Ecosystem id `actions`.
 │                 names                                                      │
 │ WITH --online   registry: withdrawn releases, version distance, hash       │
 │                 agreement                                                  │
+│                 provenance: whether a build attestation exists, and        │
+│                 verifies                                                   │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -315,6 +317,8 @@ Go modules from the module proxy. Ecosystem id `gomod`.
 │                 names                                                      │
 │ WITH --online   registry: withdrawn releases, version distance, hash       │
 │                 agreement                                                  │
+│                 provenance: whether a build attestation exists, and        │
+│                 verifies                                                   │
 │                 a published package fetched by digest and compared with    │
 │                 the last release                                           │
 └────────────────────────────────────────────────────────────────────────────┘
@@ -590,6 +594,8 @@ cordon-scanner deps .                      # every package found, with its findi
 │                 names                                                      │
 │ WITH --online   registry: withdrawn releases, version distance, hash       │
 │                 agreement                                                  │
+│                 provenance: whether a build attestation exists, and        │
+│                 verifies                                                   │
 │                 a published package fetched by digest and compared with    │
 │                 the last release                                           │
 └────────────────────────────────────────────────────────────────────────────┘

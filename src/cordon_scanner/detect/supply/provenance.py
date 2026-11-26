@@ -60,6 +60,7 @@ if TYPE_CHECKING:
     from cordon_scanner.detect.base import Unit
     from cordon_scanner.foundation.results import Dependency
     from cordon_scanner.intel.base import AttestationResult, Keyring, PackageFacts
+    from cordon_scanner.intel.provenance.bazel_provenance import ModuleCheck
 
 INVALID_RULE = "VULNERABLE.PROVENANCE.INVALID.001"
 UNVERIFIED_RULE = "POLICY.PROVENANCE.UNVERIFIED.001"
@@ -132,6 +133,8 @@ class ProvenanceDetector(BaseDetector):
                 and d.name.count("/") >= 1
                 and not d.name.startswith((".", "docker:"))
             ),
+            # A package of nuget.org at a version: not a path, and not one a private feed served.
+            "nuget": lambda d: bool(d.version) and not (d.local or d.resolved_from),
         }
     )
     #: The ecosystems whose provenance is not the registry's attestation, by their verifier.
@@ -144,6 +147,7 @@ class ProvenanceDetector(BaseDetector):
             "terraform": "_verify_terraform",
             "gomod": "_verify_gomod",
             "actions": "_verify_actions",
+            "nuget": "_verify_nuget",
         }
     )
     #: Where a publisher signs every artefact or none, so an unsigned one the project runs is the
@@ -647,10 +651,26 @@ class ProvenanceDetector(BaseDetector):
         (`intel/provenance/github_attestations`): the release of this repository at this tag or commit."""
         from cordon_scanner.intel.registry import GitHubAttestations
 
-        label = f"{dependency.name}@{dependency.version}"
         check = GitHubAttestations.check(
             dependency.name, dependency.version or "", dependency.integrity
         )
+        return self._report(check, dependency, ctx, "release attestation")
+
+    def _verify_nuget(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
+        """A NuGet package's repository signature, checked against DigiCert's pinned roots and the time-stamp inside it
+        (`intel/provenance/nuget_signature`): the archive is what nuget.org signed."""
+        from cordon_scanner.intel.registry import NuGetSignature
+
+        check = NuGetSignature.check(
+            dependency.name, dependency.version or "", dependency.integrity
+        )
+        return self._report(check, dependency, ctx, "repository signature")
+
+    def _report(
+        self, check: ModuleCheck, dependency: Dependency, ctx: ScanContext, what: str
+    ) -> Iterable[Finding]:
+        """What a verifier's answer becomes: a recorded check, or the rule for a proof that failed or could not be made."""
+        label = f"{dependency.name}@{dependency.version}"
         if check.outcome in ("verified", "absent"):
             ctx.checks.record(dependency.purl, "provenance", check.outcome)
         elif check.outcome == "invalid":
@@ -659,14 +679,14 @@ class ProvenanceDetector(BaseDetector):
                 INVALID_RULE,
                 ctx,
                 dependency=dependency,
-                detail=f"the release attestation of {label} did not verify: {check.detail}",
+                detail=f"the {what} of {label} did not verify: {check.detail}",
             )
         else:
             yield self._finding(
                 UNVERIFIED_RULE,
                 ctx,
                 dependency=dependency,
-                detail=f"the release attestation of {label} could not be verified: {check.detail}",
+                detail=f"the {what} of {label} could not be verified: {check.detail}",
             )
 
     def _verify_bazel(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:

@@ -38,7 +38,7 @@ from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.intel.provenance.bazel_provenance import ModuleCheck
-from cordon_scanner.intel.provenance.cms import Authority, CmsError, TimestampToken
+from cordon_scanner.intel.provenance.releases.cms import Authority, CmsError, TimestampToken
 from cordon_scanner.intel.provenance.sigstore_bundle import (
     BundleError,
     BundleVerifier,
