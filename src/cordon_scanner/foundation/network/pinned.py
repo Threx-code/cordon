@@ -34,6 +34,15 @@ class PinnedConnection(http.client.HTTPSConnection):
     public_only = False
 
     def connect(self) -> None:
+        if getattr(self, "_tunnel_host", None):
+            # Through a proxy the proxy resolves the name, so the address cannot be checked here: a name that must be public is
+            # refused rather than trusted to the proxy; a registry on a list is connected as the standard library does.
+            if self.public_only:
+                raise OSError(
+                    f"{self.host} is reached through a proxy, which resolves it: its address cannot be checked"
+                )
+            super().connect()
+            return
         candidates = Pinned.addresses(self.host, self.port)
         if not candidates:
             raise OSError(f"{self.host} has no address")
@@ -41,11 +50,12 @@ class PinnedConnection(http.client.HTTPSConnection):
             raise OSError(f"{self.host} resolves to an address that is not a public one")
         last: OSError | None = None
         for family, address in candidates:
+            sock = socket.socket(family, socket.SOCK_STREAM)
             try:
-                sock = socket.socket(family, socket.SOCK_STREAM)
                 sock.settimeout(self.timeout if isinstance(self.timeout, (int, float)) else None)
                 sock.connect((address, self.port))
             except OSError as exc:
+                sock.close()
                 last = exc
                 continue
             self.sock = self._context.wrap_socket(sock, server_hostname=self.host)  # type: ignore[attr-defined]

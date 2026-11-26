@@ -803,6 +803,56 @@ class TestThePinnedConnection:
         connection.connect()
         assert connected[0] == ("10.1.2.3", 443)
 
+    def test_a_socket_that_failed_to_connect_is_closed_before_the_next_address_is_tried(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import socket
+
+        closed: list[str] = []
+        attempts: list[str] = []
+
+        class Socket:
+            def __init__(self, *_a: Any) -> None:
+                self.address = ""
+
+            def settimeout(self, _t: Any) -> None:
+                pass
+
+            def connect(self, target: Any) -> None:
+                self.address = target[0]
+                attempts.append(target[0])
+                if target[0] == "140.82.112.3":
+                    raise OSError("refused")
+
+            def close(self) -> None:
+                closed.append(self.address)
+
+        connection, _ = self.connection(
+            monkeypatch, self.Resolver(["140.82.112.3", "140.82.112.4"]), public_only=True
+        )
+        monkeypatch.setattr(socket, "socket", Socket)
+        connection.connect()
+        assert attempts == ["140.82.112.3", "140.82.112.4"] and closed == ["140.82.112.3"]
+
+    def test_through_a_proxy_a_name_that_must_be_public_is_refused_and_a_listed_registry_is_not(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cordon_scanner.foundation.network.pinned import PinnedConnection
+
+        refused, _ = self.connection(monkeypatch, self.Resolver(["140.82.112.3"]), public_only=True)
+        refused.set_tunnel("example.com", 443)
+        with pytest.raises(OSError, match="through a proxy"):
+            refused.connect()
+
+        reached: list[str] = []
+        monkeypatch.setattr(
+            PinnedConnection.__mro__[1], "connect", lambda self: reached.append("standard")
+        )
+        listed, _ = self.connection(monkeypatch, self.Resolver(["140.82.112.3"]), public_only=False)
+        listed.set_tunnel("example.com", 443)
+        listed.connect()
+        assert reached == ["standard"]
+
     def test_a_name_with_no_address_is_an_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         connection, _ = self.connection(monkeypatch, self.Resolver([]), public_only=True)
         with pytest.raises(OSError, match="no address"):
