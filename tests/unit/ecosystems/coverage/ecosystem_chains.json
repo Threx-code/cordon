@@ -1,0 +1,136 @@
+{
+ "src/cordon_scanner/analysis/javascript/evaluation/expressions.py::_builtin": [
+  "hex"
+ ],
+ "src/cordon_scanner/analysis/javascript/evaluation/expressions.py::_method": [
+  "hex"
+ ],
+ "src/cordon_scanner/analysis/shared/deobfuscation.py::decoded": [
+  "hex"
+ ],
+ "src/cordon_scanner/detect/binary/detector.py::through_gzip": [
+  "image"
+ ],
+ "src/cordon_scanner/detect/binary/rule_engine/scan.py::__init__": [
+  "hex"
+ ],
+ "src/cordon_scanner/detect/binary/rule_engine/syntax.py::_modifiers_fit": [
+  "hex"
+ ],
+ "src/cordon_scanner/detect/supply/advisories/detector.py::_no_feed_note": [
+  "image"
+ ],
+ "src/cordon_scanner/detect/supply/advisories/detector.py::_not_installed_no_feed": [
+  "image"
+ ],
+ "src/cordon_scanner/detect/supply/manifests/source_findings.py::wrapper_findings": [
+  "maven"
+ ],
+ "src/cordon_scanner/detect/supply/name_risk.py::organisation": [
+  "npm"
+ ],
+ "src/cordon_scanner/detect/supply/registries/detector.py::_worth_asking": [
+  "image"
+ ],
+ "src/cordon_scanner/engine/inventory.py::_advisory": [
+  "image"
+ ],
+ "src/cordon_scanner/engine/isolation/expander.py::accept": [
+  "image"
+ ],
+ "src/cordon_scanner/engine/pipeline/archive_stages.py::dependencies": [
+  "openvsx"
+ ],
+ "src/cordon_scanner/engine/pipeline/graph.py::resolve_maven_ranges": [
+  "maven"
+ ],
+ "src/cordon_scanner/engine/pipeline/history.py::history_identity": [
+  "openvsx"
+ ],
+ "src/cordon_scanner/engine/pipeline/hooks.py::extension_entries": [
+  "vscode"
+ ],
+ "src/cordon_scanner/engine/pipeline/hooks.py::manifest_hook_paths": [
+  "image"
+ ],
+ "src/cordon_scanner/engine/pipeline/units.py::inline_hooks": [
+  "image"
+ ],
+ "src/cordon_scanner/engine/sbom_ingest.py::package_name": [
+  "image"
+ ],
+ "src/cordon_scanner/foundation/text/prose.py::_is_initialism": [
+  "npm"
+ ],
+ "src/cordon_scanner/images/binmeta.py::program": [
+  "composer"
+ ],
+ "src/cordon_scanner/images/langpkgs.py::purl": [
+  "maven",
+  "npm"
+ ],
+ "src/cordon_scanner/intel/advisories/ranges.py::_npm_admits": [
+  "npm"
+ ],
+ "src/cordon_scanner/intel/advisories/ranges.py::_pep440_admits": [
+  "pypi"
+ ],
+ "src/cordon_scanner/intel/advisories/rubysec.py::__lt__": [
+  "rubygems"
+ ],
+ "src/cordon_scanner/intel/advisories/rubysec.py::_interval": [
+  "rubygems"
+ ],
+ "src/cordon_scanner/intel/advisories/upstream_advisories.py::name": [
+  "vcpkg"
+ ],
+ "src/cordon_scanner/intel/registries/more_registries.py::facts": [
+  "helm"
+ ],
+ "src/cordon_scanner/intel/registries/openvsx.py::timeline": [
+  "npm"
+ ],
+ "src/cordon_scanner/intel/registries/private_registries.py::facts": [
+  "image",
+  "npm",
+  "pypi"
+ ],
+ "src/cordon_scanner/intel/registries/private_registries.py::matching": [
+  "image"
+ ],
+ "src/cordon_scanner/intel/registries/registry_client.py::_cached_facts": [
+  "npm",
+  "pypi"
+ ],
+ "src/cordon_scanner/intel/registries/registry_client.py::attestation_payload": [
+  "gradle",
+  "image",
+  "maven",
+  "npm",
+  "pypi",
+  "rubygems"
+ ],
+ "src/cordon_scanner/intel/registries/registry_record.py::facts": [
+  "npm"
+ ],
+ "src/cordon_scanner/judge/calls.py::of": [
+  "hex"
+ ],
+ "src/cordon_scanner/mcp/packages.py::_npm_one": [
+  "npm"
+ ],
+ "src/cordon_scanner/sources/install/managers/fetched.py::installs": [
+  "helm"
+ ],
+ "src/cordon_scanner/sources/install/managers/fetched.py::places": [
+  "helm"
+ ],
+ "src/cordon_scanner/sources/install/managers/pub.py::installs": [
+  "pub"
+ ],
+ "src/cordon_scanner/sources/package.py::parse": [
+  "image",
+  "maven",
+  "npm"
+ ]
+}

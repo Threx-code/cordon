@@ -1288,6 +1288,7 @@
   "test_ecosystem_matrix.py": "ecosystems",
   "test_ecosystem_literals_cover_all.py": "ecosystems/coverage",
   "test_every_feature_covers_every_ecosystem.py": "ecosystems/coverage",
+  "test_no_ecosystem_branch_chains.py": "ecosystems/coverage",
   "test_ecosystems.py": "ecosystems",
   "test_ed25519.py": "intel/provenance",
   "test_signature_vectors.py": "intel/provenance",

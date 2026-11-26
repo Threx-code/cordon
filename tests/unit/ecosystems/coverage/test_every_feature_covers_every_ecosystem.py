@@ -64,30 +64,6 @@ class Coverage:
         return PreviousRelease.supported()
 
     @staticmethod
-    def archive_fetch() -> frozenset[str]:
-        from cordon_scanner.intel.registries.archive_sources.table import ArchiveSources
-
-        return ArchiveSources.fetchable()
-
-    @staticmethod
-    def registry_facts() -> frozenset[str]:
-        from cordon_scanner.intel.registries.registry_hosts import ALIASES
-
-        return frozenset(ALIASES)
-
-    @staticmethod
-    def release_history() -> frozenset[str]:
-        from cordon_scanner.intel.registries.release_history import ReleaseHistory
-
-        return ReleaseHistory.covered()
-
-    @staticmethod
-    def package_url_targets() -> frozenset[str]:
-        from cordon_scanner.sources.package import PackageTarget
-
-        return frozenset(PackageTarget.TYPES.values())
-
-    @staticmethod
     def confusable_names() -> frozenset[str]:
         from cordon_scanner.detect.supply.registries.detector import CONFUSABLE_ECOSYSTEMS
 
@@ -98,6 +74,140 @@ class Coverage:
         from cordon_scanner.cli.commands.review import COMPARABLE
 
         return frozenset(COMPARABLE)
+
+
+class More:
+    """The rest of the inventory's features (reviews/platform/61-ECOSYSTEM-INVENTORY-AND-PLAN.md section 1), each by
+    the table it decides by. Where a feature decides by a chain of branches rather than a table, its coverage is
+    read from those branches in its own source, so the row follows the code; building it replaces the chain with a
+    table and the row reads that."""
+
+    #: The extension ecosystem goes by one id; a feature that names it `openvsx` covers `vscode`.
+    SAME: ClassVar[dict[str, str]] = {"openvsx": "vscode"}
+
+    @classmethod
+    def ids(cls, names: object) -> frozenset[str]:
+        return frozenset(cls.SAME.get(str(n), str(n)) for n in names)  # type: ignore[attr-defined]
+
+    @staticmethod
+    def compared(module: str, function: str) -> frozenset[str]:
+        """The ecosystem ids a function names, read from its source: what a chain of branches covers."""
+        import ast
+        import importlib
+        import inspect
+
+        source = inspect.getsource(importlib.import_module(module))
+        found: set[str] = set()
+        for node in ast.walk(ast.parse(source)):
+            if isinstance(node, ast.FunctionDef) and node.name == function:
+                for leaf in ast.walk(node):
+                    if isinstance(leaf, ast.Constant) and isinstance(leaf.value, str):
+                        found.add(leaf.value)
+        return frozenset(found & (frozenset(EcosystemRegistry.BY_ID) | {"vscode", "openvsx"}))
+
+    @classmethod
+    def archive_fetch(cls) -> frozenset[str]:
+        from cordon_scanner.intel.registries.archive_sources.table import ArchiveSources
+
+        return cls.ids(ArchiveSources.fetchable())
+
+    @classmethod
+    def release_history(cls) -> frozenset[str]:
+        from cordon_scanner.intel.registries.release_history import ReleaseHistory
+
+        return cls.ids(ReleaseHistory.covered())
+
+    @classmethod
+    def registry_facts(cls) -> frozenset[str]:
+        from cordon_scanner.intel.registries.registry_hosts import HOSTS
+
+        return cls.ids(HOSTS)
+
+    @classmethod
+    def package_url_targets(cls) -> frozenset[str]:
+        from cordon_scanner.sources.package import PackageTarget
+
+        return cls.ids(PackageTarget.TYPES.values())
+
+    @classmethod
+    def advisory_text(cls) -> frozenset[str]:
+        from cordon_scanner.intel.advisories.advisory_text import AdvisoryTextSymbols
+
+        return cls.ids(AdvisoryTextSymbols.APPLIES_TO)
+
+    @classmethod
+    def malware_dataset(cls) -> frozenset[str]:
+        from cordon_scanner.intel.malware.datadog_malware import DIRECTORIES
+
+        return cls.ids(DIRECTORIES)
+
+    @staticmethod
+    def malware_dataset_reasons() -> dict[str, str]:
+        """DataDog's dataset publishes samples for npm, PyPI and editor extensions only: for every other ecosystem
+        the dataset itself does not exist (its known malware comes from OSV's MAL- records, the advisory sources)."""
+        from cordon_scanner.intel.malware.datadog_malware import DIRECTORIES
+
+        return dict.fromkeys(
+            ALL - More.ids(DIRECTORIES),
+            "DataDog's malicious-packages dataset publishes no samples for this ecosystem; its known malware "
+            "comes from OSV's MAL- records through the advisory sources",
+        )
+
+    @classmethod
+    def sbom_ingest(cls) -> frozenset[str]:
+        from cordon_scanner.engine.sbom_ingest import PackageUrl
+
+        return cls.ids(PackageUrl.ECOSYSTEMS.values())
+
+    @classmethod
+    def mcp_packages(cls) -> frozenset[str]:
+        from cordon_scanner.mcp.packages import ECOSYSTEMS
+
+        return cls.ids(ECOSYSTEMS)
+
+    @classmethod
+    def name_signals(cls) -> frozenset[str]:
+        from cordon_scanner.detect.supply.name_risk import PackageIdentities
+
+        return cls.ids(PackageIdentities.READERS)
+
+    @classmethod
+    def fixer(cls) -> frozenset[str]:
+        from cordon_scanner.cloud.fixer import FixSpec
+
+        return cls.ids(FixSpec.FIXABLE)
+
+    @classmethod
+    def device_attestation(cls) -> frozenset[str]:
+        from cordon_scanner.cloud.device_attestation import DeviceAttestation
+
+        return cls.ids(DeviceAttestation.SPLITTERS)
+
+    @classmethod
+    def subjects(cls) -> frozenset[str]:
+        from cordon_scanner.contracts.subjects import SubjectParts
+
+        return cls.ids([*SubjectParts.PURL_TYPES, *SubjectParts.PURL_TYPES.values()]) & (
+            ALL | {"vscode"}
+        )
+
+    @classmethod
+    def own_name_findings(cls) -> frozenset[str]:
+        from cordon_scanner.detect.supply.manifests.identity_findings import IdentityFindings
+
+        return cls.ids(IdentityFindings.OWN_NAME_MEASURED_ON)
+
+    @classmethod
+    def package_format(cls) -> frozenset[str]:
+        return cls.ids(More.compared("cordon_scanner.engine.package_format", "of"))
+
+    @classmethod
+    def private_registries(cls) -> frozenset[str]:
+        return cls.ids(More.compared("cordon_scanner.intel.registries.private_registries", "facts"))
+
+    @classmethod
+    def agent_hook(cls) -> frozenset[str]:
+        return cls.ids(More.compared("cordon_scanner.cloud.agent.agent_hook", "of"))
 
 
 class Features:
@@ -116,10 +226,22 @@ class Features:
         "the previous release from the registry archive": (Coverage.previous_release, dict),
         "look-alike names": (Coverage.confusable_names, dict),
         "old-versus-new release compare in the pre-merge gate": (Coverage.release_compare, dict),
-        "verified archive fetch (digest or revision checked)": (Coverage.archive_fetch, dict),
-        "registry facts client (does the name exist, since when)": (Coverage.registry_facts, dict),
-        "release history (when each release was published)": (Coverage.release_history, dict),
-        "scan a package URL (`scan pkg:...`)": (Coverage.package_url_targets, dict),
+        "archive fetch (digest verified)": (More.archive_fetch, dict),
+        "release history (when each release was published)": (More.release_history, dict),
+        "registry facts client": (More.registry_facts, dict),
+        "package-URL scan targets": (More.package_url_targets, dict),
+        "advisory-text symbols": (More.advisory_text, dict),
+        "malware dataset": (More.malware_dataset, More.malware_dataset_reasons),
+        "SBOM package-URL ingest": (More.sbom_ingest, dict),
+        "MCP package check": (More.mcp_packages, dict),
+        "name-signal readers": (More.name_signals, dict),
+        "private registries": (More.private_registries, dict),
+        "agent hook install recognition": (More.agent_hook, dict),
+        "fixer (lockfile fix)": (More.fixer, dict),
+        "device attestation splitters": (More.device_attestation, dict),
+        "subject canonicalisation": (More.subjects, dict),
+        "manifest findings (own name)": (More.own_name_findings, dict),
+        "package format sniffing": (More.package_format, dict),
     }
     #: Features being built now: expected to fail until they cover every ecosystem; the entry comes off when they do.
     BUILDING: ClassVar[frozenset[str]] = frozenset(
@@ -130,8 +252,19 @@ class Features:
             # Not yet built for every ecosystem:
             "provenance (signed build attestations)",
             "look-alike names",
-            "registry facts client (does the name exist, since when)",
-            "scan a package URL (`scan pkg:...`)",
+            "registry facts client",
+            "package-URL scan targets",
+            "advisory-text symbols",
+            "SBOM package-URL ingest",
+            "MCP package check",
+            "name-signal readers",
+            "private registries",
+            "agent hook install recognition",
+            "fixer (lockfile fix)",
+            "device attestation splitters",
+            "subject canonicalisation",
+            "manifest findings (own name)",
+            "package format sniffing",
         }
     )
 
