@@ -9,6 +9,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.intel.base import PackageArchive
+from cordon_scanner.intel.registries.archive_sources.git import (
+    GIT_COMMIT,
+    GIT_TAG,
+    GIT_TREE,
+    GitTar,
+)
 from cordon_scanner.intel.registries.record_sources.base import (
     Document,
     RecordBuilder,
@@ -22,7 +28,11 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 #: The algorithms an archive may be checked with, strongest first; anything else a registry states is not a check.
-STRENGTH = ("sha512", "sha384", "sha256", "sha1", "md5")
+STRENGTH = ("sha512", "sha384", "sha256", "sha1", GIT_TREE, GIT_COMMIT, "md5", GIT_TAG)
+#: The checks weaker than a SHA-2 digest the registry publishes: a review says which one an archive was checked with.
+WEAK = ("md5", "sha1", GIT_TREE, GIT_COMMIT, GIT_TAG)
+#: What the git checks are made of: the files themselves (tree), the commit id the tarball names (commit), or only that it names one (tag).
+GIT_CHECKS = (GIT_TREE, GIT_COMMIT, GIT_TAG)
 FILENAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+@~-]{0,200}")
 
 
@@ -33,7 +43,11 @@ class Located:
     url: str
     filename: str
     digests: tuple[tuple[str, str], ...]
-    """`(algorithm, lower-case hex)` for each digest the registry states; the archive must match every one."""
+    """`(algorithm, lower-case hex)` for each digest the registry states; the archive must match every one. A git check is
+    `("git-tree-sha1", id)` (the files), `("git-commit", id)` (the tarball names this commit) or `("git-tag", "")` (the tag was
+    resolved by the host: the tarball must name a commit, which is recorded, and nothing else is checked)."""
+    fallbacks: tuple[str, ...] = ()
+    """Other addresses of the same archive, tried in order when the first is not found (a tag written `1.2.3` or `v1.2.3`)."""
 
     @property
     def strength(self) -> str:
@@ -78,9 +92,19 @@ class ArchiveFetch:
         if not digests:
             return False
         return all(
-            hashlib.new(algorithm, data, usedforsecurity=False).hexdigest() == expected.lower()
+            ArchiveFetch.one_ok(data, algorithm, expected.lower())
             for algorithm, expected in digests
         )
+
+    @staticmethod
+    def one_ok(data: bytes, algorithm: str, expected: str) -> bool:
+        if algorithm == GIT_TREE:
+            return GitTar.tree_sha1(data) == expected
+        if algorithm == GIT_COMMIT:
+            return GitTar.commit(data) == expected
+        if algorithm == GIT_TAG:
+            return bool(GitTar.commit(data))
+        return hashlib.new(algorithm, data, usedforsecurity=False).hexdigest() == expected
 
     @classmethod
     def located(cls, source: ArchiveSource, name: str, version: str) -> Located:
@@ -98,12 +122,25 @@ class ArchiveFetch:
             raise RegistryError(f"{source.ecosystem} names a digest algorithm that is no check")
         return found
 
+    @staticmethod
+    def download(source: ArchiveSource, found: Located) -> bytes:
+        """The bytes at the first address that has them (a 404 moves to the next; any other failure is the answer)."""
+        error: RegistryError | None = None
+        for url in (found.url, *found.fallbacks):
+            try:
+                return RegistryRequest.fetch_bytes(
+                    url, source.ecosystem, redirects=source.REDIRECTS, allow=source.allows
+                )
+            except RegistryError as exc:
+                if "HTTP 404" not in str(exc):
+                    raise
+                error = exc
+        raise error or RegistryError(f"{source.ecosystem} names no address for the archive")
+
     @classmethod
     def archive(cls, source: ArchiveSource, name: str, version: str) -> PackageArchive:
         found = cls.located(source, name, version)
-        data = RegistryRequest.fetch_bytes(
-            found.url, source.ecosystem, redirects=source.REDIRECTS, allow=source.allows
-        )
+        data = cls.download(source, found)
         if not cls.digest_ok(data, found.digests):
             raise RegistryError(
                 f"{name}@{version} does not match the {found.strength} {source.ecosystem} publishes"
@@ -111,7 +148,8 @@ class ArchiveFetch:
         filename = (
             found.filename if FILENAME.fullmatch(found.filename) else f"{source.ecosystem}-archive"
         )
-        return PackageArchive(source.ecosystem, name, version, filename, data)
+        weak = found.strength if found.strength in WEAK else ""
+        return PackageArchive(source.ecosystem, name, version, filename, data, weak)
 
     @staticmethod
     def before(ecosystem: str, version: str, published: Mapping[str, Any]) -> str | None:

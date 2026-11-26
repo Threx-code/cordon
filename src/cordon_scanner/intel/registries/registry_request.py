@@ -81,6 +81,12 @@ ARCHIVE_HOSTS = {
     "composer": frozenset({"codeload.github.com"}),
     "ansible": frozenset({"galaxy.ansible.com"}),
     "cran": frozenset({"cran.r-project.org"}),
+    "actions": frozenset({"codeload.github.com"}),
+    "swift": frozenset({"codeload.github.com"}),
+    "nix": frozenset({"codeload.github.com"}),
+    "cocoapods": frozenset({"codeload.github.com"}),
+    "terraform": frozenset({"codeload.github.com", "releases.hashicorp.com"}),
+    "julia": frozenset({"pkg.julialang.org"}),
 }
 MAX_ARCHIVE_BYTES = 64 << 20
 

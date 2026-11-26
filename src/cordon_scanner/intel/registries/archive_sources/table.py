@@ -5,7 +5,20 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.intel.registries.archive_sources.base import ArchiveSource
-from cordon_scanner.intel.registries.archive_sources.listed import AnsibleArchive, CondaArchive
+from cordon_scanner.intel.registries.archive_sources.git_sourced import (
+    ActionsArchive,
+    CocoapodsArchive,
+    ComposerArchive,
+    JuliaArchive,
+    NixArchive,
+    SwiftArchive,
+    TerraformArchive,
+)
+from cordon_scanner.intel.registries.archive_sources.listed import (
+    AnsibleArchive,
+    CondaArchive,
+    HelmArchive,
+)
 from cordon_scanner.intel.registries.archive_sources.upstream import (
     BazelArchive,
     ConanArchive,
@@ -25,6 +38,14 @@ class ArchiveSources:
         OpamArchive(),
         ConanArchive(),
         CranArchive(),
+        ActionsArchive(),
+        SwiftArchive(),
+        NixArchive(),
+        ComposerArchive(),
+        CocoapodsArchive(),
+        TerraformArchive(),
+        JuliaArchive(),
+        HelmArchive(),
     )
 
     @classmethod

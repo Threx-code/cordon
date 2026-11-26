@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import re
+import urllib.parse
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.intel.registries.archive_sources.base import ArchiveSource, Located
+from cordon_scanner.intel.registries.archive_sources.hosts import PublicHost
+from cordon_scanner.intel.registries.archive_sources.readers import Digest
 from cordon_scanner.intel.registries.record_sources.ansible import NAME as COLLECTION
 from cordon_scanner.intel.registries.record_sources.base import Document
+from cordon_scanner.intel.registries.record_sources.catalogs.helm import HelmSource
 from cordon_scanner.intel.registries.record_sources.conda import CondaSource
 from cordon_scanner.intel.registries.registry_record import RegistryRecord
 
@@ -88,3 +92,51 @@ class AnsibleArchive(ArchiveSource):
         if not address.startswith(f"{self.INDEX.rsplit('/index', 1)[0]}/artifacts/"):
             return None
         return Located(address, str(artifact.get("filename") or ""), (("sha256", sha),))
+
+
+class HelmArchive(ArchiveSource):
+    """A Helm chart: Artifact Hub's document of the chart version names the archive (`content_url`, on the chart repository's own host,
+    a public one) and its sha256 (`digest`, the one the repository's index states). A chart kept in an OCI registry has no such address."""
+
+    ecosystem: ClassVar[str] = "helm"
+    HOSTS: ClassVar[frozenset[str]] = frozenset()
+    REDIRECTS: ClassVar[int] = 3
+    API: ClassVar[str] = "https://artifacthub.io/api/v1/packages"
+
+    def allows(self, host: str) -> bool:
+        return PublicHost.ok(host)
+
+    def documents(self, name: str, version: str) -> tuple[Document, ...]:
+        asked = HelmSource().documents(name, version)
+        if len(asked) != 1 or not re.fullmatch(r"[0-9A-Za-z][0-9A-Za-z.+_-]{0,127}", version):
+            return ()
+        return (
+            (Document(f"{asked[0].url}/{urllib.parse.quote(version, safe='')}"),)
+            if "/search?" not in asked[0].url
+            else asked
+        )
+
+    def followed(
+        self, name: str, version: str, documents: Mapping[str, Any]
+    ) -> tuple[Document, ...]:
+        if "/" in name or len(documents) != 1:
+            return ()
+        found = HelmSource().followed(name, version, documents)
+        return tuple(Document(f"{d.url}/{urllib.parse.quote(version, safe='')}") for d in found)
+
+    def locate(self, name: str, version: str, documents: Mapping[str, Any]) -> Located | None:
+        package = RegistryRecord._mapping(list(documents.values())[-1] if documents else None)
+        digest = Digest.hex("sha256", str(package.get("digest") or ""))
+        url = str(package.get("content_url") or "")
+        if (
+            package.get("version") != version
+            or digest is None
+            or urllib.parse.urlsplit(url).scheme != "https"
+        ):
+            return None
+        return Located(
+            url,
+            urllib.parse.unquote(urllib.parse.urlsplit(url).path.rsplit("/", 1)[-1])
+            or f"{name}-{version}.tgz",
+            (digest,),
+        )

@@ -11,7 +11,7 @@ import json
 import urllib.error
 from datetime import datetime
 from email.message import Message
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -374,7 +374,7 @@ class TestTheTables:
     ) -> None:
         from cordon_scanner.intel.registries.archive_sources.upstream import UpstreamArchive
 
-        if isinstance(source, UpstreamArchive):
+        if isinstance(source, UpstreamArchive) or not source.HOSTS:
             # The project's own host is no list: a public host, and the digest the registry states.
             assert source.ecosystem not in registry_request.ARCHIVE_HOSTS
             assert not source.HOSTS
@@ -709,3 +709,432 @@ class TestPublicHosts:
 
         monkeypatch.setattr(socket, "getaddrinfo", fail)
         assert not PublicHost.ok("example.com")
+
+
+HEX40 = "11bd71901bbe5b1630ceea73d27597364c9af683"
+
+
+def tarball(
+    files: dict[str, bytes | str], *, comment: str = "", executable: tuple[str, ...] = ()
+) -> bytes:
+    """A tar of `files` (a `str` value is a symlink target), with a pax global header naming `comment` as a code host writes it."""
+    import io
+    import tarfile
+
+    buffer = io.BytesIO()
+    headers = {"comment": comment} if comment else None
+    with tarfile.open(
+        fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT, pax_headers=headers
+    ) as archive:
+        for name, content in files.items():
+            info = tarfile.TarInfo(name)
+            if isinstance(content, str):
+                info.type, info.linkname = tarfile.SYMTYPE, content
+                archive.addfile(info)
+            else:
+                info.size, info.mode = len(content), 0o755 if name in executable else 0o644
+                archive.addfile(info, io.BytesIO(content))
+    return buffer.getvalue()
+
+
+class TestGitTar:
+    #: The tree id git itself gives these files (`git write-tree` after `git add`): a file, a nested file, an executable, a symlink.
+    TREE = "6c576e17fab23f51e5291ef48600bcced09d41cd"
+    FILES: ClassVar[dict[str, bytes | str]] = {
+        "a": b"hello\n",
+        "sub/b": b"world\n",
+        "run.sh": b"#!/bin/sh\necho hi\n",
+        "l": "a",
+        "deep/er/c": b"x",
+    }
+
+    def test_the_tree_hash_is_the_one_git_computes(self) -> None:
+        from cordon_scanner.intel.registries.archive_sources.git import GitTar
+
+        assert GitTar.tree_sha1(tarball(self.FILES, executable=("run.sh",))) == self.TREE
+
+    def test_the_order_the_files_are_in_does_not_change_it(self) -> None:
+        from cordon_scanner.intel.registries.archive_sources.git import GitTar
+
+        reversed_files = dict(reversed(list(self.FILES.items())))
+        assert GitTar.tree_sha1(tarball(reversed_files, executable=("run.sh",))) == self.TREE
+
+    def test_a_changed_byte_the_executable_bit_or_a_link_target_changes_it(self) -> None:
+        from cordon_scanner.intel.registries.archive_sources.git import GitTar
+
+        assert GitTar.tree_sha1(tarball(self.FILES)) != self.TREE
+        assert (
+            GitTar.tree_sha1(tarball(self.FILES | {"a": b"hellO\n"}, executable=("run.sh",)))
+            != self.TREE
+        )
+        assert (
+            GitTar.tree_sha1(tarball(self.FILES | {"l": "sub/b"}, executable=("run.sh",)))
+            != self.TREE
+        )
+
+    @pytest.mark.parametrize("path", ["../escape", "/abs", "a/../b", "./x/../../y"])
+    def test_a_path_that_leaves_the_tree_is_no_tree(self, path: str) -> None:
+        from cordon_scanner.intel.registries.archive_sources.git import GitTar
+
+        assert GitTar.tree_sha1(tarball({path: b"x"})) == ""
+
+    def test_something_that_is_not_a_tar_is_no_tree_and_names_no_commit(self) -> None:
+        from cordon_scanner.intel.registries.archive_sources.git import GitTar
+
+        assert GitTar.tree_sha1(b"not a tar") == "" and GitTar.commit(b"not a tar") == ""
+
+    def test_the_commit_is_the_one_the_pax_header_names(self) -> None:
+        from cordon_scanner.intel.registries.archive_sources.git import GitTar
+
+        assert GitTar.commit(tarball({"a": b"x"}, comment=HEX40)) == HEX40
+        assert GitTar.commit(tarball({"a": b"x"})) == ""
+        assert GitTar.commit(tarball({"a": b"x"}, comment="not a commit")) == ""
+
+    def test_the_three_git_checks_in_a_digest(self) -> None:
+        named = tarball({"a": b"x"}, comment=HEX40)
+        unnamed = tarball({"a": b"x"})
+        assert ArchiveFetch.digest_ok(named, (("git-commit", HEX40),))
+        assert not ArchiveFetch.digest_ok(named, (("git-commit", "0" * 40),))
+        assert not ArchiveFetch.digest_ok(unnamed, (("git-commit", HEX40),))
+        assert ArchiveFetch.digest_ok(named, (("git-tag", ""),)) and not ArchiveFetch.digest_ok(
+            unnamed, (("git-tag", ""),)
+        )
+
+    def test_the_strength_of_a_tag_is_below_a_commit_below_a_tree(self) -> None:
+        def strength(*digests: tuple[str, str]) -> str:
+            return Located("https://x.invalid/a", "a", digests).strength
+
+        assert strength(("git-tree-sha1", "a" * 40)) == "git-tree-sha1"
+        assert strength(("git-commit", "a" * 40)) == "git-commit"
+        assert strength(("git-tag", "")) == "git-tag"
+        assert strength(("md5", "0" * 32), ("git-tag", "")) == "md5"
+
+
+class TestActionsSwiftNix:
+    @pytest.mark.parametrize("ecosystem", ["actions", "swift"])
+    def test_a_tag_is_the_hosts_tarball_of_it_and_the_other_spelling_is_the_fallback(
+        self, ecosystem: str
+    ) -> None:
+        source = ArchiveSources.of(ecosystem)
+        assert source is not None and source.documents("actions/checkout", "v4.2.2") == ()
+        found = source.locate("actions/checkout", "v4.2.2", {})
+        assert found is not None
+        assert found.url == "https://codeload.github.com/actions/checkout/tar.gz/refs/tags/v4.2.2"
+        assert found.fallbacks == (
+            "https://codeload.github.com/actions/checkout/tar.gz/refs/tags/4.2.2",
+        )
+        assert found.digests == (("git-tag", ""),)
+
+    def test_a_commit_pin_is_checked_against_that_commit(self) -> None:
+        found = ArchiveSources.of("actions").locate("actions/checkout", HEX40, {})  # type: ignore[union-attr]
+        assert (
+            found is not None
+            and found.url.endswith(f"/tar.gz/{HEX40}")
+            and found.digests == (("git-commit", HEX40),)
+        )
+
+    def test_an_action_in_a_folder_is_its_repositorys(self) -> None:
+        found = ArchiveSources.of("actions").locate("github/codeql-action/analyze", "v3", {})  # type: ignore[union-attr]
+        assert found is not None and "/github/codeql-action/" in found.url
+
+    def test_a_nix_input_is_owner_slash_repo_only(self) -> None:
+        source = ArchiveSources.of("nix")
+        assert source is not None
+        assert source.locate("NixOS/nixpkgs", HEX40, {}) is not None
+        assert source.locate("NixOS/nixpkgs/extra", HEX40, {}) is None
+
+    @pytest.mark.parametrize(
+        ("name", "version"),
+        [
+            ("", "v1"),
+            ("a", "v1"),
+            ("a/b", ""),
+            ("../b", "v1"),
+            ("a/..", "v1"),
+            ("a/b", "../x"),
+            ("a/b", "-x"),
+            ("a/b", "x y"),
+            ("a b/c", "v1"),
+        ],
+    )
+    def test_a_name_or_ref_that_is_not_one_has_no_archive(self, name: str, version: str) -> None:
+        assert ArchiveSources.of("actions").locate(name, version, {}) is None  # type: ignore[union-attr]
+
+
+class TestComposerArchive:
+    def locate(self, edit: Any = None) -> Located | None:
+        source = ArchiveSources.of("composer")
+        assert source is not None
+        (document,) = source.documents("psr/log", "3.0.2")
+        content = json.loads(
+            (ROOT / "tests/unit/intel/registries/records/composer.json").read_text(encoding="utf-8")
+        )
+        if edit:
+            edit(content)
+        return source.locate("psr/log", "3.0.2", {document.url: content})
+
+    def test_the_commit_the_registry_names_is_the_commit_the_tarball_must_be_of(self) -> None:
+        found = self.locate()
+        assert found is not None
+        assert (
+            found.url
+            == "https://codeload.github.com/php-fig/log/tar.gz/f16e1d5863e37f8d8c2a01719f5b34baa2b714d3"
+        )
+        assert found.digests == (("git-commit", "f16e1d5863e37f8d8c2a01719f5b34baa2b714d3"),)
+
+    def test_a_source_that_is_not_on_github_has_no_archive(self) -> None:
+        def move(content: dict[str, Any]) -> None:
+            content["packages"]["psr/log"][0]["source"] = {
+                "type": "git",
+                "url": "https://git.example.invalid/x.git",
+                "reference": HEX40,
+            }
+
+        assert self.locate(move) is None
+
+    def test_a_reference_that_is_not_a_commit_has_no_archive(self) -> None:
+        def branch(content: dict[str, Any]) -> None:
+            content["packages"]["psr/log"][0]["source"]["reference"] = "main"
+
+        assert self.locate(branch) is None
+
+
+class TestCocoapodsArchive:
+    def locate(self, edit: Any = None) -> Located | None:
+        source = ArchiveSources.of("cocoapods")
+        assert source is not None
+        (document,) = source.documents("Alamofire", "5.9.1")
+        content = load("cocoapods_spec.json")
+        if edit:
+            edit(content)
+        return source.locate("Alamofire", "5.9.1", {document.url: content})
+
+    def test_a_git_source_at_a_tag(self) -> None:
+        found = self.locate()
+        assert found is not None
+        assert (
+            found.url == "https://codeload.github.com/Alamofire/Alamofire/tar.gz/refs/tags/5.9.1"
+            and found.digests == (("git-tag", ""),)
+        )
+
+    def test_a_commit_the_podspec_names_is_checked(self) -> None:
+        def pinned(content: dict[str, Any]) -> None:
+            content["source"] = {
+                "git": "https://github.com/Alamofire/Alamofire.git",
+                "commit": HEX40,
+            }
+
+        found = self.locate(pinned)
+        assert found is not None and found.digests == (("git-commit", HEX40),)
+
+    def test_an_archive_source_needs_the_digest_the_podspec_states(self) -> None:
+        def archive(content: dict[str, Any]) -> None:
+            content["source"] = {
+                "http": "https://example.com/files/x-5.9.1.zip",
+                "sha256": "ab" * 32,
+            }
+
+        found = self.locate(archive)
+        assert (
+            found is not None
+            and found.digests == (("sha256", "ab" * 32),)
+            and found.filename == "x-5.9.1.zip"
+        )
+
+        def undigested(content: dict[str, Any]) -> None:
+            content["source"] = {"http": "https://example.com/files/x-5.9.1.zip"}
+
+        assert self.locate(undigested) is None
+
+    def test_a_git_source_on_another_host_has_no_archive(self) -> None:
+        def elsewhere(content: dict[str, Any]) -> None:
+            content["source"] = {"git": "https://git.example.invalid/x.git", "tag": "5.9.1"}
+
+        assert self.locate(elsewhere) is None
+
+    def test_another_version_than_the_one_asked_is_not_its_archive(self) -> None:
+        def other(content: dict[str, Any]) -> None:
+            content["version"] = "5.9.2"
+
+        assert self.locate(other) is None
+
+    @pytest.mark.parametrize("name", ["", "../x", "a/b", "a b", "a?b"])
+    def test_a_name_that_is_not_a_pod_asks_for_nothing(self, name: str) -> None:
+        assert ArchiveSources.of("cocoapods").documents(name, "1.0") == ()  # type: ignore[union-attr]
+
+
+class TestTerraformArchive:
+    def locate(self, name: str, version: str, document: dict[str, Any]) -> Located | None:
+        source = ArchiveSources.of("terraform")
+        assert source is not None
+        (wanted,) = source.documents(name, version)
+        return source.locate(name, version, {wanted.url: document})
+
+    def test_a_provider_is_the_zip_on_hashicorps_host_with_the_sha256_the_registry_states(
+        self,
+    ) -> None:
+        found = self.locate("hashicorp/random", "3.6.0", load("terraform_provider_download.json"))
+        assert found is not None
+        assert (
+            found.url
+            == "https://releases.hashicorp.com/terraform-provider-random/3.6.0/terraform-provider-random_3.6.0_linux_amd64.zip"
+        )
+        assert found.digests == (
+            ("sha256", "aa57384b85622a9f7bfb5d4512ca88e61f22a9cea9f30febaa4c98c68ff0dc21"),
+        )
+
+    def test_a_download_address_on_another_host_is_refused(self) -> None:
+        document = load("terraform_provider_download.json") | {
+            "download_url": "https://evil.example.invalid/a.zip"
+        }
+        assert self.locate("hashicorp/random", "3.6.0", document) is None
+
+    def test_a_module_is_the_tag_of_the_repository_the_registry_names(self) -> None:
+        found = self.locate("terraform-aws-modules/vpc/aws", "5.8.1", load("terraform_module.json"))
+        assert found is not None
+        assert (
+            found.url
+            == "https://codeload.github.com/terraform-aws-modules/terraform-aws-vpc/tar.gz/refs/tags/v5.8.1"
+        )
+        assert found.digests == (("git-tag", ""),)
+
+    def test_the_two_forms_ask_for_their_own_documents(self) -> None:
+        source = ArchiveSources.of("terraform")
+        assert source is not None
+        assert source.documents("hashicorp/random", "3.6.0")[0].url.endswith(
+            "/providers/hashicorp/random/3.6.0/download/linux/amd64"
+        )
+        assert source.documents("a/b/c", "1.0.0")[0].url.endswith("/modules/a/b/c/1.0.0")
+
+    @pytest.mark.parametrize("name", ["", "a", "a/b/c/d", "../b", "a/ b"])
+    def test_a_name_that_is_not_a_provider_or_module_asks_for_nothing(self, name: str) -> None:
+        assert ArchiveSources.of("terraform").documents(name, "1.0.0") == ()  # type: ignore[union-attr]
+
+
+class TestJuliaArchive:
+    def locate(self, version: str = "0.7.0", versions: str | None = None) -> Located | None:
+        source = ArchiveSources.of("julia")
+        assert source is not None
+        package, listing = source.documents("ZipFile", version)
+        return source.locate(
+            "ZipFile",
+            version,
+            {
+                package.url: text("julia_package.toml"),
+                listing.url: versions if versions is not None else text("julia_versions.toml"),
+            },
+        )
+
+    def test_the_package_server_serves_the_tree_the_registry_names(self) -> None:
+        found = self.locate()
+        assert found is not None
+        assert (
+            found.url
+            == "https://pkg.julialang.org/package/a5390f91-8eb1-5f08-bee0-b1d1ffed6cea/c191e56c849b1784cacbf7cd5e52cc672f1ae2db"
+        )
+        assert found.digests == (("git-tree-sha1", "c191e56c849b1784cacbf7cd5e52cc672f1ae2db"),)
+
+    def test_a_version_the_registry_does_not_list_has_no_archive(self) -> None:
+        assert self.locate("9.9.9") is None
+
+    def test_the_regional_servers_the_package_server_redirects_to_are_allowed_and_no_other_host(
+        self,
+    ) -> None:
+        source = ArchiveSources.of("julia")
+        assert source is not None
+        assert source.allows("pkg.julialang.org") and source.allows("eu-central.pkg.julialang.org")
+        assert not source.allows("evilpkg.julialang.org.example.com") and not source.allows(
+            "julialang.org"
+        )
+
+    def test_a_tree_that_is_not_a_hash_is_no_archive(self) -> None:
+        assert self.locate(versions='["0.7.0"]\ngit-tree-sha1 = "nothex"\n') is None
+
+    @pytest.mark.parametrize("name", ["", "1Abc", "a/b", "a-b", "a b"])
+    def test_a_name_that_is_not_a_package_asks_for_nothing(self, name: str) -> None:
+        assert ArchiveSources.of("julia").documents(name, "1.0.0") == ()  # type: ignore[union-attr]
+
+
+class TestHelmArchive:
+    NAME = "cert-manager/cert-manager"
+
+    def locate(self, edit: Any = None) -> Located | None:
+        source = ArchiveSources.of("helm")
+        assert source is not None
+        (document,) = source.documents(self.NAME, "1.19.0")
+        content = load("helm_version.json")
+        if edit:
+            edit(content)
+        return source.locate(self.NAME, "1.19.0", {document.url: content})
+
+    def test_the_chart_archive_and_the_sha256_of_the_index(self) -> None:
+        found = self.locate()
+        assert found is not None
+        assert found.url == "https://charts.jetstack.io/charts/cert-manager-v1.19.0.tgz"
+        assert found.filename == "cert-manager-v1.19.0.tgz"
+        assert found.digests == (
+            ("sha256", "b581634069151fce8073d0e08d454e712daf7f9bfb9df00b35d5fdcba01936b8"),
+        )
+
+    def test_the_document_asked_for_is_the_charts_version(self) -> None:
+        source = ArchiveSources.of("helm")
+        assert source is not None
+        assert source.documents(self.NAME, "1.19.0")[0].url.endswith(
+            "/packages/helm/cert-manager/cert-manager/1.19.0"
+        )
+
+    def test_a_chart_with_no_digest_or_an_oci_address_has_no_archive(self) -> None:
+        def stripped(content: dict[str, Any]) -> None:
+            del content["digest"]
+
+        def oci(content: dict[str, Any]) -> None:
+            content["content_url"] = "oci://registry.example.invalid/charts/x"
+
+        assert self.locate(stripped) is None and self.locate(oci) is None
+
+    def test_the_chart_repository_host_must_be_public(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import socket
+
+        source = ArchiveSources.of("helm")
+        assert source is not None
+        monkeypatch.setattr(
+            socket, "getaddrinfo", lambda *_a, **_k: [(2, 1, 6, "", ("10.0.0.7", 443))]
+        )
+        assert not source.allows("charts.jetstack.io")
+
+    @pytest.mark.parametrize("name", ["", "a/b/c", "../x", "A/B", "a b"])
+    def test_a_name_that_is_not_a_chart_asks_for_nothing(self, name: str) -> None:
+        assert ArchiveSources.of("helm").documents(name, "1.0.0") == ()  # type: ignore[union-attr]
+
+
+class TestTheFallbacks:
+    def test_a_404_moves_to_the_next_address_and_any_other_failure_stops(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        source = ArchiveSources.of("actions")
+        assert source is not None
+        located = Located(
+            "https://codeload.github.com/a/b/tar.gz/refs/tags/v1",
+            "b-v1.tar.gz",
+            (("git-tag", ""),),
+            ("https://codeload.github.com/a/b/tar.gz/refs/tags/1",),
+        )
+        asked: list[str] = []
+
+        def fetch(url: str, ecosystem: str, **_k: Any) -> bytes:
+            asked.append(url)
+            if url.endswith("/v1"):
+                raise RegistryError("HTTP 404 from codeload.github.com")
+            return b"bytes"
+
+        monkeypatch.setattr(RegistryRequest, "fetch_bytes", staticmethod(fetch))
+        assert ArchiveFetch.download(source, located) == b"bytes" and len(asked) == 2
+
+        def refuse(url: str, ecosystem: str, **_k: Any) -> bytes:
+            raise RegistryError("HTTP 500 from codeload.github.com")
+
+        monkeypatch.setattr(RegistryRequest, "fetch_bytes", staticmethod(refuse))
+        with pytest.raises(RegistryError, match="HTTP 500"):
+            ArchiveFetch.download(source, located)

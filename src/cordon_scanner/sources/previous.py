@@ -199,7 +199,8 @@ class PreviousRelease:
             raise ValueError(str(exc)) from exc
         path = into / PackageTarget.safe_filename(archive.filename, identity.ecosystem)
         path.write_bytes(archive.data)
-        return Previous(path, f"{identity.name} {version}")
+        weak = f" (checked by {archive.strength} only)" if archive.strength else ""
+        return Previous(path, f"{identity.name} {version}{weak}")
 
     @staticmethod
     def _safe(filename: str) -> str:

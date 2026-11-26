@@ -784,6 +784,9 @@ class PackageArchive:
     version: str
     filename: str
     data: bytes
+    strength: str = ""
+    """What the archive was checked with when it is weaker than a SHA-2 digest the registry publishes (`md5`, `git-commit`,
+    `git-tag`); empty for a SHA-2 digest and for the registries whose readers predate this field."""
 
 
 # A value both the feed and the rule packs it delivers raise, so neither imports the other for it.
