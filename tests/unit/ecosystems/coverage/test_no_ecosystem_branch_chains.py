@@ -1,9 +1,10 @@
-"""No feature branches on ecosystem names. A function that compares an ecosystem with two or more ecosystem names
+"""No feature branches on ecosystem names. A function that tests a value against two or more ecosystem names
 (`if ecosystem == "npm": … elif ecosystem == "pypi": …`) is a feature that has to be edited for every ecosystem added,
 and is how a feature ends up covering a few: each ecosystem's behaviour belongs to its own adapter
 (`EcosystemRegistry`) or to one table, so a new ecosystem is a new adapter or a row, never an edit here.
 
-The chains found on 2026-11-26 are listed in `ecosystem_chains.json`. A new one fails; a listed one that is gone must
+Outside an ecosystem's own adapter (`ecosystems/`), a single name counts too: `if ecosystem == "npm": check()` is a
+feature built for one ecosystem. The sites found on 2026-11-26 are listed in `ecosystem_chains.json`. A new one fails; a listed one that is gone must
 be taken off, so the list only shrinks. Each is replaced by adapter or table dispatch when its feature is built."""
 
 from __future__ import annotations
@@ -24,33 +25,39 @@ class Chains:
     )
     IDS: ClassVar[frozenset[str]] = frozenset(EcosystemRegistry.BY_ID) | {"vscode", "openvsx"}
 
-    @staticmethod
-    def subject(node: ast.AST) -> bool:
-        """An expression that holds an ecosystem: a name or attribute called `ecosystem`, `eco` or `*_ecosystem`."""
-        name = (
-            node.id
-            if isinstance(node, ast.Name)
-            else node.attr
-            if isinstance(node, ast.Attribute)
-            else ""
-        )
-        return name in ("ecosystem", "eco") or name.endswith("_ecosystem")
-
     @classmethod
-    def named(cls, node: ast.Compare) -> set[str]:
-        """The ecosystem names a comparison of an ecosystem tests against."""
-        sides = [node.left, *node.comparators]
-        if not any(cls.subject(side) for side in sides):
-            return set()
+    def named(cls, node: ast.AST) -> set[str]:
+        """The ecosystem names a branch tests against, whatever the tested value is called: a comparison
+        (`kind == "npm"`, `eco in ("pypi", "cargo")`), a `case "npm":` pattern, or a prefix test
+        (`purl.startswith("pkg:npm")`)."""
         found: set[str] = set()
-        for side in sides:
-            for leaf in ast.walk(side):
+        if isinstance(node, ast.Compare):
+            for side in [node.left, *node.comparators]:
+                for leaf in ast.walk(side):
+                    if (
+                        isinstance(leaf, ast.Constant)
+                        and isinstance(leaf.value, str)
+                        and leaf.value in cls.IDS
+                    ):
+                        found.add(leaf.value)
+        elif isinstance(node, ast.match_case):
+            for leaf in ast.walk(node.pattern):
                 if (
                     isinstance(leaf, ast.Constant)
                     and isinstance(leaf.value, str)
                     and leaf.value in cls.IDS
                 ):
                     found.add(leaf.value)
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in ("startswith", "endswith")
+        ):
+            for leaf in ast.walk(node):
+                if isinstance(leaf, ast.Constant) and isinstance(leaf.value, str):
+                    tail = leaf.value.removeprefix("pkg:").rstrip("/:@")
+                    if tail in cls.IDS:
+                        found.add(tail)
         return found
 
     @classmethod
@@ -63,9 +70,11 @@ class Chains:
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     names: set[str] = set()
                     for inner in ast.walk(node):
-                        if isinstance(inner, ast.Compare):
-                            names |= cls.named(inner)
-                    if len(names) >= 2:
+                        names |= cls.named(inner)
+                    # Outside an ecosystem's own adapter (`ecosystems/`), even one name is a feature built for that one:
+                    # `if ecosystem == "npm": check()` is how a feature ends up covering a few.
+                    inside_adapter = path.relative_to(cls.SOURCE).parts[0] == "ecosystems"
+                    if len(names) >= (2 if inside_adapter else 1):
                         key = f"{path.relative_to(ROOT).as_posix()}::{node.name}"
                         sites[key] = sorted(set(sites.get(key, [])) | names)
         return sites
@@ -89,12 +98,23 @@ class TestNoEcosystemBranchChains:
         assert not gone, f"remove from ecosystem_chains.json (the chain is gone): {gone}"
 
     def test_the_scan_finds_a_chain_and_not_a_single_check(self) -> None:
-        chain = ast.parse(
-            'def f(ecosystem):\n    if ecosystem == "npm":\n        a()\n    elif ecosystem in ("pypi", "cargo"):\n        b()\n'
-        )
-        single = ast.parse('def g(ecosystem):\n    return ecosystem == "npm"\n')
-        names = [Chains.named(n) for n in ast.walk(chain) if isinstance(n, ast.Compare)]
-        assert set().union(*names) == {"npm", "pypi", "cargo"}
-        assert [Chains.named(n) for n in ast.walk(single) if isinstance(n, ast.Compare)] == [
-            {"npm"}
-        ]
+        def names(source: str) -> set[str]:
+            return set().union(*(Chains.named(n) for n in ast.walk(ast.parse(source))))
+
+        assert names(
+            'def f(kind):\n    if kind == "npm":\n        a()\n    elif kind in ("pypi", "cargo"):\n        b()\n'
+        ) == {
+            "npm",
+            "pypi",
+            "cargo",
+        }
+        assert names(
+            'def f(x):\n    match x:\n        case "npm":\n            a()\n        case "pypi":\n            b()\n'
+        ) == {
+            "npm",
+            "pypi",
+        }
+        assert names(
+            'def f(p):\n    return p.startswith("pkg:npm/") or p.startswith("pkg:cargo/")\n'
+        ) == {"npm", "cargo"}
+        assert names('def g(e):\n    return e == "npm"\n') == {"npm"}
