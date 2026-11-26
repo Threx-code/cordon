@@ -96,6 +96,10 @@ class Features:
     #: Features being built now: expected to fail until they cover every ecosystem; the entry comes off when they do.
     BUILDING: ClassVar[frozenset[str]] = frozenset(
         {
+            # Not yet built for editor extensions:
+            "registry record (publisher, history, withdrawals)",
+            "campaign fingerprints",
+            # Not yet built for every ecosystem:
             "provenance (signed build attestations)",
             "the previous release from the registry archive",
             "look-alike names",
@@ -114,7 +118,9 @@ class Features:
         ]
 
 
-ALL = frozenset(EcosystemRegistry.BY_ID)
+#: Every ecosystem the product supports: the 28 registered package ecosystems and editor extensions (VS Code
+#: Marketplace and Open VSX, `vscode`), which are published to registries of their own like any package.
+ALL = frozenset(EcosystemRegistry.BY_ID) | {"vscode"}
 
 
 class TestEveryFeatureCoversEveryEcosystem:
@@ -138,4 +144,4 @@ class TestEveryFeatureCoversEveryEcosystem:
         assert set(Features.TABLE) >= Features.BUILDING
 
     def test_the_ecosystems_checked_are_the_scanners_own(self) -> None:
-        assert len(ALL) >= 28 and {"npm", "pypi", "cargo", "maven", "actions", "image"} <= ALL
+        assert len(ALL) == 29 and {"npm", "pypi", "cargo", "maven", "actions", "image", "vscode"} <= ALL

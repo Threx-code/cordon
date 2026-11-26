@@ -102,6 +102,8 @@ class Versions:
         "actions": "_semver",
         "image": "_tag",
         "bazel": "_libversion",
+        # An editor extension's version is SemVer: the Marketplace and Open VSX both require it.
+        "vscode": "_semver",
         "cpe": "_libversion",
     }
 
