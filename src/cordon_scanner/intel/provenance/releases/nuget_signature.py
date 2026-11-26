@@ -14,8 +14,9 @@ against two pinned DigiCert roots (`intel/data/nuget-trust-roots.json`) and noth
    while the packages stay, so what dates a signature is the RFC 3161 token inside it (`cms`), signed by a time-stamping
    authority that chains to a pinned root, over this signature's bytes.
 
-Not consulted: certificate revocation (CRL, OCSP). The signature's value is that the archive is what nuget.org published; a
-certificate revoked after the stamp was still the repository's at that time.
+4. revocation: each certificate from the signing one up to the root is looked up in the list its issuer publishes (`revocation`);
+   a revoked one refuses the package, and the answer names what was consulted (`checked`, `unavailable: <why>`, or `not
+   consulted` when no fetcher is given, as offline). OCSP is not used; the lists are.
 
 The answer is `verified`, `invalid`, `absent` (the archive carries no signature) or `unverifiable` (the archive could not be
 fetched, or the package is signed only by its author, with no repository counter-signature to check)."""
@@ -39,6 +40,7 @@ from cordon_scanner.intel.provenance.releases.cms import (
     Signer,
     TimestampToken,
 )
+from cordon_scanner.intel.provenance.releases.revocation import Fetcher, Revocation
 from cordon_scanner.intel.provenance.sigstore_bundle import Strict, TrustRoot
 from cordon_scanner.intel.provenance.x509 import Certificate
 
@@ -184,7 +186,9 @@ class NuGetSignature:
     # -- the checks (no network) ---------------------------------------------------------------------------
 
     @classmethod
-    def verify(cls, package: bytes, now: dt.datetime | None = None) -> ModuleCheck:
+    def verify(
+        cls, package: bytes, now: dt.datetime | None = None, fetcher: Fetcher | None = None
+    ) -> ModuleCheck:
         try:
             layout = ZipLayout(package)
         except LookupError:
@@ -195,15 +199,19 @@ class NuGetSignature:
             )
         try:
             signed = Cms.parse(Der.parse(layout.signature_bytes()))
-            cls._check(layout, signed, now or dt.datetime.now(dt.UTC))
+            revocation = cls._check(layout, signed, now or dt.datetime.now(dt.UTC), fetcher)
         except _AuthorOnly as exc:
             return ModuleCheck("unverifiable", str(exc))
         except (CmsError, DerError, ValueError, KeyError, IndexError, struct.error) as exc:
             return ModuleCheck("invalid", f"the package signature did not verify: {exc}")
-        return ModuleCheck("verified", "the package is as NuGet.org signed it")
+        return ModuleCheck(
+            "verified", f"the package is as NuGet.org signed it; revocation {revocation}"
+        )
 
     @classmethod
-    def _check(cls, layout: ZipLayout, signed: SignedData, now: dt.datetime) -> None:
+    def _check(
+        cls, layout: ZipLayout, signed: SignedData, now: dt.datetime, fetcher: Fetcher | None
+    ) -> str:
         if signed.content_type != cls.DATA_TYPE or len(signed.signers) != 1:
             raise CmsError("not one signature over data")
         primary = signed.signers[0]
@@ -229,10 +237,54 @@ class NuGetSignature:
                 )
             if not any(Cms.signature_ok(signer, certificate, over, kind) for kind in kinds):
                 raise CmsError("the repository's signature does not verify")
-            return
+            return cls._revocation(certificate, signed.certificates, fetcher, now)
         raise _AuthorOnly(
             "the package carries no signature of NuGet.org's: its author's alone, or another signer's"
         )
+
+    @classmethod
+    def _revocation(
+        cls,
+        certificate: Certificate,
+        pool: tuple[Certificate, ...],
+        fetcher: Fetcher | None,
+        now: dt.datetime,
+    ) -> str:
+        """What the issuers' revocation lists say of the signing certificate and the authorities above it: `checked`,
+        `not consulted` or `unavailable: <why>`; a revoked one is an error."""
+        pinned = {root.raw for root in cls.roots()}
+        results: list[str] = []
+        current = certificate
+        for _ in range(4):
+            issuer = next(
+                (
+                    c
+                    for c in (*pool, *cls.roots())
+                    if c.subject == current.issuer and current.signed_by(c.public_key())
+                ),
+                None,
+            )
+            if issuer is None:
+                raise CmsError(
+                    "a certificate with no issuer among the signature's certificates or the pinned roots"
+                )
+            found = (
+                Revocation.status(current, issuer, fetcher, now)
+                if current.raw not in pinned
+                else "checked"
+            )
+            if found == "revoked":
+                raise CmsError(
+                    "the certificate (or an authority above it) has been revoked by its issuer"
+                )
+            results.append(found)
+            if issuer.raw in pinned:
+                break
+            current = issuer
+        for outcome in results:
+            if outcome != "checked":
+                return outcome
+        return "checked"
 
     @classmethod
     def _chains(
@@ -303,7 +355,7 @@ class NuGetSignature:
             return ModuleCheck(
                 "unverifiable", f"the archive could not be fetched and checked: {exc}"
             )
-        return cls.verify(archive.data)
+        return cls.verify(archive.data, fetcher=Revocation.fetch)
 
 
 class _AuthorOnly(Exception):

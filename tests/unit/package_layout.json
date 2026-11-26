@@ -758,6 +758,7 @@
   "intel/provenance/releases/cms": "intel/provenance/releases/cms",
   "intel/provenance/releases/github_attestations": "intel/provenance/releases/github_attestations",
   "intel/provenance/releases/nuget_signature": "intel/provenance/releases/nuget_signature",
+  "intel/provenance/releases/revocation": "intel/provenance/releases/revocation",
   "intel/provenance/gosumdb": "intel/provenance/gosumdb",
   "intel/provenance/helm_provenance": "intel/provenance/helm_provenance",
   "intel/provenance/terraform_provenance": "intel/provenance/terraform_provenance",

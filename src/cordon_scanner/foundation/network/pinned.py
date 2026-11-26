@@ -77,3 +77,37 @@ class PinnedHTTPS(urllib.request.HTTPSHandler):
             public_only = flag
 
         return self.do_open(Connection, req)
+
+
+class PinnedHTTPConnection(http.client.HTTPConnection):
+    """A plain HTTP connection that resolves its host once and goes only to a public address.
+
+    For what is signed by other means and cannot be had over HTTPS (a certificate revocation list: its URL is in a certificate
+    already verified, its content is signed by the issuer). The same one-lookup rule as `PinnedConnection`, public addresses only."""
+
+    def connect(self) -> None:
+        candidates = Pinned.addresses(self.host, self.port)
+        if not candidates:
+            raise OSError(f"{self.host} has no address")
+        if not all(Pinned.is_global(address) for _, address in candidates):
+            raise OSError(f"{self.host} resolves to an address that is not a public one")
+        last: OSError | None = None
+        for family, address in candidates:
+            sock = socket.socket(family, socket.SOCK_STREAM)
+            try:
+                sock.settimeout(self.timeout if isinstance(self.timeout, (int, float)) else None)
+                sock.connect((address, self.port))
+            except OSError as exc:
+                sock.close()
+                last = exc
+                continue
+            self.sock = sock
+            return
+        raise last or OSError(f"{self.host} could not be reached")
+
+
+class PinnedHTTP(urllib.request.HTTPHandler):
+    """The handler that opens plain HTTP through `PinnedConnection`'s rule, public addresses only."""
+
+    def http_open(self, req: urllib.request.Request) -> Any:
+        return self.do_open(PinnedHTTPConnection, req)
