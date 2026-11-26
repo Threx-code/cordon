@@ -78,6 +78,7 @@ ARCHIVE_HOSTS = {
     "openvsx": frozenset({"openvsx.eclipsecontent.org"}),
     "conda": frozenset({"conda.anaconda.org", "repo.anaconda.com"}),
     "composer": frozenset({"codeload.github.com"}),
+    "ansible": frozenset({"galaxy.ansible.com"}),
 }
 MAX_ARCHIVE_BYTES = 64 << 20
 
@@ -87,31 +88,40 @@ class RegistryRequest:
     hosts, over https, without redirects, bounded in size."""
 
     @staticmethod
-    def fetch_bytes(url: str, ecosystem: str) -> bytes:
-        parsed = urllib.parse.urlsplit(url)
-        if parsed.scheme != "https" or (parsed.hostname or "") not in ARCHIVE_HOSTS.get(
-            ecosystem, frozenset()
-        ):
-            raise RegistryError(
-                f"refusing an archive URL off the {ecosystem} allowlist: {parsed.hostname!r}"
+    def fetch_bytes(url: str, ecosystem: str, *, redirects: int = 0) -> bytes:
+        """The bytes at `url`, from the ecosystem's own file hosts. `redirects` is how many redirects may be followed, each only to
+        an https address on those same hosts (a registry that signs a storage URL answers with one); none by default."""
+        allowed = ARCHIVE_HOSTS.get(ecosystem, frozenset())
+        for hop in range(redirects + 1):
+            parsed = urllib.parse.urlsplit(url)
+            if parsed.scheme != "https" or (parsed.hostname or "") not in allowed:
+                raise RegistryError(
+                    f"refusing an archive URL off the {ecosystem} allowlist: {parsed.hostname!r}"
+                )
+            request = urllib.request.Request(  # noqa: S310 - scheme and host checked above
+                url, headers={"User-Agent": USER_AGENT}, method="GET"
             )
-        request = urllib.request.Request(  # noqa: S310 - scheme and host checked above
-            url, headers={"User-Agent": USER_AGENT}, method="GET"
-        )
-        opener = urllib.request.build_opener(NoRedirects)
-        try:
-            with opener.open(request, timeout=TIMEOUT_SECONDS * 6) as response:
-                body = Download.read(response, MAX_ARCHIVE_BYTES + 1)
-        except urllib.error.HTTPError as exc:
-            NetworkFailure.release(exc)
-            raise RegistryError(f"HTTP {exc.code} from {parsed.netloc}") from exc
-        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
-            raise RegistryError(
-                f"{NetworkFailure.reason(exc)} fetching from {parsed.netloc}"
-            ) from exc
-        if len(body) > MAX_ARCHIVE_BYTES:
-            raise RegistryError(f"archive from {parsed.netloc} exceeded {MAX_ARCHIVE_BYTES} bytes")
-        return bytes(body)
+            opener = urllib.request.build_opener(NoRedirects)
+            try:
+                with opener.open(request, timeout=TIMEOUT_SECONDS * 6) as response:
+                    body = Download.read(response, MAX_ARCHIVE_BYTES + 1)
+            except urllib.error.HTTPError as exc:
+                NetworkFailure.release(exc)
+                where = str(exc.headers.get("Location", "")) if exc.headers else ""
+                if exc.code in (301, 302, 303, 307, 308) and where and hop < redirects:
+                    url = urllib.parse.urljoin(url, where)
+                    continue
+                raise RegistryError(f"HTTP {exc.code} from {parsed.netloc}") from exc
+            except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
+                raise RegistryError(
+                    f"{NetworkFailure.reason(exc)} fetching from {parsed.netloc}"
+                ) from exc
+            if len(body) > MAX_ARCHIVE_BYTES:
+                raise RegistryError(
+                    f"archive from {parsed.netloc} exceeded {MAX_ARCHIVE_BYTES} bytes"
+                )
+            return bytes(body)
+        raise RegistryError(f"too many redirects fetching from {parsed.netloc}")
 
 
 __all__ = [

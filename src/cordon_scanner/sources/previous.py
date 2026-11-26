@@ -177,33 +177,24 @@ class PreviousRelease:
         highest below it in the ecosystem's version order. Not the latest published before it:
         maintained lines interleave in time, and `express` 4.21.2 was compared with 5.0.1, out a
         month before it on the next major line."""
-        from cordon_scanner.intel.advisories.versions import Versions
+        from cordon_scanner.intel.registries.archive_sources.base import ArchiveFetch
 
-        current = published.get(version)
-        if current is None:
-            return None
-        best: str | None = None
-        for candidate, when in published.items():
-            if when >= current or Versions.compare(ecosystem, candidate, version) >= 0:
-                continue
-            if best is None or Versions.compare(ecosystem, candidate, best) > 0:
-                best = candidate
-        return best
+        return ArchiveFetch.before(ecosystem, version, published)
 
     @staticmethod
     def _from_registry(identity: Identity, into: Path) -> Previous | None:
         """Crates.io, RubyGems, NuGet, the Go proxy, Hex, pub and Maven Central: the release before
         this one by the ecosystem's version order, fetched and verified against the digest its
         registry publishes (`RegistryClient.package_archive`)."""
-        from cordon_scanner.intel.registries.more_registries import MoreRegistries
-        from cordon_scanner.intel.registries.registry_client import RegistryClient, RegistryError
+        from cordon_scanner.intel.registries.archive_sources.table import ArchiveSources
+        from cordon_scanner.intel.registries.registry_client import RegistryError
         from cordon_scanner.sources.package import PackageTarget
 
         try:
-            version = MoreRegistries.previous(identity.ecosystem, identity.name, identity.version)
+            version = ArchiveSources.previous(identity.ecosystem, identity.name, identity.version)
             if version is None:
                 return None
-            archive = RegistryClient.package_archive(identity.ecosystem, identity.name, version)
+            archive = ArchiveSources.package_archive(identity.ecosystem, identity.name, version)
         except RegistryError as exc:
             raise ValueError(str(exc)) from exc
         path = into / PackageTarget.safe_filename(archive.filename, identity.ecosystem)

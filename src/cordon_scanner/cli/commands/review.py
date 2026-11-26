@@ -36,6 +36,7 @@ from typing import Any, ClassVar
 from cordon_scanner.foundation.errors import ConfigError, CordonError, ExitCode
 from cordon_scanner.foundation.models import Severity
 from cordon_scanner.foundation.results import Dependency
+from cordon_scanner.intel.registries.archive_sources.table import ArchiveSources
 
 #: Files read from the base revision: at most this many, each at most this size.
 MAX_BASE_FILES = 2_000
@@ -45,6 +46,7 @@ MAX_FETCHED = 40
 #: Registries whose archives can be fetched and verified (`RegistryClient.package_archive`).
 COMPARABLE = frozenset(
     {"npm", "pypi", "cargo", "rubygems", "nuget", "gomod", "hex", "pub", "maven", "gradle"}
+    | ArchiveSources.ids()
 )
 
 

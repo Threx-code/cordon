@@ -25,6 +25,7 @@ own word for it: `yanked`, `retracted`, `deprecated`, `unlisted`, `archived`, or
 
 from __future__ import annotations
 
+import contextvars
 import json
 import re
 import urllib.parse
@@ -98,6 +99,25 @@ class RecordSource(ABC):
 class RecordBuilder:
     """The record's counts, from a release history: shared, so each parser extracts raw facts and nothing else."""
 
+    #: Where the release history of a `record` call is kept while `releases_of` reads it (set only inside that call).
+    _sink: contextvars.ContextVar[list[Release] | None] = contextvars.ContextVar(
+        "release_sink", default=None
+    )
+
+    @classmethod
+    def releases_of(
+        cls, source: RecordSource, name: str, version: str, documents: Mapping[str, Any]
+    ) -> list[Release]:
+        """The whole release history a source reads from `documents`, as the record's own builder saw it (rows 3 and 8 use the same
+        history as the record, so the two never disagree on what the releases are)."""
+        sink: list[Release] = []
+        token = cls._sink.set(sink)
+        try:
+            source.record(name, version, documents)
+        finally:
+            cls._sink.reset(token)
+        return sink
+
     @staticmethod
     def from_history(
         source: RecordSource,
@@ -113,6 +133,9 @@ class RecordBuilder:
         `facts` are the record's other fields (maintainers, hooks, has_repository, ...)."""
         from cordon_scanner.intel.registries.registry_record import RegistryRecord
 
+        sink = RecordBuilder._sink.get()
+        if sink is not None:
+            sink.extend(releases)
         this = next((r for r in releases if r.version == version), None)
         if this is None:
             return None
