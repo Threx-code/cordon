@@ -126,6 +126,12 @@ class ProvenanceDetector(BaseDetector):
             ),
             # A module the checksum database records: a version from the public proxy, not a `replace` to a path or another module.
             "gomod": lambda d: bool(d.version) and not (d.local or d.resolved_from),
+            # An Action `owner/repo@ref` of GitHub: a local `./path` or a docker:// reference is not a repository's release.
+            "actions": lambda d: (
+                bool(d.version)
+                and d.name.count("/") >= 1
+                and not d.name.startswith((".", "docker:"))
+            ),
         }
     )
     #: The ecosystems whose provenance is not the registry's attestation, by their verifier.
@@ -137,6 +143,7 @@ class ProvenanceDetector(BaseDetector):
             "ansible": "_verify_ansible",
             "terraform": "_verify_terraform",
             "gomod": "_verify_gomod",
+            "actions": "_verify_actions",
         }
     )
     #: Where a publisher signs every artefact or none, so an unsigned one the project runs is the
@@ -633,6 +640,33 @@ class ProvenanceDetector(BaseDetector):
                 ctx,
                 dependency=dependency,
                 detail=f"{label}'s record in the checksum database could not be verified: {check.detail}",
+            )
+
+    def _verify_actions(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
+        """A GitHub Action's release attestation, signed by GitHub and checked against its own trusted root
+        (`intel/provenance/github_attestations`): the release of this repository at this tag or commit."""
+        from cordon_scanner.intel.registry import GitHubAttestations
+
+        label = f"{dependency.name}@{dependency.version}"
+        check = GitHubAttestations.check(
+            dependency.name, dependency.version or "", dependency.integrity
+        )
+        if check.outcome in ("verified", "absent"):
+            ctx.checks.record(dependency.purl, "provenance", check.outcome)
+        elif check.outcome == "invalid":
+            ctx.checks.record(dependency.purl, "provenance", "invalid")
+            yield self._finding(
+                INVALID_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"the release attestation of {label} did not verify: {check.detail}",
+            )
+        else:
+            yield self._finding(
+                UNVERIFIED_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"the release attestation of {label} could not be verified: {check.detail}",
             )
 
     def _verify_bazel(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:

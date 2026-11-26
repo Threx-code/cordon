@@ -367,6 +367,63 @@ class TestGoModulesReachTheChecksumDatabase:
         assert TestTheEcosystemsVerifiedOutsideTheRegistryClient.run((self.dependency(),)) == rules
 
 
+class TestActionsReachTheirAttestation:
+    """Which Action dependencies are asked (a repository's tag or commit, not a local path or a docker reference), and what each of
+    the verifier's answers becomes."""
+
+    @staticmethod
+    def dependency(
+        name: str = "sigstore/cosign-installer", version: str | None = "v4.1.4"
+    ) -> Dependency:
+        return Dependency(
+            purl=f"pkg:githubactions/{name}@{version}",
+            ecosystem="actions",
+            name=name,
+            version=version,
+            direct=True,
+            declared_in=".github/workflows/ci.yml",
+        )
+
+    @staticmethod
+    def stand_in(monkeypatch, outcome: str = "verified") -> list[tuple[str, str]]:
+        from cordon_scanner.intel.provenance.bazel_provenance import ModuleCheck
+        from cordon_scanner.intel.provenance.github_attestations import GitHubAttestations
+
+        asked: list[tuple[str, str]] = []
+
+        def check(name, version, integrity):
+            asked.append((name, version))
+            return ModuleCheck(outcome, "stood in")
+
+        monkeypatch.setattr(GitHubAttestations, "check", staticmethod(check))
+        return asked
+
+    def test_only_a_repositorys_release_is_asked(self, monkeypatch) -> None:
+        asked = self.stand_in(monkeypatch)
+        deps = (
+            self.dependency(),
+            self.dependency(version=None),
+            self.dependency("./local-action"),
+            self.dependency("docker://alpine"),
+            self.dependency("actions"),
+        )
+        assert TestTheEcosystemsVerifiedOutsideTheRegistryClient.run(deps) == []
+        assert asked == [("sigstore/cosign-installer", "v4.1.4")]
+
+    @pytest.mark.parametrize(
+        ("outcome", "rules"),
+        [
+            ("verified", []),
+            ("absent", []),
+            ("invalid", [INVALID_RULE]),
+            ("unverifiable", [UNVERIFIED_RULE]),
+        ],
+    )
+    def test_each_answer_becomes_its_rule(self, monkeypatch, outcome, rules) -> None:
+        self.stand_in(monkeypatch, outcome)
+        assert TestTheEcosystemsVerifiedOutsideTheRegistryClient.run((self.dependency(),)) == rules
+
+
 class TestAnsibleCollectionsReachTheirVerifier:
     """Which Ansible dependencies are checked, and how: the signatures an install recorded, over
     the MANIFEST.json in the tree; else galaxy.ansible.com's, for one exact version from there."""

@@ -94,6 +94,7 @@ PROVENANCE_ECOSYSTEMS: Final = frozenset(
         "ansible",
         "terraform",
         "gomod",
+        "actions",
     }
 )
 #: Registries whose own documentation, read on 2026-11-25, states no build-provenance attestation or signature a client can fetch and verify
