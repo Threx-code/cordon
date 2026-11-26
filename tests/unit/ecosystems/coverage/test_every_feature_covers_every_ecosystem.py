@@ -144,4 +144,7 @@ class TestEveryFeatureCoversEveryEcosystem:
         assert set(Features.TABLE) >= Features.BUILDING
 
     def test_the_ecosystems_checked_are_the_scanners_own(self) -> None:
-        assert len(ALL) == 29 and {"npm", "pypi", "cargo", "maven", "actions", "image", "vscode"} <= ALL
+        assert (
+            len(ALL) == 29
+            and {"npm", "pypi", "cargo", "maven", "actions", "image", "vscode"} <= ALL
+        )
