@@ -376,6 +376,8 @@ Haskell packages, through cabal and stack. Ecosystem id `hackage`.
 │                 names                                                      │
 │ WITH --online   registry: withdrawn releases, version distance, hash       │
 │                 agreement                                                  │
+│                 provenance: whether a build attestation exists, and        │
+│                 verifies                                                   │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 

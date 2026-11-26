@@ -59,6 +59,7 @@ ROLES: dict[str, tuple[str, str]] = {
     ),
     "BazelProvenance": ("cordon_scanner.intel.provenance.bazel_provenance", "BazelProvenance"),
     "GoSumdb": ("cordon_scanner.intel.provenance.gosumdb", "GoSumdb"),
+    "HackageTuf": ("cordon_scanner.intel.provenance.releases.hackage_tuf", "HackageTuf"),
     "NuGetSignature": (
         "cordon_scanner.intel.provenance.releases.nuget_signature",
         "NuGetSignature",
@@ -191,6 +192,9 @@ if TYPE_CHECKING:
         github_attestations as _intel_provenance_releases_github_attestations,
     )
     from cordon_scanner.intel.provenance.releases import (
+        hackage_tuf as _intel_provenance_releases_hackage_tuf,
+    )
+    from cordon_scanner.intel.provenance.releases import (
         nuget_signature as _intel_provenance_releases_nuget_signature,
     )
     from cordon_scanner.intel.registries import installers as _intel_registries_installers
@@ -248,6 +252,7 @@ if TYPE_CHECKING:
     GitHubAttestations: ModuleProvenance = (
         _intel_provenance_releases_github_attestations.GitHubAttestations
     )
+    HackageTuf: ModuleProvenance = _intel_provenance_releases_hackage_tuf.HackageTuf
     NuGetSignature: ModuleProvenance = _intel_provenance_releases_nuget_signature.NuGetSignature
     GitHubRepository: RepositoryHeads = _intel_provenance_github_repository.GitHubRepository
     HelmProvenance: ChartProvenance = _intel_provenance_helm_provenance.HelmProvenance
@@ -336,6 +341,7 @@ __all__ = [
     "GitHubAttestations",
     "GitHubRepository",
     "GoSumdb",
+    "HackageTuf",
     "HallucinatedPackages",
     "HelmProvenance",
     "HomebrewProvenance",

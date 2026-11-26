@@ -135,6 +135,8 @@ class ProvenanceDetector(BaseDetector):
             ),
             # A package of nuget.org at a version: not a path, and not one a private feed served.
             "nuget": lambda d: bool(d.version) and not (d.local or d.resolved_from),
+            # A package of hackage.haskell.org at a version, not a path or another repository's.
+            "hackage": lambda d: bool(d.version) and not (d.local or d.resolved_from),
         }
     )
     #: The ecosystems whose provenance is not the registry's attestation, by their verifier.
@@ -148,6 +150,7 @@ class ProvenanceDetector(BaseDetector):
             "gomod": "_verify_gomod",
             "actions": "_verify_actions",
             "nuget": "_verify_nuget",
+            "hackage": "_verify_hackage",
         }
     )
     #: Where a publisher signs every artefact or none, so an unsigned one the project runs is the
@@ -665,6 +668,13 @@ class ProvenanceDetector(BaseDetector):
             dependency.name, dependency.version or "", dependency.integrity
         )
         return self._report(check, dependency, ctx, "repository signature")
+
+    def _verify_hackage(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
+        """A Hackage package against Hackage's signed TUF metadata and index (`intel/provenance/releases/hackage_tuf`)."""
+        from cordon_scanner.intel.registry import HackageTuf
+
+        check = HackageTuf.check(dependency.name, dependency.version or "", dependency.integrity)
+        return self._report(check, dependency, ctx, "TUF target")
 
     def _report(
         self, check: ModuleCheck, dependency: Dependency, ctx: ScanContext, what: str

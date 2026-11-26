@@ -18,6 +18,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import ClassVar
 
+from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.pinned import PinnedHTTP
@@ -185,3 +186,6 @@ class Revocation:
             raise RevocationError("the list is not current")
         cls._cache[url] = crl
         return crl
+
+
+ScanCaches.register(Revocation._cache)
