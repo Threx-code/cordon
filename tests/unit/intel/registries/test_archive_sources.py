@@ -5,6 +5,7 @@ digests it must match, and that nothing that does not match is returned."""
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import urllib.error
@@ -26,6 +27,10 @@ DATA = ROOT / "tests" / "unit" / "intel" / "registries" / "archives"
 
 def load(name: str) -> Any:
     return json.loads((DATA / name).read_text(encoding="utf-8"))
+
+
+def text(name: str) -> str:
+    return (DATA / name).read_text(encoding="utf-8")
 
 
 def locate(ecosystem: str, name: str, version: str, files: dict[str, str]) -> Located | None:
@@ -175,7 +180,9 @@ class TestTheFetch:
     ) -> list[tuple[str, str, int]]:
         calls: list[tuple[str, str, int]] = []
 
-        def fetch_bytes(url: str, ecosystem: str, *, redirects: int = 0) -> bytes:
+        def fetch_bytes(
+            url: str, ecosystem: str, *, redirects: int = 0, allow: Any = None
+        ) -> bytes:
             calls.append((url, ecosystem, redirects))
             return data
 
@@ -365,7 +372,14 @@ class TestTheTables:
     def test_each_sources_hosts_are_the_download_allowlist_of_its_ecosystem(
         self, source: Any
     ) -> None:
-        assert registry_request.ARCHIVE_HOSTS[source.ecosystem] == source.HOSTS
+        from cordon_scanner.intel.registries.archive_sources.upstream import UpstreamArchive
+
+        if isinstance(source, UpstreamArchive):
+            # The project's own host is no list: a public host, and the digest the registry states.
+            assert source.ecosystem not in registry_request.ARCHIVE_HOSTS
+            assert source.HOSTS == frozenset()
+        else:
+            assert registry_request.ARCHIVE_HOSTS[source.ecosystem] == source.HOSTS
 
     def test_every_archive_ecosystem_is_compared_and_has_a_record_source(self) -> None:
         from cordon_scanner.cli.commands.review import COMPARABLE
@@ -420,3 +434,278 @@ class TestTheEntryPoints:
             ArchiveSources.previous("ansible", "community.general", "14.0.1")
             == "ansible/community.general/14.0.1/before"
         )
+
+
+class TestBazelArchive:
+    def locate(self, edit: Any = None) -> Located | None:
+        source = ArchiveSources.of("bazel")
+        assert source is not None
+        (document,) = source.documents("abseil-cpp", "20240116.2")
+        content = load("bazel_source.json")
+        if edit:
+            edit(content)
+        return source.locate("abseil-cpp", "20240116.2", {document.url: content})
+
+    def test_the_url_and_the_integrity_read_as_a_hex_sha256(self) -> None:
+        found = self.locate()
+        assert found is not None
+        assert (
+            found.url
+            == "https://github.com/abseil/abseil-cpp/releases/download/20240116.2/abseil-cpp-20240116.2.tar.gz"
+        )
+        assert found.filename == "abseil-cpp-20240116.2.tar.gz"
+        assert found.digests == (
+            ("sha256", base64.b64decode("czcmuMOm05pBINfkXqi0GkNM2s3kAculAPFCNsSbOdw=").hex()),
+        )
+
+    def test_a_module_taken_from_a_git_repository_has_no_archive(self) -> None:
+        def git(source: dict[str, Any]) -> None:
+            source["type"] = "git_repository"
+
+        assert self.locate(git) is None
+
+    @pytest.mark.parametrize(
+        "integrity", ["", "sha1-AAAA", "sha256-@@@@", "md5-AAAA", "sha256-" + "AA"]
+    )
+    def test_an_integrity_that_is_not_a_whole_sri_digest_is_no_check(self, integrity: str) -> None:
+        def put(source: dict[str, Any]) -> None:
+            source["integrity"] = integrity
+
+        assert self.locate(put) is None
+
+    def test_a_url_that_is_not_https_has_no_archive(self) -> None:
+        def put(source: dict[str, Any]) -> None:
+            source["url"] = "http://example.invalid/a.tar.gz"
+
+        assert self.locate(put) is None
+
+    @pytest.mark.parametrize(
+        ("name", "version"),
+        [("", "1"), ("A", "1"), ("a/b", "1"), ("a", "../x"), ("a", ""), ("a b", "1")],
+    )
+    def test_a_name_or_version_that_is_not_one_asks_for_nothing(
+        self, name: str, version: str
+    ) -> None:
+        assert ArchiveSources.of("bazel").documents(name, version) == ()  # type: ignore[union-attr]
+
+
+class TestOpamArchive:
+    def locate(self, document: str | None = None) -> Located | None:
+        source = ArchiveSources.of("opam")
+        assert source is not None
+        (wanted,) = source.documents("dune", "3.5.0")
+        return source.locate(
+            "dune",
+            "3.5.0",
+            {wanted.url: document if document is not None else text("opam_dune.3.5.0")},
+        )
+
+    def test_the_source_and_every_checksum_the_file_states(self) -> None:
+        found = self.locate()
+        assert (
+            found is not None
+            and found.url == "https://github.com/ocaml/dune/releases/download/3.5.0/dune-3.5.0.tbz"
+        )
+        assert dict(found.digests) == {
+            "sha256": "77bd4c6704359fae1969636cfc3cd7a517ba3604819ef89c919c0762b5093610",
+            "sha512": "acaed76ab8618977118579641a1f6734ed4a225ab46494c6c5fd8e1bf9a0889e62db9adc7bd11770da602f4dd4785cef5ece4ad26512d08b64b8f3bd8954c80d",
+        }
+        assert found.strength == "sha512"
+
+    def test_a_git_source_has_no_archive(self) -> None:
+        assert (
+            self.locate(
+                text("opam_dune.3.5.0").replace(
+                    "https://github.com/ocaml/dune/releases/download/3.5.0/dune-3.5.0.tbz",
+                    "git+https://github.com/ocaml/dune.git",
+                )
+            )
+            is None
+        )
+
+    def test_a_url_block_with_no_checksum_is_no_archive(self) -> None:
+        stripped = "\n".join(
+            line for line in text("opam_dune.3.5.0").splitlines() if "sha" not in line
+        )
+        assert self.locate(stripped) is None
+
+    def test_a_file_with_no_url_block_is_no_archive(self) -> None:
+        assert self.locate('opam-version: "2.0"\n') is None
+
+    def test_a_checksum_that_is_the_wrong_width_is_ignored(self) -> None:
+        broken = text("opam_dune.3.5.0").replace("sha256=77bd", "sha256=77b")
+        found = self.locate(broken)
+        assert found is not None and set(dict(found.digests)) == {"sha512"}
+
+    @pytest.mark.parametrize(
+        ("name", "version"), [("", "1"), ("a/b", "1"), ("a", ""), ("a", "../1"), ("a b", "1")]
+    )
+    def test_a_name_or_version_that_is_not_one_asks_for_nothing(
+        self, name: str, version: str
+    ) -> None:
+        assert ArchiveSources.of("opam").documents(name, version) == ()  # type: ignore[union-attr]
+
+
+class TestConanArchive:
+    def bound(self, edit: Any = None) -> dict[str, Any]:
+        source = ArchiveSources.of("conan")
+        assert source is not None
+        (config,) = source.documents("zlib", "1.4")
+        found = {config.url: text("conan_config.yml")}
+        (more,) = source.followed("zlib", "1.4", found)
+        found[more.url] = text("conan_conandata.yml")
+        if edit:
+            edit(found)
+        return found
+
+    def test_the_config_names_the_folder_and_the_conandata_the_source(self) -> None:
+        source = ArchiveSources.of("conan")
+        assert source is not None
+        documents = self.bound()
+        assert [u.rsplit("/", 2)[-2:] for u in documents] == [
+            ["zlib", "config.yml"],
+            ["all", "conandata.yml"],
+        ]
+        found = source.locate("zlib", "1.4", documents)
+        assert found is not None
+        assert found.url == "https://zlib.net/fossils/zlib-1.4.tar.gz"
+        assert found.digests == (
+            ("sha256", "02dd159783677a749c04adbdd02b55b8a2bcc7e054f51b76b549199a916ad584"),
+        )
+
+    def test_a_version_the_recipe_does_not_list_asks_for_no_conandata(self) -> None:
+        source = ArchiveSources.of("conan")
+        assert source is not None
+        (config,) = source.documents("zlib", "9.9")
+        assert source.followed("zlib", "9.9", {config.url: text("conan_config.yml")}) == ()
+
+    def test_a_folder_that_is_not_a_plain_folder_name_is_not_followed(self) -> None:
+        source = ArchiveSources.of("conan")
+        assert source is not None
+        (config,) = source.documents("zlib", "1.4")
+        bad = text("conan_config.yml").replace("all", "../x")
+        assert source.followed("zlib", "1.4", {config.url: bad}) == ()
+
+    def test_a_source_with_no_sha256_is_no_archive(self) -> None:
+        source = ArchiveSources.of("conan")
+        assert source is not None
+
+        def strip(found: dict[str, Any]) -> None:
+            key = next(u for u in found if u.endswith("conandata.yml"))
+            found[key] = "\n".join(line for line in found[key].splitlines() if "sha256" not in line)
+
+        assert source.locate("zlib", "1.4", self.bound(strip)) is None
+
+    def test_a_url_that_is_not_https_is_not_taken(self) -> None:
+        source = ArchiveSources.of("conan")
+        assert source is not None
+
+        def http(found: dict[str, Any]) -> None:
+            key = next(u for u in found if u.endswith("conandata.yml"))
+            found[key] = found[key].replace("https://", "http://")
+
+        assert source.locate("zlib", "1.4", self.bound(http)) is None
+
+    @pytest.mark.parametrize("name", ["", "../x", "a/b", "A", "a b"])
+    def test_a_name_that_is_not_a_recipe_asks_for_nothing(self, name: str) -> None:
+        assert ArchiveSources.of("conan").documents(name, "1.0") == ()  # type: ignore[union-attr]
+
+
+class TestCranArchive:
+    def locate(self, latest: str = "2.6.1") -> Located | None:
+        source = ArchiveSources.of("cran")
+        assert source is not None
+        first, second = source.documents("R6", "2.5.1")
+        return source.locate(
+            "R6",
+            "2.5.1",
+            {
+                first.url: load("cran_version.json"),
+                second.url: load("cran_latest.json") | {"Version": latest},
+            },
+        )
+
+    def test_an_older_release_is_under_the_archive_with_the_md5_cran_publishes(self) -> None:
+        found = self.locate()
+        assert found is not None
+        assert found.url == "https://cran.r-project.org/src/contrib/Archive/R6/R6_2.5.1.tar.gz"
+        assert (
+            found.digests == (("md5", "e84fd376e246738402e5529b6d52e101"),)
+            and found.strength == "md5"
+        )
+
+    def test_the_current_release_is_under_src_contrib(self) -> None:
+        found = self.locate("2.5.1")
+        assert (
+            found is not None
+            and found.url == "https://cran.r-project.org/src/contrib/R6_2.5.1.tar.gz"
+        )
+
+    def test_a_document_for_another_version_is_not_this_archive(self) -> None:
+        source = ArchiveSources.of("cran")
+        assert source is not None
+        first, _ = source.documents("R6", "2.5.0")
+        assert source.locate("R6", "2.5.0", {first.url: load("cran_version.json")}) is None
+
+    def test_a_release_with_no_md5_has_no_archive(self) -> None:
+        source = ArchiveSources.of("cran")
+        assert source is not None
+        first, _ = source.documents("R6", "2.5.1")
+        document = load("cran_version.json")
+        del document["MD5sum"]
+        assert source.locate("R6", "2.5.1", {first.url: document}) is None
+
+    @pytest.mark.parametrize("name", ["", "1abc", "a/b", "a..b", "a b"])
+    def test_a_name_that_is_not_a_package_asks_for_nothing(self, name: str) -> None:
+        assert ArchiveSources.of("cran").documents(name, "1.0") == ()  # type: ignore[union-attr]
+
+
+class TestPublicHosts:
+    def test_an_address_or_a_local_name_is_never_public(self) -> None:
+        from cordon_scanner.intel.registries.archive_sources.hosts import PublicHost
+
+        for host in (
+            "127.0.0.1",
+            "169.254.169.254",
+            "10.0.0.5",
+            "[::1]",
+            "localhost",
+            "intranet",
+            "printer.local",
+            "db.internal",
+            "x.localhost",
+            "",
+            "-a.example.com",
+            "a..b.com",
+        ):
+            assert not PublicHost.named(host), host
+
+    def test_a_dotted_name_is_public_when_every_address_it_resolves_to_is_global(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import socket
+
+        from cordon_scanner.intel.registries.archive_sources.hosts import PublicHost
+
+        def resolves(*addresses: str) -> Any:
+            return lambda *_a, **_k: [(2, 1, 6, "", (a, 443)) for a in addresses]
+
+        monkeypatch.setattr(socket, "getaddrinfo", resolves("140.82.112.3"))
+        assert PublicHost.ok("github.com")
+        monkeypatch.setattr(socket, "getaddrinfo", resolves("140.82.112.3", "10.1.2.3"))
+        assert not PublicHost.ok("github.com")
+        monkeypatch.setattr(socket, "getaddrinfo", resolves("169.254.169.254"))
+        assert not PublicHost.ok("metadata.example.com")
+
+    def test_a_name_that_does_not_resolve_is_not_public(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import socket
+
+        from cordon_scanner.intel.registries.archive_sources.hosts import PublicHost
+
+        def fail(*_a: Any, **_k: Any) -> Any:
+            raise OSError("no such host")
+
+        monkeypatch.setattr(socket, "getaddrinfo", fail)
+        assert not PublicHost.ok("example.com")

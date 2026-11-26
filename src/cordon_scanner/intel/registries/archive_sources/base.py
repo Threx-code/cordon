@@ -48,8 +48,12 @@ class ArchiveSource(ABC):
     ecosystem: ClassVar[str]
     #: The hosts the archive may be downloaded from: the registry names the URL, so it is confined to these.
     HOSTS: ClassVar[frozenset[str]]
-    #: Follow a redirect inside `HOSTS` (a registry that signs a storage URL); none otherwise.
+    #: Follow a redirect, each to a host `allows` (a registry that signs a storage URL); none otherwise.
     REDIRECTS: ClassVar[int] = 0
+
+    def allows(self, host: str) -> bool:
+        """Whether the archive may be downloaded from `host`: the registry's own file hosts, by default."""
+        return host in self.HOSTS
 
     @abstractmethod
     def documents(self, name: str, version: str) -> tuple[Document, ...]:
@@ -97,7 +101,9 @@ class ArchiveFetch:
     @classmethod
     def archive(cls, source: ArchiveSource, name: str, version: str) -> PackageArchive:
         found = cls.located(source, name, version)
-        data = RegistryRequest.fetch_bytes(found.url, source.ecosystem, redirects=source.REDIRECTS)
+        data = RegistryRequest.fetch_bytes(
+            found.url, source.ecosystem, redirects=source.REDIRECTS, allow=source.allows
+        )
         if not cls.digest_ok(data, found.digests):
             raise RegistryError(
                 f"{name}@{version} does not match the {found.strength} {source.ecosystem} publishes"

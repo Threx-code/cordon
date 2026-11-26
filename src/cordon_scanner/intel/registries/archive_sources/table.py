@@ -6,13 +6,26 @@ from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.intel.registries.archive_sources.base import ArchiveSource
 from cordon_scanner.intel.registries.archive_sources.listed import AnsibleArchive, CondaArchive
+from cordon_scanner.intel.registries.archive_sources.upstream import (
+    BazelArchive,
+    ConanArchive,
+    CranArchive,
+    OpamArchive,
+)
 
 if TYPE_CHECKING:
     from cordon_scanner.intel.base import PackageArchive
 
 
 class ArchiveSources:
-    SOURCES: ClassVar[tuple[ArchiveSource, ...]] = (CondaArchive(), AnsibleArchive())
+    SOURCES: ClassVar[tuple[ArchiveSource, ...]] = (
+        CondaArchive(),
+        AnsibleArchive(),
+        BazelArchive(),
+        OpamArchive(),
+        ConanArchive(),
+        CranArchive(),
+    )
 
     @classmethod
     def of(cls, ecosystem: str) -> ArchiveSource | None:

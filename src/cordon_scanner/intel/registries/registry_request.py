@@ -8,6 +8,7 @@ import http.client
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
@@ -79,6 +80,7 @@ ARCHIVE_HOSTS = {
     "conda": frozenset({"conda.anaconda.org", "repo.anaconda.com"}),
     "composer": frozenset({"codeload.github.com"}),
     "ansible": frozenset({"galaxy.ansible.com"}),
+    "cran": frozenset({"cran.r-project.org"}),
 }
 MAX_ARCHIVE_BYTES = 64 << 20
 
@@ -88,13 +90,18 @@ class RegistryRequest:
     hosts, over https, without redirects, bounded in size."""
 
     @staticmethod
-    def fetch_bytes(url: str, ecosystem: str, *, redirects: int = 0) -> bytes:
+    def fetch_bytes(
+        url: str, ecosystem: str, *, redirects: int = 0, allow: Callable[[str], bool] | None = None
+    ) -> bytes:
         """The bytes at `url`, from the ecosystem's own file hosts. `redirects` is how many redirects may be followed, each only to
         an https address on those same hosts (a registry that signs a storage URL answers with one); none by default."""
         allowed = ARCHIVE_HOSTS.get(ecosystem, frozenset())
         for hop in range(redirects + 1):
             parsed = urllib.parse.urlsplit(url)
-            if parsed.scheme != "https" or (parsed.hostname or "") not in allowed:
+            host = parsed.hostname or ""
+            if parsed.scheme != "https" or not (
+                allow(host) if allow is not None else host in allowed
+            ):
                 raise RegistryError(
                     f"refusing an archive URL off the {ecosystem} allowlist: {parsed.hostname!r}"
                 )
