@@ -1,0 +1,80 @@
+{
+ "src/cordon_scanner/images/langpkgs.py::purl": [
+  "maven",
+  "npm"
+ ],
+ "src/cordon_scanner/intel/registries/more_registries.py::_hex_pub_maven_archive": [
+  "gradle",
+  "hex",
+  "pub"
+ ],
+ "src/cordon_scanner/intel/registries/more_registries.py::archive": [
+  "cargo",
+  "gomod",
+  "gradle",
+  "hex",
+  "maven",
+  "pub",
+  "rubygems"
+ ],
+ "src/cordon_scanner/intel/registries/more_registries.py::versions": [
+  "cargo",
+  "gomod",
+  "gradle",
+  "hex",
+  "maven",
+  "nuget",
+  "pub",
+  "rubygems"
+ ],
+ "src/cordon_scanner/intel/registries/private_registries.py::facts": [
+  "image",
+  "npm",
+  "pypi"
+ ],
+ "src/cordon_scanner/intel/registries/registry_client.py::_cached_facts": [
+  "npm",
+  "pypi"
+ ],
+ "src/cordon_scanner/intel/registries/registry_client.py::attestation_payload": [
+  "gradle",
+  "image",
+  "maven",
+  "npm",
+  "pypi",
+  "rubygems"
+ ],
+ "src/cordon_scanner/intel/registries/registry_client.py::package_archive": [
+  "npm",
+  "pypi"
+ ],
+ "src/cordon_scanner/intel/registries/release_history.py::acquire": [
+  "gradle",
+  "openvsx"
+ ],
+ "src/cordon_scanner/intel/registries/release_history.py::first_published": [
+  "gomod",
+  "npm"
+ ],
+ "src/cordon_scanner/intel/registries/release_history.py::timeline": [
+  "cargo",
+  "gomod",
+  "gradle",
+  "hex",
+  "maven",
+  "npm",
+  "nuget",
+  "openvsx",
+  "pub",
+  "pypi",
+  "rubygems"
+ ],
+ "src/cordon_scanner/sources/package.py::parse": [
+  "image",
+  "maven"
+ ],
+ "src/cordon_scanner/sources/previous.py::fetch_previous": [
+  "npm",
+  "pypi"
+ ]
+}
