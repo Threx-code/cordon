@@ -73,6 +73,11 @@ class ArchiveSource(ABC):
     def documents(self, name: str, version: str) -> tuple[Document, ...]:
         """The documents the archive is located from."""
 
+    def fetch(self, name: str, version: str) -> PackageArchive | None:
+        """The archive when it is pulled rather than fetched from one address (an OCI registry): checked by its own reader. None when the
+        source locates its archive from documents (`locate`)."""
+        return None
+
     def followed(
         self, name: str, version: str, documents: Mapping[str, Any]
     ) -> tuple[Document, ...]:
@@ -139,6 +144,9 @@ class ArchiveFetch:
 
     @classmethod
     def archive(cls, source: ArchiveSource, name: str, version: str) -> PackageArchive:
+        pulled = source.fetch(name, version)
+        if pulled is not None:
+            return pulled
         found = cls.located(source, name, version)
         data = cls.download(source, found)
         if not cls.digest_ok(data, found.digests):

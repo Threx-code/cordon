@@ -1138,3 +1138,209 @@ class TestTheFallbacks:
         monkeypatch.setattr(RegistryRequest, "fetch_bytes", staticmethod(refuse))
         with pytest.raises(RegistryError, match="HTTP 500"):
             ArchiveFetch.download(source, located)
+
+
+class FakeRegistry:
+    """An OCI registry answering as the real ones do: an index of manifests, each naming one layer, every blob under its sha256."""
+
+    def __init__(self) -> None:
+        self.layer = b"bottle bytes"
+        self.layer_digest = "sha256:" + hashlib.sha256(self.layer).hexdigest()
+        self.child = json.dumps(
+            {"schemaVersion": 2, "layers": [{"digest": self.layer_digest, "size": len(self.layer)}]}
+        ).encode()
+        self.child_digest = "sha256:" + hashlib.sha256(self.child).hexdigest()
+        self.index = json.dumps(
+            {
+                "schemaVersion": 2,
+                "manifests": [
+                    {
+                        "digest": "sha256:" + "0" * 64,
+                        "annotations": {"org.opencontainers.image.ref.name": "1.8.1.sequoia"},
+                    },
+                    {
+                        "digest": self.child_digest,
+                        "annotations": {"org.opencontainers.image.ref.name": "1.8.1.arm64_sonoma"},
+                    },
+                ],
+            }
+        ).encode()
+        self.asked: list[tuple[str, str]] = []
+
+    def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        registry = self
+
+        class Image:
+            def __init__(self, host: str | None, repository: str) -> None:
+                registry.asked.append((host or "hub", repository))
+
+            def manifest(self, reference: str) -> tuple[bytes, str]:
+                return (
+                    (registry.index, "")
+                    if not reference.startswith("sha256:")
+                    else (registry.child, "")
+                )
+
+            def blob(self, digest: str, pull: Any) -> bytes:
+                assert digest == registry.layer_digest
+                return registry.layer
+
+            def pull(self, reference: str) -> tuple[bytes, Any]:
+                registry.asked.append(("pull", reference))
+                return b"layout", None
+
+        monkeypatch.setattr(
+            "cordon_scanner.intel.registries.archive_sources.oci.RegistryImage", Image
+        )
+
+
+class TestHomebrewArchive:
+    def test_the_bottle_is_the_layer_of_the_first_platform_the_version_has(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        registry = FakeRegistry()
+        registry.install(monkeypatch)
+        archive = ArchiveSources.of("homebrew").fetch("jq", "1.8.1")  # type: ignore[union-attr]
+        assert archive is not None and archive.data == registry.layer
+        assert archive.strength == "oci-tag" and archive.filename == "jq-1.8.1.bottle.tar.gz"
+        assert registry.asked[0] == ("ghcr.io", "homebrew/core/jq")
+
+    def test_a_versioned_formula_is_the_repository_with_a_slash(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        registry = FakeRegistry()
+        registry.install(monkeypatch)
+        ArchiveSources.of("homebrew").fetch("openssl@3", "3.5.0")  # type: ignore[union-attr]
+        assert registry.asked[0] == ("ghcr.io", "homebrew/core/openssl/3")
+
+    def test_a_version_with_no_platform_we_know_has_no_bottle(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        registry = FakeRegistry()
+        registry.index = json.dumps(
+            {
+                "manifests": [
+                    {
+                        "digest": "sha256:" + "0" * 64,
+                        "annotations": {"org.opencontainers.image.ref.name": "1.0.bsd"},
+                    }
+                ]
+            }
+        ).encode()
+        registry.install(monkeypatch)
+        assert ArchiveSources.of("homebrew").fetch("jq", "1.0") is None  # type: ignore[union-attr]
+
+    def test_bytes_that_are_not_the_layers_digest_are_refused(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        registry = FakeRegistry()
+        registry.install(monkeypatch)
+        registry.layer_digest = "sha256:" + hashlib.sha256(b"something else").hexdigest()
+        registry.child = json.dumps({"layers": [{"digest": registry.layer_digest}]}).encode()
+        registry.child_digest = "sha256:" + hashlib.sha256(registry.child).hexdigest()
+        registry.index = json.dumps(
+            {
+                "manifests": [
+                    {
+                        "digest": registry.child_digest,
+                        "annotations": {"org.opencontainers.image.ref.name": "1.0.arm64_sonoma"},
+                    }
+                ]
+            }
+        ).encode()
+
+        def lie(self: Any, digest: str, pull: Any) -> bytes:
+            return b"not what the digest names"
+
+        monkeypatch.setattr(
+            "cordon_scanner.intel.registries.archive_sources.oci.RegistryImage.blob",
+            lie,
+            raising=False,
+        )
+        with pytest.raises(RegistryError, match="do not match its digest"):
+            ArchiveSources.of("homebrew").fetch("jq", "1.0")  # type: ignore[union-attr]
+
+    @pytest.mark.parametrize(
+        ("name", "version"),
+        [
+            ("", "1"),
+            ("../x", "1"),
+            ("A", "1"),
+            ("jq", ""),
+            ("jq", "sha256:" + "a" * 64),
+            ("jq", "-x"),
+            ("a/b", "1"),
+        ],
+    )
+    def test_a_name_or_version_that_is_not_one_has_no_bottle(self, name: str, version: str) -> None:
+        assert ArchiveSources.of("homebrew").fetch(name, version) is None  # type: ignore[union-attr]
+
+
+class TestImageArchive:
+    def test_a_tag_is_pulled_as_an_oci_layout_and_reported_as_checked_by_the_tag_only(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        registry = FakeRegistry()
+        registry.install(monkeypatch)
+        archive = ArchiveSources.of("image").fetch("nginx", "1.27")  # type: ignore[union-attr]
+        assert archive is not None and archive.data == b"layout" and archive.strength == "oci-tag"
+        assert registry.asked[0] == ("hub", "library/nginx") and ("pull", "1.27") in registry.asked
+
+    def test_a_digest_is_checked_by_the_registry_reader_and_carries_no_weak_mark(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        registry = FakeRegistry()
+        registry.install(monkeypatch)
+        reference = "sha256:" + "a" * 64
+        archive = ArchiveSources.of("image").fetch("bitnami/nginx", reference)  # type: ignore[union-attr]
+        assert (
+            archive is not None and archive.strength == "" and ("pull", reference) in registry.asked
+        )
+
+    def test_another_registry_is_used_only_when_its_host_is_public(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import socket
+
+        registry = FakeRegistry()
+        registry.install(monkeypatch)
+        monkeypatch.setattr(
+            socket, "getaddrinfo", lambda *_a, **_k: [(2, 1, 6, "", ("140.82.112.3", 443))]
+        )
+        assert ArchiveSources.of("image").fetch("ghcr.io/org/app", "1.0") is not None  # type: ignore[union-attr]
+        monkeypatch.setattr(
+            socket, "getaddrinfo", lambda *_a, **_k: [(2, 1, 6, "", ("10.0.0.7", 443))]
+        )
+        assert ArchiveSources.of("image").fetch("registry.corp.example/org/app", "1.0") is None  # type: ignore[union-attr]
+
+    @pytest.mark.parametrize(
+        "name", ["", "localhost:5000/x", "127.0.0.1/x", "a//b", "A B", "../x", "a/" * 7 + "b"]
+    )
+    def test_a_name_that_is_not_a_public_image_has_no_archive(self, name: str) -> None:
+        assert ArchiveSources.of("image").fetch(name, "1.0") is None  # type: ignore[union-attr]
+
+    def test_the_hub_spellings_name_the_same_repository(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cordon_scanner.intel.registries.archive_sources.oci import ImageRef
+
+        assert (
+            ImageRef.of("docker.io/library/nginx")
+            == ImageRef.of("nginx")
+            == (None, "library/nginx")
+        )
+        assert ImageRef.of("docker.io/bitnami/nginx") == (None, "bitnami/nginx")
+
+
+class TestThePulledHook:
+    def test_a_source_that_pulls_is_not_asked_for_documents(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        FakeRegistry().install(monkeypatch)
+        monkeypatch.setattr(
+            "cordon_scanner.intel.registries.archive_sources.base.RecordFetch.documents",
+            staticmethod(lambda *_a, **_k: pytest.fail("asked for documents")),
+        )
+        source = ArchiveSources.of("image")
+        assert source is not None
+        assert ArchiveFetch.archive(source, "nginx", "1.27").data == b"layout"

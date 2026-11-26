@@ -19,6 +19,7 @@ from cordon_scanner.intel.registries.archive_sources.listed import (
     CondaArchive,
     HelmArchive,
 )
+from cordon_scanner.intel.registries.archive_sources.oci import HomebrewArchive, ImageArchive
 from cordon_scanner.intel.registries.archive_sources.upstream import (
     BazelArchive,
     ConanArchive,
@@ -46,6 +47,8 @@ class ArchiveSources:
         TerraformArchive(),
         JuliaArchive(),
         HelmArchive(),
+        ImageArchive(),
+        HomebrewArchive(),
     )
 
     @classmethod
