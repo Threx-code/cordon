@@ -505,7 +505,7 @@ class Graph:
         resolved online to the highest release Maven Central lists inside it -- what Maven itself
         picks -- so its advisories can be matched. Offline it stays unresolved, and says why."""
         from cordon_scanner.intel.registry import (
-            MoreRegistries,
+            ArchiveSources,
             RegistryError,
             VersionRanges,
             Versions,
@@ -525,7 +525,7 @@ class Graph:
                 continue
             if dependency.name not in listed and len(listed) < Graph.MAX_RANGE_LOOKUPS:
                 try:
-                    listed[dependency.name] = MoreRegistries.versions("maven", dependency.name)
+                    listed[dependency.name] = ArchiveSources.versions("maven", dependency.name)
                 except (RegistryError, OSError, ValueError):
                     listed[dependency.name] = []
             admitted = [

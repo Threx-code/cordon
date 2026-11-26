@@ -1,0 +1,237 @@
+"""The shared interface of the verified archive: what an ecosystem supplies, and the one fetch that checks it."""
+
+from __future__ import annotations
+
+import hashlib
+import re
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, ClassVar
+
+from cordon_scanner.intel.base import PackageArchive
+from cordon_scanner.intel.registries.archive_sources.git import (
+    GIT_COMMIT,
+    GIT_TAG,
+    GIT_TREE,
+    GO_H1,
+    GitTar,
+    GoZip,
+)
+from cordon_scanner.intel.registries.record_sources.base import (
+    Document,
+    RecordBuilder,
+    RecordFetch,
+    Release,
+)
+from cordon_scanner.intel.registries.record_sources.table import RecordSources
+from cordon_scanner.intel.registries.registry_request import RegistryError, RegistryRequest
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+#: The algorithms an archive may be checked with, strongest first; anything else a registry states is not a check.
+STRENGTH = ("sha512", "sha384", "sha256", GO_H1, "sha1", GIT_TREE, GIT_COMMIT, "md5", GIT_TAG)
+#: The checks weaker than a SHA-2 digest the registry publishes: a review says which one an archive was checked with.
+WEAK = ("md5", "sha1", GIT_TREE, GIT_COMMIT, GIT_TAG)
+#: What the git checks are made of: the files themselves (tree), the commit id the tarball names (commit), or only that it names one (tag).
+GIT_CHECKS = (GIT_TREE, GIT_COMMIT, GIT_TAG)
+FILENAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+@~-]{0,200}")
+
+
+@dataclass(frozen=True)
+class Located:
+    """Where one release's archive is and what the registry says it hashes to."""
+
+    url: str
+    filename: str
+    digests: tuple[tuple[str, str], ...]
+    """`(algorithm, lower-case hex)` for each digest the registry states; the archive must match every one. A git check is
+    `("git-tree-sha1", id)` (the files), `("git-commit", id)` (the tarball names this commit) or `("git-tag", "")` (the tag was
+    resolved by the host: the tarball must name a commit, which is recorded, and nothing else is checked)."""
+    fallbacks: tuple[str, ...] = ()
+    """Other addresses of the same archive, tried in order when the first is not found (a tag written `1.2.3` or `v1.2.3`)."""
+
+    @property
+    def strength(self) -> str:
+        """The strongest algorithm among the digests: what a comparison's report says it was checked with."""
+        stated = {algorithm for algorithm, _ in self.digests}
+        return next((a for a in STRENGTH if a in stated), "")
+
+
+class ArchiveSource(ABC):
+    """What an ecosystem supplies to fetch the archive of a release."""
+
+    ecosystem: ClassVar[str]
+    #: The hosts the archive may be downloaded from: the registry names the URL, so it is confined to these.
+    HOSTS: ClassVar[frozenset[str]]
+    #: Follow a redirect, each to a host `allows` (a registry that signs a storage URL); none otherwise.
+    REDIRECTS: ClassVar[int] = 0
+
+    def allows(self, host: str) -> bool:
+        """Whether the archive may be downloaded from `host`: the registry's own file hosts, by default."""
+        return host in self.HOSTS
+
+    @abstractmethod
+    def documents(self, name: str, version: str) -> tuple[Document, ...]:
+        """The documents the archive is located from."""
+
+    def current(self, name: str) -> str:
+        """The release asked for when none is named: the newest the registry has not withdrawn (an image's is the tag `latest`)."""
+        return ArchiveFetch.latest(self.ecosystem, name)
+
+    def fetch(self, name: str, version: str) -> PackageArchive | None:
+        """The archive when it is pulled rather than fetched from one address (an OCI registry): checked by its own reader. None when the
+        source locates its archive from documents (`locate`)."""
+        return None
+
+    def followed(
+        self, name: str, version: str, documents: Mapping[str, Any]
+    ) -> tuple[Document, ...]:
+        return ()
+
+    @abstractmethod
+    def locate(self, name: str, version: str, documents: Mapping[str, Any]) -> Located | None:
+        """Where the archive of `version` is, or None when the registry has none for it. Pure: the same documents, the same answer."""
+
+
+class ArchiveFetch:
+    """Downloading a located archive and checking it."""
+
+    @staticmethod
+    def digest_ok(data: bytes, digests: tuple[tuple[str, str], ...]) -> bool:
+        """Every stated digest matches, and at least one was stated."""
+        if not digests:
+            return False
+        return all(
+            ArchiveFetch.one_ok(
+                data, algorithm, expected if algorithm == GO_H1 else expected.lower()
+            )
+            for algorithm, expected in digests
+        )
+
+    @staticmethod
+    def one_ok(data: bytes, algorithm: str, expected: str) -> bool:
+        if algorithm == GO_H1:
+            return GoZip.h1(data) == expected
+        if algorithm == GIT_TREE:
+            return GitTar.tree_sha1(data) == expected
+        if algorithm == GIT_COMMIT:
+            return GitTar.commit(data) == expected
+        if algorithm == GIT_TAG:
+            return bool(GitTar.commit(data))
+        return hashlib.new(algorithm, data, usedforsecurity=False).hexdigest() == expected
+
+    @classmethod
+    def located(cls, source: ArchiveSource, name: str, version: str) -> Located:
+        documents = RecordFetch.documents(source, name, version)
+        if documents is None:
+            raise RegistryError(f"{source.ecosystem} has no {name}")
+        found = source.locate(name, version, documents)
+        if found is None:
+            raise RegistryError(f"{source.ecosystem} publishes no archive for {name}@{version}")
+        if not found.digests:
+            raise RegistryError(
+                f"{source.ecosystem} publishes no digest for {name}@{version}; nothing to verify against"
+            )
+        if any(a not in STRENGTH for a, _ in found.digests):
+            raise RegistryError(f"{source.ecosystem} names a digest algorithm that is no check")
+        return found
+
+    @staticmethod
+    def download(source: ArchiveSource, found: Located) -> bytes:
+        """The bytes at the first address that has them (a 404 moves to the next; any other failure is the answer)."""
+        error: RegistryError | None = None
+        for url in (found.url, *found.fallbacks):
+            try:
+                return RegistryRequest.fetch_bytes(url, source.allows, redirects=source.REDIRECTS)
+            except RegistryError as exc:
+                if "HTTP 404" not in str(exc):
+                    raise
+                error = exc
+        raise error or RegistryError(f"{source.ecosystem} names no address for the archive")
+
+    @classmethod
+    def archive(cls, source: ArchiveSource, name: str, version: str) -> PackageArchive:
+        pulled = source.fetch(name, version)
+        if pulled is not None:
+            return pulled
+        found = cls.located(source, name, version)
+        data = cls.download(source, found)
+        if not cls.digest_ok(data, found.digests):
+            raise RegistryError(
+                f"{name}@{version} does not match the {found.strength} {source.ecosystem} publishes"
+            )
+        filename = (
+            found.filename if FILENAME.fullmatch(found.filename) else f"{source.ecosystem}-archive"
+        )
+        weak = found.strength if found.strength in WEAK else ""
+        return PackageArchive(source.ecosystem, name, version, filename, data, weak)
+
+    @staticmethod
+    def before(ecosystem: str, version: str, published: Mapping[str, Any]) -> str | None:
+        """The release before `version` on its own line: of the versions published before it, the highest below it in the
+        ecosystem's version order. Not the latest published before it: maintained lines interleave in time, and `express`
+        4.21.2 was compared with 5.0.1, out a month before it on the next major line."""
+        from cordon_scanner.intel.advisories.versions import Versions
+
+        current = published.get(version)
+        if current is None:
+            return None
+        best: str | None = None
+        for candidate, when in published.items():
+            if when >= current or Versions.compare(ecosystem, candidate, version) >= 0:
+                continue
+            if best is None or Versions.compare(ecosystem, candidate, best) > 0:
+                best = candidate
+        return best
+
+    @classmethod
+    def latest(cls, ecosystem: str, name: str) -> str:
+        """The newest release the registry has not withdrawn, by the ecosystem's version order (a pre-release only when there is no other)."""
+        from cordon_scanner.intel.advisories.versions import Versions
+
+        live = [r.version for r in cls.releases(ecosystem, name, "") if not r.withdrawn]
+        if not live:
+            raise RegistryError(f"{ecosystem} names no current version of {name}")
+        newest = live[0]
+        for candidate in live[1:]:
+            if Versions.compare(ecosystem, candidate, newest) > 0:
+                newest = candidate
+        return newest
+
+    @classmethod
+    def previous_release(cls, ecosystem: str, name: str, version: str) -> Release | None:
+        """The release before `version` among the ones the registry has not withdrawn (`version` itself is kept whatever its state)."""
+        listed = cls.releases(ecosystem, name, version)
+        # A release is written with or without its `v` (a Go module's always has one): the registry's own spelling is the key.
+        spelling = next(
+            (
+                s
+                for s in (version, f"v{version}", version.removeprefix("v"))
+                if any(r.version == s for r in listed)
+            ),
+            version,
+        )
+        releases = {r.version: r for r in listed if not r.withdrawn or r.version == spelling}
+        found = cls.before(ecosystem, spelling, {v: r.published for v, r in releases.items()})
+        return releases[found] if found is not None else None
+
+    @classmethod
+    def previous(cls, ecosystem: str, name: str, version: str) -> str | None:
+        """The version of the release before `version`."""
+        found = cls.previous_release(ecosystem, name, version)
+        return found.version if found is not None else None
+
+    @staticmethod
+    def releases(ecosystem: str, name: str, version: str) -> list[Release]:
+        """Every release of `name` the registry states, from the same documents the registry record reads."""
+        source = RecordSources.of(ecosystem)
+        if source is None:
+            raise RegistryError(f"no release history for {ecosystem}")
+        documents = RecordFetch.documents(source, name, version)
+        if documents is None:
+            raise RegistryError(f"{ecosystem} has no {name}")
+        return RecordBuilder.releases_of(source, name, version, documents)
+
+
+__all__ = ["ArchiveFetch", "ArchiveSource", "Located"]

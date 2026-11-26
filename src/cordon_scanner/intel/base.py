@@ -318,12 +318,6 @@ class RegistryRecords(Protocol):
     ) -> RegistryRecordFacts | None: ...
 
 
-class RegistryVersions(Protocol):
-    """What the engine uses of the class `MoreRegistries`."""
-
-    def versions(self, ecosystem: str, name: str) -> list[str]: ...
-
-
 class ReleaseBaseline(Protocol):
     """What the engine uses of instances of `Baseline`."""
 
@@ -396,7 +390,13 @@ class ArtifactQueries(Protocol):
     def attestation_payload(
         self, ecosystem: str, name: str, version: str | None, digest: str | None = None
     ) -> dict[str, Any] | None: ...
+
+
+class VerifiedArchives(Protocol):
+    """A release's archive, fetched from its registry and checked against what the registry (or the code host) states."""
+
     def package_archive(self, ecosystem: str, name: str, version: str | None) -> PackageArchive: ...
+    def versions(self, ecosystem: str, name: str) -> list[str]: ...
 
 
 class PublishedManifestQueries(Protocol):
@@ -784,6 +784,9 @@ class PackageArchive:
     version: str
     filename: str
     data: bytes
+    strength: str = ""
+    """What the archive was checked with when it is weaker than a SHA-2 digest the registry publishes (`md5`, `git-commit`,
+    `git-tag`); empty for a SHA-2 digest and for the registries whose readers predate this field."""
 
 
 # A value both the feed and the rule packs it delivers raise, so neither imports the other for it.
@@ -824,11 +827,11 @@ __all__ = [
     "RangeMatching",
     "RegistryRecordFacts",
     "RegistryRecords",
-    "RegistryVersions",
     "ReleaseBaseline",
     "ReleaseHistories",
     "RepositoryHeads",
     "SignatureCheck",
     "ToolApprovals",
+    "VerifiedArchives",
     "VersionOrdering",
 ]

@@ -36,6 +36,7 @@ from typing import Any, ClassVar
 from cordon_scanner.foundation.errors import ConfigError, CordonError, ExitCode
 from cordon_scanner.foundation.models import Severity
 from cordon_scanner.foundation.results import Dependency
+from cordon_scanner.intel.registries.archive_sources.table import ArchiveSources
 
 #: Files read from the base revision: at most this many, each at most this size.
 MAX_BASE_FILES = 2_000
@@ -43,16 +44,12 @@ MAX_BASE_FILE_BYTES = 32 << 20
 #: Packages whose releases are fetched and compared under --online, most consequential first.
 MAX_FETCHED = 40
 #: Registries whose archives can be fetched and verified (`RegistryClient.package_archive`).
-COMPARABLE = frozenset(
-    {"npm", "pypi", "cargo", "rubygems", "nuget", "gomod", "hex", "pub", "maven", "gradle"}
-)
+COMPARABLE = ArchiveSources.fetchable()
 
 
 #: Why a release of an ecosystem without a verified archive source is not fetched, where there is
 #: more to say than that.
-NOT_COMPARED: dict[str, str] = {
-    "composer": "Packagist publishes no archive digest, so the release was not fetched",
-}
+NOT_COMPARED: dict[str, str] = {}
 
 
 @dataclass
@@ -269,6 +266,16 @@ class ChangeReview:
                 )
 
     @staticmethod
+    def verified(*archives: Any) -> str:
+        """What the archives were checked with: `digests verified` for a SHA-2 digest the registry publishes, else the weaker check named."""
+        weak = sorted({a.strength for a in archives if getattr(a, "strength", "")})
+        return (
+            f"checked by {' and '.join(weak)} only"
+            if weak
+            else ("digest verified" if len(archives) == 1 else "digests verified")
+        )
+
+    @staticmethod
     def releases(changes: list[PackageChange], *, quiet: bool) -> None:
         """Fetch, verify and compare, most consequential first, up to `MAX_FETCHED` packages."""
         import sys
@@ -276,7 +283,7 @@ class ChangeReview:
         from cordon_scanner import Scanner
         from cordon_scanner.detect.supply import release_diff
         from cordon_scanner.foundation.config.settings import Config
-        from cordon_scanner.intel.registries.registry_client import RegistryClient, RegistryError
+        from cordon_scanner.intel.registries.registry_client import RegistryError
 
         candidates = [c for c in changes if c.new is not None]
         candidates.sort(key=lambda c: (not c.direct, c.kind != "added"))
@@ -292,7 +299,7 @@ class ChangeReview:
             config = Config.default().with_overrides(use_cache=False)
             with tempfile.TemporaryDirectory(prefix="cordon-review-") as work:
                 try:
-                    newer = RegistryClient.package_archive(
+                    newer = ArchiveSources.package_archive(
                         change.ecosystem, change.name, change.new
                     )
                     new_path = Path(work) / f"new-{Path(newer.filename).name}"
@@ -309,9 +316,9 @@ class ChangeReview:
                             (f.rule_id, f.severity.name.lower(), f.message) for f in kept
                         ]
                         change.categories = {f.rule_id: f.category.value for f in kept}
-                        change.compared = f"{change.name} {change.new} scanned from {change.ecosystem}, digest verified"
+                        change.compared = f"{change.name} {change.new} scanned from {change.ecosystem}, {ChangeReview.verified(newer)}"
                         continue
-                    older = RegistryClient.package_archive(
+                    older = ArchiveSources.package_archive(
                         change.ecosystem, change.name, change.old
                     )
                     old_path = Path(work) / f"old-{Path(older.filename).name}"
@@ -328,7 +335,7 @@ class ChangeReview:
                 previous=f"{change.name} {change.old}",
             )
             change.release = [(c.rule_id, c.severity.name.lower(), c.message) for c in found]
-            change.compared = f"{change.old} and {change.new} fetched from {change.ecosystem}, digests verified, compared"
+            change.compared = f"{change.old} and {change.new} fetched from {change.ecosystem}, {ChangeReview.verified(newer, older)}, compared"
 
 
 class ReviewReport:

@@ -13,6 +13,7 @@ import gzip
 import io
 import json
 import urllib.error
+import urllib.request
 from typing import Any, ClassVar
 
 import pytest
@@ -29,7 +30,7 @@ from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Scope
 from cordon_scanner.foundation.results import Dependency
-from cordon_scanner.intel.registries import more_registries, registry_http, registry_request
+from cordon_scanner.intel.registries import registry_http, registry_request
 from cordon_scanner.intel.registries.image_registries import ImageRegistries
 from cordon_scanner.intel.registries.infra_registries import InfraRegistries
 from cordon_scanner.intel.registries.more_registries import MoreRegistries
@@ -109,7 +110,7 @@ class TestTransport:
     def opener(self, monkeypatch):
         def install(*outcomes: Any) -> None:
             fake = self._Opener(list(outcomes))
-            monkeypatch.setattr(more_registries.urllib.request, "build_opener", lambda *a: fake)
+            monkeypatch.setattr(urllib.request, "build_opener", lambda *a: fake)
             monkeypatch.setattr(registry_http.time, "sleep", lambda s: None)
 
         return install

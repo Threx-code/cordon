@@ -1,0 +1,11 @@
+{
+ "app_version": "v1.19.0",
+ "content_url": "https://charts.jetstack.io/charts/cert-manager-v1.19.0.tgz",
+ "digest": "b581634069151fce8073d0e08d454e712daf7f9bfb9df00b35d5fdcba01936b8",
+ "name": "cert-manager",
+ "repository": {
+  "name": "cert-manager",
+  "url": "https://charts.jetstack.io"
+ },
+ "version": "1.19.0"
+}

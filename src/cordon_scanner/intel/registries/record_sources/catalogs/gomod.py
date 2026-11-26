@@ -49,7 +49,7 @@ class GomodSource(RecordSource):
 
     def documents(self, name: str, version: str) -> tuple[Document, ...]:
         root = self.root(name)
-        if root is None or not VERSION.fullmatch(version):
+        if root is None or (version and not VERSION.fullmatch(version)):
             return ()
         return (Document(f"{root}/list", kind="text"),)
 

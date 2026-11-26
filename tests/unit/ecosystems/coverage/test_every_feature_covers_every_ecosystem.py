@@ -61,7 +61,7 @@ class Coverage:
     def previous_release() -> frozenset[str]:
         from cordon_scanner.sources.previous import PreviousRelease
 
-        return frozenset(PreviousRelease.FROM_ARCHIVE)
+        return PreviousRelease.supported()
 
     @staticmethod
     def confusable_names() -> frozenset[str]:
@@ -107,16 +107,15 @@ class More:
 
     @classmethod
     def archive_fetch(cls) -> frozenset[str]:
-        from cordon_scanner.intel.registries.more_registries import MoreRegistries
+        from cordon_scanner.intel.registries.archive_sources.table import ArchiveSources
 
-        # npm's and PyPI's archives are fetched by the registry client itself (`package_archive`).
-        return cls.ids(MoreRegistries.ARCHIVE_ECOSYSTEMS | {"npm", "pypi"})
+        return cls.ids(ArchiveSources.fetchable())
 
     @classmethod
     def release_history(cls) -> frozenset[str]:
         from cordon_scanner.intel.registries.release_history import ReleaseHistory
 
-        return cls.ids(ReleaseHistory.ECOSYSTEMS)
+        return cls.ids(ReleaseHistory.covered())
 
     @classmethod
     def registry_facts(cls) -> frozenset[str]:
@@ -252,11 +251,7 @@ class Features:
             "campaign fingerprints",
             # Not yet built for every ecosystem:
             "provenance (signed build attestations)",
-            "the previous release from the registry archive",
             "look-alike names",
-            "old-versus-new release compare in the pre-merge gate",
-            "archive fetch (digest verified)",
-            "release history (when each release was published)",
             "registry facts client",
             "package-URL scan targets",
             "advisory-text symbols",

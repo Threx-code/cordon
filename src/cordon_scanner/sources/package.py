@@ -144,14 +144,11 @@ class PackageTarget:
     @contextmanager
     def fetched(self) -> Iterator[Path]:
         """The verified archive on disk in a private directory for the length of the block."""
-        from cordon_scanner.intel.registries.registry_client import RegistryClient, RegistryError
+        from cordon_scanner.intel.registries.archive_sources.table import ArchiveSources
+        from cordon_scanner.intel.registries.registry_client import RegistryError
 
-        if self.ecosystem == "image":
-            with self._pulled_image() as pulled:
-                yield pulled
-            return
         try:
-            archive = RegistryClient.package_archive(self.ecosystem, self.name, self.version)
+            archive = ArchiveSources.package_archive(self.ecosystem, self.name, self.version)
         except RegistryError as exc:
             raise PackageTargetError(f"could not fetch {self.label}: {exc}") from exc
         filename = PackageTarget.safe_filename(archive.filename, self.ecosystem)
@@ -164,34 +161,6 @@ class PackageTarget:
             )
             with os.fdopen(descriptor, "wb") as handle:
                 handle.write(archive.data)
-            yield path
-        finally:
-            Trees.remove(directory)
-
-    @contextmanager
-    def _pulled_image(self) -> Iterator[Path]:
-        """The image as an OCI layout archive, every blob checked against its digest."""
-        from cordon_scanner.ecosystems.infra.image import ImageReference
-        from cordon_scanner.intel.registries.registry_image import RegistryImage, RegistryImageError
-
-        reference = ImageReference.parse(self.name)
-        if reference is None:
-            raise PackageTargetError(f"not a valid image reference: {self.name!r}")
-        try:
-            data, _pull = RegistryImage(reference.registry, reference.repository).pull(
-                self.version or "latest"
-            )
-        except RegistryImageError as exc:
-            raise PackageTargetError(f"could not pull {self.label}: {exc}") from exc
-        directory = Path(tempfile.mkdtemp(prefix="cordon-image-"))
-        try:
-            directory.chmod(stat.S_IRWXU)
-            path = directory / "image.tar"
-            descriptor = os.open(
-                path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600
-            )
-            with os.fdopen(descriptor, "wb") as handle:
-                handle.write(data)
             yield path
         finally:
             Trees.remove(directory)

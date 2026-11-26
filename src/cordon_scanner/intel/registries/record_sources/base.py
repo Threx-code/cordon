@@ -25,6 +25,7 @@ own word for it: `yanked`, `retracted`, `deprecated`, `unlisted`, `archived`, or
 
 from __future__ import annotations
 
+import contextvars
 import json
 import re
 import urllib.parse
@@ -32,7 +33,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol
 
 from cordon_scanner.intel.registries.registry_request import RegistryError
 
@@ -98,6 +99,32 @@ class RecordSource(ABC):
 class RecordBuilder:
     """The record's counts, from a release history: shared, so each parser extracts raw facts and nothing else."""
 
+    #: Where the release history of a `record` call is kept while `releases_of` reads it (set only inside that call).
+    _sink: contextvars.ContextVar[list[Release] | None] = contextvars.ContextVar(
+        "release_sink", default=None
+    )
+
+    @classmethod
+    def note(cls, releases: list[Release]) -> None:
+        """A source that builds its record itself (npm's and PyPI's own documents) states the history it read, so `releases_of` has it."""
+        sink = cls._sink.get()
+        if sink is not None:
+            sink.extend(releases)
+
+    @classmethod
+    def releases_of(
+        cls, source: RecordSource, name: str, version: str, documents: Mapping[str, Any]
+    ) -> list[Release]:
+        """The whole release history a source reads from `documents`, as the record's own builder saw it (rows 3 and 8 use the same
+        history as the record, so the two never disagree on what the releases are)."""
+        sink: list[Release] = []
+        token = cls._sink.set(sink)
+        try:
+            source.record(name, version, documents)
+        finally:
+            cls._sink.reset(token)
+        return sink
+
     @staticmethod
     def from_history(
         source: RecordSource,
@@ -113,6 +140,9 @@ class RecordBuilder:
         `facts` are the record's other fields (maintainers, hooks, has_repository, ...)."""
         from cordon_scanner.intel.registries.registry_record import RegistryRecord
 
+        sink = RecordBuilder._sink.get()
+        if sink is not None:
+            sink.extend(releases)
         this = next((r for r in releases if r.version == version), None)
         if this is None:
             return None
@@ -144,6 +174,17 @@ class RateLimited(RegistryError):
     """A required document was refused for rate. A `RegistryError` to its callers (`intel acquire` names it and goes on)."""
 
 
+class DocumentSource(Protocol):
+    """What `RecordFetch` needs of a source: where its documents are, and the ones they point to. A `RecordSource` is one, and so is
+    an archive source (`archive_sources`), which reads the same kind of document to find an archive."""
+
+    def documents(self, name: str, version: str) -> tuple[Document, ...]: ...
+
+    def followed(
+        self, name: str, version: str, documents: Mapping[str, Any]
+    ) -> tuple[Document, ...]: ...
+
+
 class RecordFetch:
     """Fetching a source's documents: https only, bounded, no redirect, and the registry client's own readers."""
 
@@ -152,7 +193,7 @@ class RecordFetch:
 
     @classmethod
     def documents(
-        cls, source: RecordSource, name: str, version: str, *, token: str | None = None
+        cls, source: DocumentSource, name: str, version: str, *, token: str | None = None
     ) -> dict[str, Any] | None:
         """The documents by URL, or None when a required one is missing (the registry does not hold the name)."""
         wanted = source.documents(name, version)
