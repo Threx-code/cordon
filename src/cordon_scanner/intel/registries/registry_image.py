@@ -36,6 +36,7 @@ from typing import IO, Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
+from cordon_scanner.foundation.network.pinned import PinnedHTTPS
 from cordon_scanner.foundation.network.redirects import ClosedErrors
 from cordon_scanner.intel.registries.challenge import Challenge
 
@@ -90,7 +91,7 @@ class _AuthOnlyToRegistry(urllib.request.HTTPRedirectHandler):
 
 
 class RegistryImage:
-    def __init__(self, registry: str | None, repository: str) -> None:
+    def __init__(self, registry: str | None, repository: str, *, public_only: bool = False) -> None:
         self.host = registry or HUB
         self.repository = repository
         bare = (
@@ -100,7 +101,11 @@ class RegistryImage:
         )
         self.scheme = "http" if bare in LOCAL_HOSTS else "https"
         self.token: str | None = None
-        self.opener = urllib.request.build_opener(_AuthOnlyToRegistry, ClosedErrors)
+        # `public_only`: the registry's name is resolved once and every address it gives must be a public one (a host named by scanned
+        # content must not reach the network the scan runs in), and a blob's redirect is held to the same rule.
+        self.opener = urllib.request.build_opener(
+            _AuthOnlyToRegistry, ClosedErrors, PinnedHTTPS(public_only=public_only)
+        )
 
     # -- HTTP ----------------------------------------------------------------------------
 

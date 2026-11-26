@@ -151,6 +151,7 @@ class CocoapodsArchive(ArchiveSource):
     ecosystem: ClassVar[str] = "cocoapods"
     HOSTS: ClassVar[frozenset[str]] = frozenset({"codeload.github.com"})
     REDIRECTS: ClassVar[int] = 3
+    PUBLIC: ClassVar[bool] = True
     API: ClassVar[str] = "https://trunk.cocoapods.org/api/v1/pods"
 
     def documents(self, name: str, version: str) -> tuple[Document, ...]:
@@ -169,7 +170,7 @@ class CocoapodsArchive(ArchiveSource):
         )
 
     def allows(self, host: str) -> bool:
-        return host in self.HOSTS or PublicHost.ok(host)
+        return host in self.HOSTS or PublicHost.named(host)
 
     def locate(self, name: str, version: str, documents: Mapping[str, Any]) -> Located | None:
         spec = RegistryRecord._mapping(next(iter(documents.values()), None))

@@ -18,6 +18,19 @@ GIT_TREE = "git-tree-sha1"
 GO_H1 = "go-h1"
 
 
+class Unpacked:
+    """How much a downloaded archive may expand to: what it holds is read member by member, and the sum of what the members declare is
+    held to a bound, so a small download cannot become gigabytes in memory."""
+
+    LIMIT: ClassVar[int] = 512 << 20
+    RATIO: ClassVar[int] = 20
+    FLOOR: ClassVar[int] = 4 << 20
+
+    @classmethod
+    def bound(cls, data: bytes) -> int:
+        return min(cls.LIMIT, max(cls.RATIO * len(data), cls.FLOOR))
+
+
 class GitTar:
     #: The git modes a tree entry has.
     FILE: ClassVar[bytes] = b"100644"
@@ -29,7 +42,8 @@ class GitTar:
     def commit(data: bytes) -> str:
         """The commit id a code host's tarball says it is of (its pax header `comment`), or "" when it says none."""
         try:
-            with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as archive:
+            with tarfile.open(fileobj=io.BytesIO(data), mode="r|*") as archive:
+                archive.next()
                 comment = str(archive.pax_headers.get("comment") or "").strip().lower()
         except (tarfile.TarError, OSError, EOFError, ValueError):
             return ""
@@ -59,12 +73,15 @@ class GitTar:
     @classmethod
     def tree_sha1(cls, data: bytes) -> str:
         """The git tree hash of the files in a tar (a tree of the archive's own paths: empty directories are not part of one),
-        or "" when the archive cannot be read as one tree."""
+        or "" when the archive cannot be read as one tree or expands past `Unpacked.bound`."""
         root: dict[str, Any] = {}
-        count = 0
+        count, total, bound = 0, 0, Unpacked.bound(data)
         try:
-            with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as archive:
+            with tarfile.open(fileobj=io.BytesIO(data), mode="r|*") as archive:
                 for member in archive:
+                    total += member.size + 512
+                    if total > bound:
+                        return ""
                     parts = member.name.strip("/").split("/")
                     if member.name.startswith("/"):
                         return ""
@@ -110,9 +127,13 @@ class GoZip:
         lines = []
         try:
             with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                total, bound = 0, Unpacked.bound(data)
                 for info in sorted(archive.infolist(), key=lambda i: i.filename):
                     if info.is_dir():
                         continue
+                    total += info.file_size
+                    if total > bound:
+                        return ""
                     if "\n" in info.filename:
                         return ""
                     lines.append(

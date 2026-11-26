@@ -66,6 +66,9 @@ class ArchiveSource(ABC):
     HOSTS: ClassVar[frozenset[str]]
     #: Follow a redirect, each to a host `allows` (a registry that signs a storage URL); none otherwise.
     REDIRECTS: ClassVar[int] = 0
+    #: The archive is named by the registry's document on a host no list can hold: the name is resolved once and every address
+    #: it gives must be a public one, so the download cannot be turned on the network the scan runs in.
+    PUBLIC: ClassVar[bool] = False
 
     def allows(self, host: str) -> bool:
         """Whether the archive may be downloaded from `host`: the registry's own file hosts, by default."""
@@ -143,7 +146,9 @@ class ArchiveFetch:
         error: RegistryError | None = None
         for url in (found.url, *found.fallbacks):
             try:
-                return RegistryRequest.fetch_bytes(url, source.allows, redirects=source.REDIRECTS)
+                return RegistryRequest.fetch_bytes(
+                    url, source.allows, redirects=source.REDIRECTS, public=source.PUBLIC
+                )
             except RegistryError as exc:
                 if "HTTP 404" not in str(exc):
                     raise
