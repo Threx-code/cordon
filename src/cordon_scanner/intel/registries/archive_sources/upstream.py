@@ -232,7 +232,7 @@ class CranArchive(ArchiveSource):
         )
 
     def locate(self, name: str, version: str, documents: Mapping[str, Any]) -> Located | None:
-        first, latest = (list(documents.values()) + [None, None])[:2]
+        first, latest = ([*documents.values(), None, None])[:2]
         if not isinstance(first, dict) or first.get("Version") != version:
             return None
         digest = Digest.hex("md5", str(first.get("MD5sum") or ""))

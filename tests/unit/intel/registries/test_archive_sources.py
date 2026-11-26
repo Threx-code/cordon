@@ -377,7 +377,7 @@ class TestTheTables:
         if isinstance(source, UpstreamArchive):
             # The project's own host is no list: a public host, and the digest the registry states.
             assert source.ecosystem not in registry_request.ARCHIVE_HOSTS
-            assert source.HOSTS == frozenset()
+            assert not source.HOSTS
         else:
             assert registry_request.ARCHIVE_HOSTS[source.ecosystem] == source.HOSTS
 
