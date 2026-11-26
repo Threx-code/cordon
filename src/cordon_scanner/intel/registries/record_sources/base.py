@@ -105,6 +105,13 @@ class RecordBuilder:
     )
 
     @classmethod
+    def note(cls, releases: list[Release]) -> None:
+        """A source that builds its record itself (npm's and PyPI's own documents) states the history it read, so `releases_of` has it."""
+        sink = cls._sink.get()
+        if sink is not None:
+            sink.extend(releases)
+
+    @classmethod
     def releases_of(
         cls, source: RecordSource, name: str, version: str, documents: Mapping[str, Any]
     ) -> list[Release]:

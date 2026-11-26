@@ -49,7 +49,7 @@ class ImageSource(RecordSource):
 
     def documents(self, name: str, version: str) -> tuple[Document, ...]:
         found = self.repository(name)
-        if found is None or not TAG.fullmatch(version):
+        if found is None or (version and not TAG.fullmatch(version)):
             return ()
         base = f"{API}/{found[0]}/{found[1]}"
         return (Document(f"{base}/tags?page=1&page_size=100"), Document(base, required=False))

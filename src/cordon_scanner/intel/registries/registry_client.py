@@ -43,7 +43,6 @@ from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.intel.base import PackageArchive, PackageFacts
 from cordon_scanner.intel.registries.registry_request import (
-    ARCHIVE_HOSTS,
     MAX_RESPONSE_BYTES,
     RETRY_ATTEMPTS,
     RETRY_BACKOFF_SECONDS,
@@ -52,7 +51,6 @@ from cordon_scanner.intel.registries.registry_request import (
     USER_AGENT,
     PackageNotFound,
     RegistryError,
-    RegistryRequest,
 )
 
 MAX_REDIRECTS = 0
@@ -648,83 +646,6 @@ class RegistryClient:
             f"{REGISTRY_HOSTS['npm']}/{quoted}/{urllib.parse.quote(version, safe='')}"
         )
 
-    @staticmethod
-    def package_archive(ecosystem: str, name: str, version: str | None) -> PackageArchive:
-        """Download the archive a registry publishes for a version (`None` means the latest).
-
-        Never installed and never run: the bytes are returned for a scan to read. The download is
-        host-pinned, size-bounded, redirect-free, and compared with the digest the registry
-        publishes (npm's `integrity`, PyPI's sha256) before it is returned.
-        """
-        if ecosystem == "npm":
-            return RegistryClient._npm_archive(name, version)
-        if ecosystem == "pypi":
-            return RegistryClient._pypi_archive(name, version)
-        from cordon_scanner.intel.registries.more_registries import MoreRegistries
-
-        if ecosystem in MoreRegistries.ARCHIVE_ECOSYSTEMS:
-            return MoreRegistries.archive(ecosystem, name, version)
-        raise RegistryError(f"no archive support for {ecosystem}")
-
-    @staticmethod
-    def _fetch_bytes(url: str, ecosystem: str) -> bytes:
-        return RegistryRequest.fetch_bytes(url, ecosystem)
-
-    @staticmethod
-    def _npm_archive(name: str, version: str | None) -> PackageArchive:
-        import base64
-        import hashlib
-
-        quoted = urllib.parse.quote(name, safe="@/")
-        # The version's own document (a few kilobytes) rather than the whole packument, which runs
-        # to tens of megabytes for the packages people most often ask about. `latest` is a tag the
-        # registry resolves the same way.
-        selector = urllib.parse.quote(version, safe="") if version else "latest"
-        entry = RegistryClient._fetch(f"{REGISTRY_HOSTS['npm']}/{quoted}/{selector}")
-        resolved = str(entry.get("version") or version or "")
-        dist = RegistryClient._mapping(entry.get("dist"))
-        url = dist.get("tarball")
-        if not resolved or not isinstance(url, str):
-            raise RegistryError(f"npm has no tarball for {name}@{version or 'latest'}")
-        data = RegistryClient._fetch_bytes(url, "npm")
-        integrity = str(dist.get("integrity", ""))
-        if integrity.startswith("sha512-"):
-            expected = base64.b64decode(integrity[len("sha512-") :])
-            if hashlib.sha512(data).digest() != expected:
-                raise RegistryError(f"{name}@{resolved} does not match the integrity npm publishes")
-        else:
-            raise RegistryError(f"npm publishes no sha512 integrity for {name}@{resolved}")
-        return PackageArchive("npm", name, resolved, url.rsplit("/", 1)[-1], data)
-
-    @staticmethod
-    def _pypi_archive(name: str, version: str | None) -> PackageArchive:
-        import hashlib
-
-        quoted = urllib.parse.quote(name, safe="")
-        path = (
-            f"/pypi/{quoted}/{urllib.parse.quote(version, safe='')}/json"
-            if version
-            else f"/pypi/{quoted}/json"
-        )
-        document = RegistryClient._fetch(f"{REGISTRY_HOSTS['pypi']}{path}")
-        resolved = str(
-            RegistryClient._mapping(document.get("info")).get("version") or version or ""
-        )
-        files = [f for f in document.get("urls") or () if isinstance(f, dict)]
-        # The sdist first: it is what a source install runs, including its build hooks.
-        chosen = next((f for f in files if f.get("packagetype") == "sdist"), None) or next(
-            (f for f in files if f.get("packagetype") == "bdist_wheel"), None
-        )
-        if chosen is None or not isinstance(chosen.get("url"), str):
-            raise RegistryError(f"PyPI has no archive for {name}=={resolved}")
-        data = RegistryClient._fetch_bytes(str(chosen["url"]), "pypi")
-        expected = str(RegistryClient._mapping(chosen.get("digests")).get("sha256", ""))
-        if not expected or hashlib.sha256(data).hexdigest() != expected:
-            raise RegistryError(f"{name}=={resolved} does not match the sha256 PyPI publishes")
-        return PackageArchive(
-            "pypi", name, resolved, str(chosen.get("filename") or "package.tar.gz"), data
-        )
-
 
 #: Archive extensions a PyPI source distribution is published under. The
 #: version is the last field before one of these, so the set is what decides
@@ -743,7 +664,6 @@ NPM_DOWNLOADS_HOST = "https://api.npmjs.org"
 
 
 __all__ = [
-    "ARCHIVE_HOSTS",
     "ATTESTATION_HOSTS",
     "MAX_RESPONSE_BYTES",
     "REGISTRY_HOSTS",

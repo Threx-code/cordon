@@ -185,7 +185,7 @@ class TestEstablished:
             ),
             (
                 "cargo",
-                "more_registries.RegistryHttp.json",
+                "registry_client.RegistryClient._fetch",
                 {
                     "versions": [
                         {"num": "1.0.0", "created_at": "2025-01-01T00:00:00Z"},

@@ -33,12 +33,13 @@ class PythonHooks:
         """Fetch, verify and scan the sdist pip would build; its version and build requirements if
         it passes."""
         from cordon_scanner.cli.commands.install.context import SdistBlocked
-        from cordon_scanner.intel.registries.registry_client import RegistryClient, RegistryError
+        from cordon_scanner.intel.registries.archive_sources.table import ArchiveSources
+        from cordon_scanner.intel.registries.registry_client import RegistryError
         from cordon_scanner.sources.install.pip import BuildRequires
         from cordon_scanner.sources.install.plan import InstallRefused, PrivateDirectory
 
         try:
-            archive = RegistryClient.package_archive("pypi", name, version or None)
+            archive = ArchiveSources.package_archive("pypi", name, version or None)
         except RegistryError as exc:
             raise InstallRefused(
                 f"{name} needs a source build and its sdist could not be fetched: {exc}"

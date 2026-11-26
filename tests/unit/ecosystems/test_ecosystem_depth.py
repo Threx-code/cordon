@@ -8,12 +8,16 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.foundation.config.settings import Config
-from cordon_scanner.intel.registries.more_registries import MoreRegistries
+from cordon_scanner.intel.registries.archive_sources.base import ArchiveFetch
+from cordon_scanner.intel.registries.archive_sources.table import ArchiveSources
 from cordon_scanner.intel.registries.package_registries import PackageRegistries
+from cordon_scanner.intel.registries.record_sources.base import Release
 from cordon_scanner.intel.registries.registry_client import PackageArchive
 from cordon_scanner.intel.registries.registry_http import RegistryHttp
 from cordon_scanner.sources.package import PackageTarget
@@ -40,14 +44,19 @@ class TestPackageUrls:
 
 
 class TestThePreviousRelease:
+    @staticmethod
+    def history(versions: list[str]) -> list[Release]:
+        """Each version published a month after the one listed before it, whatever its number (maintained lines interleave)."""
+        return [Release(v, datetime(2024, 1 + i, 1), "") for i, v in enumerate(versions)]
+
     @pytest.mark.parametrize(
-        "ecosystem", ["cargo", "rubygems", "nuget", "gomod", "hex", "pub", "maven"]
+        "ecosystem",
+        ["cargo", "rubygems", "nuget", "gomod", "hex", "pub", "maven", "conda", "cran", "opam"],
     )
     def test_by_the_ecosystems_own_version_order(self, monkeypatch, tmp_path, ecosystem) -> None:
+        listed = ["1.9.0", "1.10.0", "1.2.0", "1.10.1", "2.0.0"]
         monkeypatch.setattr(
-            MoreRegistries,
-            "versions",
-            staticmethod(lambda eco, name: ["1.9.0", "1.10.0", "1.10.1", "2.0.0", "1.2.0"]),
+            ArchiveFetch, "releases", staticmethod(lambda eco, name, version: self.history(listed))
         )
         fetched: list[str] = []
 
@@ -61,18 +70,60 @@ class TestThePreviousRelease:
                 b"\x1f\x8b" + b"\x00" * 20,
             )
 
-        monkeypatch.setattr(
-            "cordon_scanner.intel.registries.registry_client.RegistryClient.package_archive",
-            staticmethod(archive),
-        )
+        monkeypatch.setattr(ArchiveSources, "package_archive", staticmethod(archive))
         found = PreviousRelease.fetch_previous(Identity(ecosystem, "example", "1.10.1"), tmp_path)
         assert found is not None and fetched == ["1.10.0"] and found.label == "example 1.10.0"
 
     def test_the_first_release_has_none(self, monkeypatch, tmp_path) -> None:
-        monkeypatch.setattr(MoreRegistries, "versions", staticmethod(lambda eco, name: ["1.0.0"]))
+        monkeypatch.setattr(
+            ArchiveFetch,
+            "releases",
+            staticmethod(lambda eco, name, version: self.history(["1.0.0"])),
+        )
         assert (
             PreviousRelease.fetch_previous(Identity("cargo", "example", "1.0.0"), tmp_path) is None
         )
+
+    def test_a_new_publishing_account_is_named_for_any_registry_that_names_one(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        rows = [
+            Release("1.0.0", datetime(2024, 1, 1), "alice"),
+            Release("1.1.0", datetime(2024, 2, 1), "mallory"),
+        ]
+        monkeypatch.setattr(ArchiveFetch, "releases", staticmethod(lambda eco, name, version: rows))
+        monkeypatch.setattr(
+            ArchiveSources,
+            "package_archive",
+            staticmethod(
+                lambda eco, name, version: PackageArchive(
+                    eco, name, version, "x.tgz", b"\x1f\x8b" + b"\x00" * 20
+                )
+            ),
+        )
+        found = PreviousRelease.fetch_previous(Identity("cargo", "example", "1.1.0"), tmp_path)
+        assert found is not None
+        assert (
+            found.publisher_change == "example 1.1.0 was published by `mallory`; 1.0.0 by `alice`."
+        )
+
+    def test_a_weaker_check_is_named_in_the_label(self, monkeypatch, tmp_path) -> None:
+        monkeypatch.setattr(
+            ArchiveFetch,
+            "releases",
+            staticmethod(lambda eco, name, version: self.history(["1.0", "1.1"])),
+        )
+        monkeypatch.setattr(
+            ArchiveSources,
+            "package_archive",
+            staticmethod(
+                lambda eco, name, version: PackageArchive(
+                    eco, name, version, "x.tar.gz", b"\x1f\x8b" + b"\x00" * 20, "md5"
+                )
+            ),
+        )
+        found = PreviousRelease.fetch_previous(Identity("cran", "R6", "1.1"), tmp_path)
+        assert found is not None and found.label == "R6 1.0 (checked by md5 only)"
 
 
 class TestTheGoChecksumDatabase:
@@ -102,7 +153,7 @@ class TestTheGoChecksumDatabase:
 class TestMavenRanges:
     def test_resolved_online_to_the_highest_admitted_release(self, monkeypatch, tmp_path) -> None:
         monkeypatch.setattr(
-            MoreRegistries,
+            ArchiveSources,
             "versions",
             staticmethod(lambda eco, name: ["1.7.36", "2.0.0", "2.0.9", "2.0.10", "2.0.13"]),
         )
@@ -120,7 +171,7 @@ class TestMavenRanges:
         def refuse(eco, name):
             raise AssertionError("an offline scan asked a registry")
 
-        monkeypatch.setattr(MoreRegistries, "versions", staticmethod(refuse))
+        monkeypatch.setattr(ArchiveSources, "versions", staticmethod(refuse))
         (tmp_path / "pom.xml").write_text(POM, encoding="utf-8")
         [dependency] = (
             Scanner(Config.default().with_overrides(use_cache=False), detectors=())

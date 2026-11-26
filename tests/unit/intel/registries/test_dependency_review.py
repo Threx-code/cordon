@@ -21,7 +21,7 @@ import pytest
 from cordon_scanner.cli.commands.review import ChangeReview, GraphDiff, PackageChange, ReviewReport
 from cordon_scanner.detect.supply import release_diff
 from cordon_scanner.foundation.models import Severity
-from cordon_scanner.intel.registries.more_registries import MoreRegistries
+from cordon_scanner.intel.registries.archive_sources.git import GoZip
 from cordon_scanner.intel.registries.registry_client import PackageArchive, RegistryError
 
 
@@ -118,7 +118,7 @@ class TestReleaseComparison:
             )
 
         monkeypatch.setattr(
-            "cordon_scanner.intel.registries.registry_client.RegistryClient.package_archive",
+            "cordon_scanner.intel.registries.archive_sources.table.ArchiveSources.package_archive",
             archive,
         )
         changes = (
@@ -170,8 +170,8 @@ class TestReleaseComparison:
             )
 
         monkeypatch.setattr(
-            "cordon_scanner.intel.registries.archive_sources.base.ArchiveFetch.archive",
-            staticmethod(archive),
+            "cordon_scanner.intel.registries.archive_sources.table.ArchiveSources.package_archive",
+            staticmethod(lambda ecosystem, name, version: archive(None, name, version)),
         )
         change = PackageChange("upgraded", "composer", "vendor/pkg", "1.0.0", "1.1.0")
         ChangeReview.releases([change], quiet=True)
@@ -225,4 +225,4 @@ class TestGoModuleHashes:
             )
         )
         expected = "h1:" + base64.b64encode(hashlib.sha256(lines.encode()).digest()).decode()
-        assert MoreRegistries.go_h1(buffer.getvalue()) == expected
+        assert GoZip.h1(buffer.getvalue()) == expected

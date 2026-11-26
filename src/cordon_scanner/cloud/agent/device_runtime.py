@@ -135,9 +135,9 @@ class DeviceRuntime:
         cls, archive: Callable[[str, str, str | None], Any] | None = None
     ) -> dict[str, Callable[[str], Resolution]]:
         if archive is None:
-            from cordon_scanner.intel.registries.registry_client import RegistryClient
+            from cordon_scanner.intel.registries.archive_sources.table import ArchiveSources
 
-            archive = RegistryClient.package_archive
+            archive = ArchiveSources.package_archive
         return {
             "package": cls.package(archive),
             "mcp_server": cls.unresolved("mcp_server", "mcp", "source_unreachable"),

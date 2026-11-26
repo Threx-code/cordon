@@ -81,6 +81,9 @@ class ImageArchive(OciArchive):
 
     ecosystem: ClassVar[str] = "image"
 
+    def current(self, name: str) -> str:
+        return "latest"
+
     def fetch(self, name: str, version: str) -> PackageArchive | None:
         found, reference = ImageRef.of(name), self.reference(version)
         if found is None or not reference:

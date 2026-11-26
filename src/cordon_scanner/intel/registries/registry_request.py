@@ -64,30 +64,6 @@ class PackageNotFound(RegistryError):
     """
 
 
-#: Hosts a package archive may be downloaded from, by ecosystem. The registry names the URL, so
-#: it is confined to the registry's own file hosts before it is fetched.
-ARCHIVE_HOSTS = {
-    "npm": frozenset({"registry.npmjs.org"}),
-    "pypi": frozenset({"files.pythonhosted.org"}),
-    "cargo": frozenset({"static.crates.io"}),
-    "rubygems": frozenset({"rubygems.org"}),
-    "nuget": frozenset({"api.nuget.org"}),
-    "gomod": frozenset({"proxy.golang.org"}),
-    "hex": frozenset({"repo.hex.pm"}),
-    "pub": frozenset({"pub.dev"}),
-    "maven": frozenset({"repo.maven.apache.org"}),
-    "openvsx": frozenset({"openvsx.eclipsecontent.org"}),
-    "conda": frozenset({"conda.anaconda.org", "repo.anaconda.com"}),
-    "composer": frozenset({"codeload.github.com"}),
-    "ansible": frozenset({"galaxy.ansible.com"}),
-    "cran": frozenset({"cran.r-project.org"}),
-    "actions": frozenset({"codeload.github.com"}),
-    "swift": frozenset({"codeload.github.com"}),
-    "nix": frozenset({"codeload.github.com"}),
-    "cocoapods": frozenset({"codeload.github.com"}),
-    "terraform": frozenset({"codeload.github.com", "releases.hashicorp.com"}),
-    "julia": frozenset({"pkg.julialang.org"}),
-}
 MAX_ARCHIVE_BYTES = 64 << 20
 
 
@@ -96,20 +72,36 @@ class RegistryRequest:
     hosts, over https, without redirects, bounded in size."""
 
     @staticmethod
-    def fetch_bytes(
-        url: str, ecosystem: str, *, redirects: int = 0, allow: Callable[[str], bool] | None = None
-    ) -> bytes:
-        """The bytes at `url`, from the ecosystem's own file hosts. `redirects` is how many redirects may be followed, each only to
-        an https address on those same hosts (a registry that signs a storage URL answers with one); none by default."""
-        allowed = ARCHIVE_HOSTS.get(ecosystem, frozenset())
+    def headers(url: str, allow: Callable[[str], bool]) -> dict[str, str]:
+        """The response headers of `HEAD url` (names lower-cased), from a host `allow` admits, https, no redirect."""
+        parsed = urllib.parse.urlsplit(url)
+        if parsed.scheme != "https" or not allow(parsed.hostname or ""):
+            raise RegistryError(f"refusing an archive URL off the allowlist: {parsed.hostname!r}")
+        request = urllib.request.Request(  # noqa: S310 - scheme and host checked above
+            url, headers={"User-Agent": USER_AGENT}, method="HEAD"
+        )
+        try:
+            with urllib.request.build_opener(NoRedirects).open(
+                request, timeout=TIMEOUT_SECONDS * 2
+            ) as response:
+                return {k.lower(): str(v) for k, v in response.headers.items()}
+        except urllib.error.HTTPError as exc:
+            NetworkFailure.release(exc)
+            raise RegistryError(f"HTTP {exc.code} from {parsed.netloc}") from exc
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
+            raise RegistryError(
+                f"{NetworkFailure.reason(exc)} fetching from {parsed.netloc}"
+            ) from exc
+
+    @staticmethod
+    def fetch_bytes(url: str, allow: Callable[[str], bool], *, redirects: int = 0) -> bytes:
+        """The bytes at `url`, from a host `allow` admits. `redirects` is how many redirects may be followed, each only to an https
+        address on a host `allow` admits (a registry that signs a storage URL answers with one); none by default."""
         for hop in range(redirects + 1):
             parsed = urllib.parse.urlsplit(url)
-            host = parsed.hostname or ""
-            if parsed.scheme != "https" or not (
-                allow(host) if allow is not None else host in allowed
-            ):
+            if parsed.scheme != "https" or not allow(parsed.hostname or ""):
                 raise RegistryError(
-                    f"refusing an archive URL off the {ecosystem} allowlist: {parsed.hostname!r}"
+                    f"refusing an archive URL off the allowlist: {parsed.hostname!r}"
                 )
             request = urllib.request.Request(  # noqa: S310 - scheme and host checked above
                 url, headers={"User-Agent": USER_AGENT}, method="GET"
@@ -138,7 +130,6 @@ class RegistryRequest:
 
 
 __all__ = [
-    "ARCHIVE_HOSTS",
     "MAX_ARCHIVE_BYTES",
     "MAX_RESPONSE_BYTES",
     "RETRY_ATTEMPTS",

@@ -1,0 +1,20 @@
+{
+ "name": "equatable",
+ "versions": [
+  {
+   "archive_sha256": "4f531ad0dc4076cab07fec5ef112d6244c217cc97c2c211d5a27f3e20783980a",
+   "archive_url": "https://pub.dev/api/archives/equatable-3.0.0-dev.0.tar.gz",
+   "version": "3.0.0-dev.0"
+  },
+  {
+   "archive_sha256": "0b8e50fa31b269cc82a8442f1f7da4a425a16aa5be6a951600daa660a8653198",
+   "archive_url": "https://pub.dev/api/archives/equatable-3.0.0-dev.1.tar.gz",
+   "version": "3.0.0-dev.1"
+  },
+  {
+   "archive_sha256": "ea36e500cbf0ec18361deabca755434f73e42fe53c5130021c7e2d6b5ebe1702",
+   "archive_url": "https://pub.dev/api/archives/equatable-3.0.0.tar.gz",
+   "version": "3.0.0"
+  }
+ ]
+}

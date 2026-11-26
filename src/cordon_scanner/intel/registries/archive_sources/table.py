@@ -19,6 +19,20 @@ from cordon_scanner.intel.registries.archive_sources.listed import (
     CondaArchive,
     HelmArchive,
 )
+from cordon_scanner.intel.registries.archive_sources.native import (
+    CargoArchive,
+    GomodArchive,
+    GradleArchive,
+    HackageArchive,
+    HexArchive,
+    MavenArchive,
+    NpmArchive,
+    NugetArchive,
+    PubArchive,
+    PypiArchive,
+    RubygemsArchive,
+    VscodeArchive,
+)
 from cordon_scanner.intel.registries.archive_sources.oci import HomebrewArchive, ImageArchive
 from cordon_scanner.intel.registries.archive_sources.upstream import (
     BazelArchive,
@@ -26,6 +40,7 @@ from cordon_scanner.intel.registries.archive_sources.upstream import (
     CranArchive,
     OpamArchive,
 )
+from cordon_scanner.intel.registries.archive_sources.vcpkg import VcpkgArchive
 
 if TYPE_CHECKING:
     from cordon_scanner.intel.base import PackageArchive
@@ -49,6 +64,19 @@ class ArchiveSources:
         HelmArchive(),
         ImageArchive(),
         HomebrewArchive(),
+        NpmArchive(),
+        PypiArchive(),
+        CargoArchive(),
+        RubygemsArchive(),
+        NugetArchive(),
+        GomodArchive(),
+        HexArchive(),
+        PubArchive(),
+        MavenArchive(),
+        GradleArchive(),
+        VscodeArchive(),
+        HackageArchive(),
+        VcpkgArchive(),
     )
 
     @classmethod
@@ -57,27 +85,35 @@ class ArchiveSources:
 
     @classmethod
     def package_archive(cls, ecosystem: str, name: str, version: str | None) -> PackageArchive:
-        """The verified archive of a release of any ecosystem: from its archive source, else the registry client's own readers."""
+        """The verified archive of a release of an ecosystem, from its archive source."""
         from cordon_scanner.intel.registries.archive_sources.base import ArchiveFetch
-        from cordon_scanner.intel.registries.registry_client import RegistryClient
         from cordon_scanner.intel.registries.registry_request import RegistryError
 
         source = cls.of(ecosystem)
         if source is None:
-            return RegistryClient.package_archive(ecosystem, name, version)
-        if not version:
-            raise RegistryError(f"name a version of {name}: {ecosystem} has no `latest` to resolve")
-        return ArchiveFetch.archive(source, name, version)
+            raise RegistryError(f"no verified archive for {ecosystem}")
+        return ArchiveFetch.archive(source, name, version or source.current(name))
 
     @classmethod
     def previous(cls, ecosystem: str, name: str, version: str) -> str | None:
-        """The release before `version`: from the archive source's release history, else the registries' own lists."""
+        """The release before `version`, from the release history of the ecosystem's registry record."""
         from cordon_scanner.intel.registries.archive_sources.base import ArchiveFetch
-        from cordon_scanner.intel.registries.more_registries import MoreRegistries
 
-        if cls.of(ecosystem) is not None:
-            return ArchiveFetch.previous(ecosystem, name, version)
-        return MoreRegistries.previous(ecosystem, name, version)
+        if cls.of(ecosystem) is None:
+            return None
+        return ArchiveFetch.previous(ecosystem, name, version)
+
+    @classmethod
+    def versions(cls, ecosystem: str, name: str) -> list[str]:
+        """Every release of `name` the registry has not withdrawn, unordered."""
+        from cordon_scanner.intel.registries.archive_sources.base import ArchiveFetch
+
+        return [r.version for r in ArchiveFetch.releases(ecosystem, name, "") if not r.withdrawn]
+
+    @classmethod
+    def fetchable(cls) -> frozenset[str]:
+        """Every ecosystem whose release archive is fetched and checked."""
+        return cls.ids()
 
     @classmethod
     def ids(cls) -> frozenset[str]:

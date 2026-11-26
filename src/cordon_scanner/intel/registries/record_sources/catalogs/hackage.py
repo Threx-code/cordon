@@ -37,7 +37,7 @@ class HackageSource(RecordSource):
             not NAME.fullmatch(name)
             or ".." in name
             or len(name) > 100
-            or not VERSION.fullmatch(version)
+            or (version and not VERSION.fullmatch(version))
         ):
             return ()
         return (Document(f"{API}/{name}.json"),)

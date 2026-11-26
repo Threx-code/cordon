@@ -527,9 +527,7 @@ class TestHackage:
             d.url.endswith("/upload-time") and not d.required for d in asked
         )
 
-    @pytest.mark.parametrize(
-        ("name", "version"), [("", "1.0"), ("a/b", "1.0"), ("tagged", "../x"), ("tagged", "")]
-    )
+    @pytest.mark.parametrize(("name", "version"), [("", "1.0"), ("a/b", "1.0"), ("tagged", "../x")])
     def test_a_name_or_version_that_is_not_one_asks_for_nothing(
         self, name: str, version: str
     ) -> None:

@@ -61,7 +61,31 @@ class Coverage:
     def previous_release() -> frozenset[str]:
         from cordon_scanner.sources.previous import PreviousRelease
 
-        return frozenset(PreviousRelease.FROM_ARCHIVE)
+        return PreviousRelease.supported()
+
+    @staticmethod
+    def archive_fetch() -> frozenset[str]:
+        from cordon_scanner.intel.registries.archive_sources.table import ArchiveSources
+
+        return ArchiveSources.fetchable()
+
+    @staticmethod
+    def registry_facts() -> frozenset[str]:
+        from cordon_scanner.intel.registries.registry_hosts import ALIASES
+
+        return frozenset(ALIASES)
+
+    @staticmethod
+    def release_history() -> frozenset[str]:
+        from cordon_scanner.intel.registries.release_history import ReleaseHistory
+
+        return ReleaseHistory.covered()
+
+    @staticmethod
+    def package_url_targets() -> frozenset[str]:
+        from cordon_scanner.sources.package import PackageTarget
+
+        return frozenset(PackageTarget.TYPES.values())
 
     @staticmethod
     def confusable_names() -> frozenset[str]:
@@ -92,6 +116,10 @@ class Features:
         "the previous release from the registry archive": (Coverage.previous_release, dict),
         "look-alike names": (Coverage.confusable_names, dict),
         "old-versus-new release compare in the pre-merge gate": (Coverage.release_compare, dict),
+        "verified archive fetch (digest or revision checked)": (Coverage.archive_fetch, dict),
+        "registry facts client (does the name exist, since when)": (Coverage.registry_facts, dict),
+        "release history (when each release was published)": (Coverage.release_history, dict),
+        "scan a package URL (`scan pkg:...`)": (Coverage.package_url_targets, dict),
     }
     #: Features being built now: expected to fail until they cover every ecosystem; the entry comes off when they do.
     BUILDING: ClassVar[frozenset[str]] = frozenset(
@@ -101,9 +129,9 @@ class Features:
             "campaign fingerprints",
             # Not yet built for every ecosystem:
             "provenance (signed build attestations)",
-            "the previous release from the registry archive",
             "look-alike names",
-            "old-versus-new release compare in the pre-merge gate",
+            "registry facts client (does the name exist, since when)",
+            "scan a package URL (`scan pkg:...`)",
         }
     )
 

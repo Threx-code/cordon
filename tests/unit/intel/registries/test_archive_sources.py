@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import re
 import urllib.error
 from datetime import datetime
 from email.message import Message
@@ -25,22 +26,16 @@ from support import ROOT
 DATA = ROOT / "tests" / "unit" / "intel" / "registries" / "archives"
 
 
-def load(name: str) -> Any:
-    return json.loads((DATA / name).read_text(encoding="utf-8"))
+class Fixtures:
+    """The real documents the sources are tested on, and archives made for the checks."""
 
+    @staticmethod
+    def load(name: str) -> Any:
+        return json.loads((DATA / name).read_text(encoding="utf-8"))
 
-def text(name: str) -> str:
-    return (DATA / name).read_text(encoding="utf-8")
-
-
-def locate(ecosystem: str, name: str, version: str, files: dict[str, str]) -> Located | None:
-    source = ArchiveSources.of(ecosystem)
-    assert source is not None
-    wanted = source.documents(name, version)
-    documents = {
-        d.url: load(files[d.url.rsplit("/", 1)[-1] or d.url.rsplit("/", 2)[-2]]) for d in wanted
-    }
-    return source.locate(name, version, documents)
+    @staticmethod
+    def text(name: str) -> str:
+        return (DATA / name).read_text(encoding="utf-8")
 
 
 class TestDigests:
@@ -74,7 +69,7 @@ class TestCondaArchive:
         source = ArchiveSources.of("conda")
         assert source is not None
         (document,) = source.documents("zlib", version)
-        content = load("conda_package.json")
+        content = Fixtures.load("conda_package.json")
         if edit:
             edit(content)
         return source.locate("zlib", version, {document.url: content})
@@ -84,7 +79,7 @@ class TestCondaArchive:
         assert found is not None
         listed = [
             f
-            for f in load("conda_package.json")["files"]
+            for f in Fixtures.load("conda_package.json")["files"]
             if f["version"] == "1.3.2"
             and f["basename"].startswith("linux-64/")
             and f["basename"].endswith(".conda")
@@ -136,7 +131,7 @@ class TestAnsibleArchive:
         source = ArchiveSources.of("ansible")
         assert source is not None
         (document,) = source.documents(self.NAME, version)
-        content = load("ansible_version.json")
+        content = Fixtures.load("ansible_version.json")
         if edit:
             edit(content)
         return source.locate(self.NAME, version, {document.url: content})
@@ -180,10 +175,8 @@ class TestTheFetch:
     ) -> list[tuple[str, str, int]]:
         calls: list[tuple[str, str, int]] = []
 
-        def fetch_bytes(
-            url: str, ecosystem: str, *, redirects: int = 0, allow: Any = None
-        ) -> bytes:
-            calls.append((url, ecosystem, redirects))
+        def fetch_bytes(url: str, allow: Any, *, redirects: int = 0) -> bytes:
+            calls.append((url, "ansible" if allow("galaxy.ansible.com") else "", redirects))
             return data
 
         monkeypatch.setattr(RegistryRequest, "fetch_bytes", staticmethod(fetch_bytes))
@@ -192,7 +185,7 @@ class TestTheFetch:
         (document,) = source.documents("community.general", "14.0.1")
         monkeypatch.setattr(
             "cordon_scanner.intel.registries.archive_sources.base.RecordFetch.documents",
-            staticmethod(lambda *_a, **_k: {document.url: load("ansible_version.json")}),
+            staticmethod(lambda *_a, **_k: {document.url: Fixtures.load("ansible_version.json")}),
         )
         return calls
 
@@ -200,7 +193,7 @@ class TestTheFetch:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         data = b"x"
-        located = load("ansible_version.json")
+        located = Fixtures.load("ansible_version.json")
         located["artifact"]["sha256"] = hashlib.sha256(data).hexdigest()
         calls = self.stub(monkeypatch, data)
         source = ArchiveSources.of("ansible")
@@ -282,7 +275,9 @@ class TestRedirects:
         try:
             return (
                 RegistryRequest.fetch_bytes(
-                    "https://galaxy.ansible.com/a", "ansible", redirects=redirects
+                    "https://galaxy.ansible.com/a",
+                    lambda host: host == "galaxy.ansible.com",
+                    redirects=redirects,
                 ),
                 seen,
                 "",
@@ -369,24 +364,26 @@ class TestThePreviousRelease:
 
 class TestTheTables:
     @pytest.mark.parametrize("source", ArchiveSources.SOURCES, ids=lambda s: s.ecosystem)
-    def test_each_sources_hosts_are_the_download_allowlist_of_its_ecosystem(
+    def test_a_source_admits_its_own_hosts_and_refuses_a_host_that_is_nowhere_near(
         self, source: Any
     ) -> None:
-        from cordon_scanner.intel.registries.archive_sources.upstream import UpstreamArchive
-
-        if isinstance(source, UpstreamArchive) or not source.HOSTS:
-            # The project's own host is no list: a public host, and the digest the registry states.
-            assert source.ecosystem not in registry_request.ARCHIVE_HOSTS
-            assert not source.HOSTS
-        else:
-            assert registry_request.ARCHIVE_HOSTS[source.ecosystem] == source.HOSTS
+        for host in source.HOSTS:
+            assert source.allows(host)
+        assert (
+            not source.allows("evil.example.invalid")
+            and not source.allows("127.0.0.1")
+            and not source.allows("localhost")
+        )
 
     def test_every_archive_ecosystem_is_compared_and_has_a_record_source(self) -> None:
         from cordon_scanner.cli.commands.review import COMPARABLE
         from cordon_scanner.intel.registries.record_sources.table import RecordSources
+        from cordon_scanner.intel.registries.release_history import ReleaseHistory
 
         for ecosystem in ArchiveSources.ids():
-            assert ecosystem in COMPARABLE and RecordSources.of(ecosystem) is not None
+            assert ecosystem in COMPARABLE
+            # Its history comes from its registry record, or from the reader kept apart until the record exists.
+            assert RecordSources.of(ecosystem) is not None or ecosystem in ReleaseHistory.readers()
 
     def test_the_release_history_is_the_one_the_record_reads(self) -> None:
         from cordon_scanner.intel.registries.record_sources.base import RecordBuilder
@@ -405,24 +402,56 @@ class TestTheTables:
 
 
 class TestTheEntryPoints:
-    def test_an_ecosystem_with_no_archive_source_goes_to_the_registry_clients_own_readers(
+    def test_an_ecosystem_with_no_archive_source_has_no_verified_archive(self) -> None:
+        with pytest.raises(RegistryError, match="no verified archive"):
+            ArchiveSources.package_archive("nonesuch", "x", "1.0")
+
+    def test_no_version_named_is_the_registrys_newest_release_not_withdrawn(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from cordon_scanner.intel.registries.registry_client import RegistryClient
+        from datetime import datetime
 
-        asked: list[tuple[str, str, str | None]] = []
+        rows = [
+            Release("1.0.0", datetime(2020, 1, 1), ""),
+            Release("1.10.0", datetime(2021, 1, 1), ""),
+            Release("1.9.0", datetime(2022, 1, 1), ""),
+            Release("2.0.0", datetime(2023, 1, 1), withdrawn="yanked"),
+        ]
+        monkeypatch.setattr(ArchiveFetch, "releases", staticmethod(lambda e, n, v: rows))
+        assert ArchiveFetch.latest("cargo", "x") == "1.10.0"
+        asked: list[str] = []
         monkeypatch.setattr(
-            RegistryClient,
-            "package_archive",
-            staticmethod(lambda e, n, v: asked.append((e, n, v)) or "archive"),
+            ArchiveFetch, "archive", staticmethod(lambda source, n, v: asked.append(v) or "archive")
         )
-        assert ArchiveSources.package_archive("cargo", "fnv", "1.0.7") == "archive" and asked == [
-            ("cargo", "fnv", "1.0.7")
+        assert ArchiveSources.package_archive("cargo", "x", None) == "archive" and asked == [
+            "1.10.0"
         ]
 
-    def test_a_latest_that_has_no_name_is_an_error_not_a_guess(self) -> None:
-        with pytest.raises(RegistryError, match="name a version"):
-            ArchiveSources.package_archive("conda", "zlib", None)
+    def test_an_image_with_no_tag_named_is_the_tag_latest(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        asked: list[str] = []
+        monkeypatch.setattr(
+            ArchiveFetch, "archive", staticmethod(lambda source, n, v: asked.append(v) or "archive")
+        )
+        assert ArchiveSources.package_archive("image", "nginx", None) == "archive" and asked == [
+            "latest"
+        ]
+
+    def test_a_registry_with_nothing_unwithdrawn_names_no_current_version(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from datetime import datetime
+
+        monkeypatch.setattr(
+            ArchiveFetch,
+            "releases",
+            staticmethod(
+                lambda e, n, v: [Release("1.0", datetime(2020, 1, 1), withdrawn="yanked")]
+            ),
+        )
+        with pytest.raises(RegistryError, match="names no current version"):
+            ArchiveFetch.latest("cargo", "x")
 
     def test_the_previous_release_comes_from_the_release_history_of_a_source(
         self, monkeypatch: pytest.MonkeyPatch
@@ -441,7 +470,7 @@ class TestBazelArchive:
         source = ArchiveSources.of("bazel")
         assert source is not None
         (document,) = source.documents("abseil-cpp", "20240116.2")
-        content = load("bazel_source.json")
+        content = Fixtures.load("bazel_source.json")
         if edit:
             edit(content)
         return source.locate("abseil-cpp", "20240116.2", {document.url: content})
@@ -497,7 +526,7 @@ class TestOpamArchive:
         return source.locate(
             "dune",
             "3.5.0",
-            {wanted.url: document if document is not None else text("opam_dune.3.5.0")},
+            {wanted.url: document if document is not None else Fixtures.text("opam_dune.3.5.0")},
         )
 
     def test_the_source_and_every_checksum_the_file_states(self) -> None:
@@ -515,7 +544,7 @@ class TestOpamArchive:
     def test_a_git_source_has_no_archive(self) -> None:
         assert (
             self.locate(
-                text("opam_dune.3.5.0").replace(
+                Fixtures.text("opam_dune.3.5.0").replace(
                     "https://github.com/ocaml/dune/releases/download/3.5.0/dune-3.5.0.tbz",
                     "git+https://github.com/ocaml/dune.git",
                 )
@@ -525,7 +554,7 @@ class TestOpamArchive:
 
     def test_a_url_block_with_no_checksum_is_no_archive(self) -> None:
         stripped = "\n".join(
-            line for line in text("opam_dune.3.5.0").splitlines() if "sha" not in line
+            line for line in Fixtures.text("opam_dune.3.5.0").splitlines() if "sha" not in line
         )
         assert self.locate(stripped) is None
 
@@ -533,7 +562,7 @@ class TestOpamArchive:
         assert self.locate('opam-version: "2.0"\n') is None
 
     def test_a_checksum_that_is_the_wrong_width_is_ignored(self) -> None:
-        broken = text("opam_dune.3.5.0").replace("sha256=77bd", "sha256=77b")
+        broken = Fixtures.text("opam_dune.3.5.0").replace("sha256=77bd", "sha256=77b")
         found = self.locate(broken)
         assert found is not None and set(dict(found.digests)) == {"sha512"}
 
@@ -551,9 +580,9 @@ class TestConanArchive:
         source = ArchiveSources.of("conan")
         assert source is not None
         (config,) = source.documents("zlib", "1.4")
-        found = {config.url: text("conan_config.yml")}
+        found = {config.url: Fixtures.text("conan_config.yml")}
         (more,) = source.followed("zlib", "1.4", found)
-        found[more.url] = text("conan_conandata.yml")
+        found[more.url] = Fixtures.text("conan_conandata.yml")
         if edit:
             edit(found)
         return found
@@ -577,13 +606,13 @@ class TestConanArchive:
         source = ArchiveSources.of("conan")
         assert source is not None
         (config,) = source.documents("zlib", "9.9")
-        assert source.followed("zlib", "9.9", {config.url: text("conan_config.yml")}) == ()
+        assert source.followed("zlib", "9.9", {config.url: Fixtures.text("conan_config.yml")}) == ()
 
     def test_a_folder_that_is_not_a_plain_folder_name_is_not_followed(self) -> None:
         source = ArchiveSources.of("conan")
         assert source is not None
         (config,) = source.documents("zlib", "1.4")
-        bad = text("conan_config.yml").replace("all", "../x")
+        bad = Fixtures.text("conan_config.yml").replace("all", "../x")
         assert source.followed("zlib", "1.4", {config.url: bad}) == ()
 
     def test_a_source_with_no_sha256_is_no_archive(self) -> None:
@@ -620,8 +649,8 @@ class TestCranArchive:
             "R6",
             "2.5.1",
             {
-                first.url: load("cran_version.json"),
-                second.url: load("cran_latest.json") | {"Version": latest},
+                first.url: Fixtures.load("cran_version.json"),
+                second.url: Fixtures.load("cran_latest.json") | {"Version": latest},
             },
         )
 
@@ -645,13 +674,13 @@ class TestCranArchive:
         source = ArchiveSources.of("cran")
         assert source is not None
         first, _ = source.documents("R6", "2.5.0")
-        assert source.locate("R6", "2.5.0", {first.url: load("cran_version.json")}) is None
+        assert source.locate("R6", "2.5.0", {first.url: Fixtures.load("cran_version.json")}) is None
 
     def test_a_release_with_no_md5_has_no_archive(self) -> None:
         source = ArchiveSources.of("cran")
         assert source is not None
         first, _ = source.documents("R6", "2.5.1")
-        document = load("cran_version.json")
+        document = Fixtures.load("cran_version.json")
         del document["MD5sum"]
         assert source.locate("R6", "2.5.1", {first.url: document}) is None
 
@@ -714,27 +743,29 @@ class TestPublicHosts:
 HEX40 = "11bd71901bbe5b1630ceea73d27597364c9af683"
 
 
-def tarball(
-    files: dict[str, bytes | str], *, comment: str = "", executable: tuple[str, ...] = ()
-) -> bytes:
-    """A tar of `files` (a `str` value is a symlink target), with a pax global header naming `comment` as a code host writes it."""
-    import io
-    import tarfile
+class Archives:
+    @staticmethod
+    def tarball(
+        files: dict[str, bytes | str], *, comment: str = "", executable: tuple[str, ...] = ()
+    ) -> bytes:
+        """A tar of `files` (a `str` value is a symlink target), with a pax global header naming `comment` as a code host writes it."""
+        import io
+        import tarfile
 
-    buffer = io.BytesIO()
-    headers = {"comment": comment} if comment else None
-    with tarfile.open(
-        fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT, pax_headers=headers
-    ) as archive:
-        for name, content in files.items():
-            info = tarfile.TarInfo(name)
-            if isinstance(content, str):
-                info.type, info.linkname = tarfile.SYMTYPE, content
-                archive.addfile(info)
-            else:
-                info.size, info.mode = len(content), 0o755 if name in executable else 0o644
-                archive.addfile(info, io.BytesIO(content))
-    return buffer.getvalue()
+        buffer = io.BytesIO()
+        headers = {"comment": comment} if comment else None
+        with tarfile.open(
+            fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT, pax_headers=headers
+        ) as archive:
+            for name, content in files.items():
+                info = tarfile.TarInfo(name)
+                if isinstance(content, str):
+                    info.type, info.linkname = tarfile.SYMTYPE, content
+                    archive.addfile(info)
+                else:
+                    info.size, info.mode = len(content), 0o755 if name in executable else 0o644
+                    archive.addfile(info, io.BytesIO(content))
+        return buffer.getvalue()
 
 
 class TestGitTar:
@@ -751,24 +782,28 @@ class TestGitTar:
     def test_the_tree_hash_is_the_one_git_computes(self) -> None:
         from cordon_scanner.intel.registries.archive_sources.git import GitTar
 
-        assert GitTar.tree_sha1(tarball(self.FILES, executable=("run.sh",))) == self.TREE
+        assert GitTar.tree_sha1(Archives.tarball(self.FILES, executable=("run.sh",))) == self.TREE
 
     def test_the_order_the_files_are_in_does_not_change_it(self) -> None:
         from cordon_scanner.intel.registries.archive_sources.git import GitTar
 
         reversed_files = dict(reversed(list(self.FILES.items())))
-        assert GitTar.tree_sha1(tarball(reversed_files, executable=("run.sh",))) == self.TREE
+        assert (
+            GitTar.tree_sha1(Archives.tarball(reversed_files, executable=("run.sh",))) == self.TREE
+        )
 
     def test_a_changed_byte_the_executable_bit_or_a_link_target_changes_it(self) -> None:
         from cordon_scanner.intel.registries.archive_sources.git import GitTar
 
-        assert GitTar.tree_sha1(tarball(self.FILES)) != self.TREE
+        assert GitTar.tree_sha1(Archives.tarball(self.FILES)) != self.TREE
         assert (
-            GitTar.tree_sha1(tarball(self.FILES | {"a": b"hellO\n"}, executable=("run.sh",)))
+            GitTar.tree_sha1(
+                Archives.tarball(self.FILES | {"a": b"hellO\n"}, executable=("run.sh",))
+            )
             != self.TREE
         )
         assert (
-            GitTar.tree_sha1(tarball(self.FILES | {"l": "sub/b"}, executable=("run.sh",)))
+            GitTar.tree_sha1(Archives.tarball(self.FILES | {"l": "sub/b"}, executable=("run.sh",)))
             != self.TREE
         )
 
@@ -776,7 +811,7 @@ class TestGitTar:
     def test_a_path_that_leaves_the_tree_is_no_tree(self, path: str) -> None:
         from cordon_scanner.intel.registries.archive_sources.git import GitTar
 
-        assert GitTar.tree_sha1(tarball({path: b"x"})) == ""
+        assert GitTar.tree_sha1(Archives.tarball({path: b"x"})) == ""
 
     def test_something_that_is_not_a_tar_is_no_tree_and_names_no_commit(self) -> None:
         from cordon_scanner.intel.registries.archive_sources.git import GitTar
@@ -786,13 +821,13 @@ class TestGitTar:
     def test_the_commit_is_the_one_the_pax_header_names(self) -> None:
         from cordon_scanner.intel.registries.archive_sources.git import GitTar
 
-        assert GitTar.commit(tarball({"a": b"x"}, comment=HEX40)) == HEX40
-        assert GitTar.commit(tarball({"a": b"x"})) == ""
-        assert GitTar.commit(tarball({"a": b"x"}, comment="not a commit")) == ""
+        assert GitTar.commit(Archives.tarball({"a": b"x"}, comment=HEX40)) == HEX40
+        assert GitTar.commit(Archives.tarball({"a": b"x"})) == ""
+        assert GitTar.commit(Archives.tarball({"a": b"x"}, comment="not a commit")) == ""
 
     def test_the_three_git_checks_in_a_digest(self) -> None:
-        named = tarball({"a": b"x"}, comment=HEX40)
-        unnamed = tarball({"a": b"x"})
+        named = Archives.tarball({"a": b"x"}, comment=HEX40)
+        unnamed = Archives.tarball({"a": b"x"})
         assert ArchiveFetch.digest_ok(named, (("git-commit", HEX40),))
         assert not ArchiveFetch.digest_ok(named, (("git-commit", "0" * 40),))
         assert not ArchiveFetch.digest_ok(unnamed, (("git-commit", HEX40),))
@@ -904,7 +939,7 @@ class TestCocoapodsArchive:
         source = ArchiveSources.of("cocoapods")
         assert source is not None
         (document,) = source.documents("Alamofire", "5.9.1")
-        content = load("cocoapods_spec.json")
+        content = Fixtures.load("cocoapods_spec.json")
         if edit:
             edit(content)
         return source.locate("Alamofire", "5.9.1", {document.url: content})
@@ -973,7 +1008,9 @@ class TestTerraformArchive:
     def test_a_provider_is_the_zip_on_hashicorps_host_with_the_sha256_the_registry_states(
         self,
     ) -> None:
-        found = self.locate("hashicorp/random", "3.6.0", load("terraform_provider_download.json"))
+        found = self.locate(
+            "hashicorp/random", "3.6.0", Fixtures.load("terraform_provider_download.json")
+        )
         assert found is not None
         assert (
             found.url
@@ -984,13 +1021,15 @@ class TestTerraformArchive:
         )
 
     def test_a_download_address_on_another_host_is_refused(self) -> None:
-        document = load("terraform_provider_download.json") | {
+        document = Fixtures.load("terraform_provider_download.json") | {
             "download_url": "https://evil.example.invalid/a.zip"
         }
         assert self.locate("hashicorp/random", "3.6.0", document) is None
 
     def test_a_module_is_the_tag_of_the_repository_the_registry_names(self) -> None:
-        found = self.locate("terraform-aws-modules/vpc/aws", "5.8.1", load("terraform_module.json"))
+        found = self.locate(
+            "terraform-aws-modules/vpc/aws", "5.8.1", Fixtures.load("terraform_module.json")
+        )
         assert found is not None
         assert (
             found.url
@@ -1020,8 +1059,10 @@ class TestJuliaArchive:
             "ZipFile",
             version,
             {
-                package.url: text("julia_package.toml"),
-                listing.url: versions if versions is not None else text("julia_versions.toml"),
+                package.url: Fixtures.text("julia_package.toml"),
+                listing.url: versions
+                if versions is not None
+                else Fixtures.text("julia_versions.toml"),
             },
         )
 
@@ -1062,7 +1103,7 @@ class TestHelmArchive:
         source = ArchiveSources.of("helm")
         assert source is not None
         (document,) = source.documents(self.NAME, "1.19.0")
-        content = load("helm_version.json")
+        content = Fixtures.load("helm_version.json")
         if edit:
             edit(content)
         return source.locate(self.NAME, "1.19.0", {document.url: content})
@@ -1123,7 +1164,7 @@ class TestTheFallbacks:
         )
         asked: list[str] = []
 
-        def fetch(url: str, ecosystem: str, **_k: Any) -> bytes:
+        def fetch(url: str, allow: Any, **_k: Any) -> bytes:
             asked.append(url)
             if url.endswith("/v1"):
                 raise RegistryError("HTTP 404 from codeload.github.com")
@@ -1132,7 +1173,7 @@ class TestTheFallbacks:
         monkeypatch.setattr(RegistryRequest, "fetch_bytes", staticmethod(fetch))
         assert ArchiveFetch.download(source, located) == b"bytes" and len(asked) == 2
 
-        def refuse(url: str, ecosystem: str, **_k: Any) -> bytes:
+        def refuse(url: str, allow: Any, **_k: Any) -> bytes:
             raise RegistryError("HTTP 500 from codeload.github.com")
 
         monkeypatch.setattr(RegistryRequest, "fetch_bytes", staticmethod(refuse))
@@ -1344,3 +1385,459 @@ class TestThePulledHook:
         source = ArchiveSources.of("image")
         assert source is not None
         assert ArchiveFetch.archive(source, "nginx", "1.27").data == b"layout"
+
+
+class TestReleaseHistory:
+    """Row 8: when each release was published, for every ecosystem, from the history the registry record is read from."""
+
+    def test_every_ecosystem_with_a_record_source_has_a_history_and_extensions_are_read_apart(
+        self,
+    ) -> None:
+        from cordon_scanner.intel.registries.record_sources.table import RecordSources
+        from cordon_scanner.intel.registries.release_history import ReleaseHistory
+
+        assert (
+            RecordSources.ids() <= ReleaseHistory.covered() and "vscode" in ReleaseHistory.covered()
+        )
+
+    def test_extensions_have_one_id_and_the_old_spelling_is_its_alias(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from datetime import datetime
+
+        from cordon_scanner.intel.registries.openvsx import OpenVsx
+        from cordon_scanner.intel.registries.release_history import ReleaseHistory
+
+        asked: list[tuple[str, str]] = []
+        when = datetime(2025, 1, 1)
+        monkeypatch.setattr(
+            OpenVsx,
+            "timeline",
+            classmethod(lambda cls, n, v: asked.append((n, v)) or {"1.0.0": when}),
+        )
+        assert ReleaseHistory.timeline("vscode", "Acme.tool", "1.0.0") == {"1.0.0": when}
+        assert ReleaseHistory.timeline("openvsx", "Acme.tool", "1.0.0") == {"1.0.0": when}
+        assert asked == [("Acme.tool", "1.0.0")] * 2
+
+    def test_a_recorded_ecosystems_times_are_the_records_releases_with_a_zone(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cordon_scanner.intel.registries.release_history import ReleaseHistory
+
+        source = ArchiveSources.of("conda")
+        assert source is not None
+        document = json.loads(
+            (ROOT / "tests/unit/intel/registries/records/conda.json").read_text(encoding="utf-8")
+        )
+        (wanted,) = source.documents("zlib", "1.3.2")
+        monkeypatch.setattr(
+            "cordon_scanner.intel.registries.record_sources.base.RecordFetch.documents",
+            staticmethod(lambda *_a, **_k: {wanted.url: document}),
+        )
+        timeline = ReleaseHistory.timeline("conda", "zlib", "1.3.2")
+        assert {"1.2.8", "1.3.1", "1.3.2"} <= set(timeline) and all(
+            t.tzinfo is not None for t in timeline.values()
+        )
+        assert timeline["1.2.8"] < timeline["1.3.2"]
+
+    def test_a_registry_that_cannot_be_read_gives_no_history_not_an_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cordon_scanner.intel.registries.release_history import ReleaseHistory
+
+        def refuse(*_a: Any, **_k: Any) -> Any:
+            raise RegistryError("HTTP 500")
+
+        monkeypatch.setattr(
+            "cordon_scanner.intel.registries.record_sources.base.RecordFetch.documents",
+            staticmethod(refuse),
+        )
+        assert ReleaseHistory.timeline("conda", "zlib", "1.3.2") == {}
+
+    def test_an_ecosystem_with_no_source_at_all_gives_no_history(self) -> None:
+        from cordon_scanner.intel.registries.release_history import ReleaseHistory
+
+        assert ReleaseHistory.timeline("nonesuch", "x", "1") == {}
+
+
+class TestVcpkgArchive:
+    NAME = "zlib"
+
+    def bound(self, edit: Any = None) -> dict[str, Any]:
+        source = ArchiveSources.of("vcpkg")
+        assert source is not None
+        (listing,) = source.documents(self.NAME, "1.4")
+        found: dict[str, Any] = {listing.url: Fixtures.load("vcpkg_versions.json")}
+        (tree,) = source.followed(self.NAME, "1.4", found)
+        found[tree.url] = Fixtures.load("vcpkg_tree.json")
+        for blob in source.followed(self.NAME, "1.4", found):
+            found[blob.url] = Fixtures.load(
+                "vcpkg_blob_portfile.json"
+                if blob.url.endswith("70441b06a856824248bc5a81a9cc6adc57636a36")
+                else "vcpkg_blob_manifest.json"
+            )
+        if edit:
+            edit(found)
+        return found
+
+    def test_the_versions_file_names_the_tree_then_the_tree_the_two_blobs(self) -> None:
+        found = self.bound()
+        assert [u.rsplit("/", 2)[-2] for u in found][1:] == ["trees", "blobs", "blobs"]
+        assert next(iter(found)).endswith("/versions/z-/zlib.json")
+
+    def test_the_port_that_downloads_its_source_gives_the_archive_and_its_sha512(self) -> None:
+        source = ArchiveSources.of("vcpkg")
+        assert source is not None
+        found = source.locate(self.NAME, "1.4", self.bound())
+        assert found is not None
+        assert found.url == "https://github.com/madler/zlib/archive/v1.4.tar.gz"
+        stated = re.search(
+            r"SHA512 ([0-9a-f]{128})",
+            base64.b64decode(Fixtures.load("vcpkg_blob_portfile.json")["content"]).decode(),
+        ).group(1)  # type: ignore[union-attr]
+        assert found.digests == (("sha512", stated),)
+
+    def test_a_blob_that_is_not_the_one_the_tree_names_is_not_read(self) -> None:
+        source = ArchiveSources.of("vcpkg")
+        assert source is not None
+
+        def tamper(found: dict[str, Any]) -> None:
+            key = next(u for u in found if u.endswith("70441b06a856824248bc5a81a9cc6adc57636a36"))
+            content = base64.b64decode(found[key]["content"]).replace(b"madler/zlib", b"evil/zlib")
+            found[key] = found[key] | {"content": base64.b64encode(content).decode()}
+
+        assert source.locate(self.NAME, "1.4", self.bound(tamper)) is None
+
+    def test_a_version_the_registry_does_not_list_has_no_tree(self) -> None:
+        source = ArchiveSources.of("vcpkg")
+        assert source is not None
+        (listing,) = source.documents(self.NAME, "9.9")
+        assert (
+            source.followed(self.NAME, "9.9", {listing.url: Fixtures.load("vcpkg_versions.json")})
+            == ()
+        )
+
+    def test_a_port_revision_is_the_version_after_a_hash(self) -> None:
+        from cordon_scanner.intel.registries.archive_sources.vcpkg import VcpkgArchive
+
+        listing = Fixtures.load("vcpkg_versions.json")
+        assert VcpkgArchive.tree("1.4", listing) == VcpkgArchive.tree("1.4#0", listing) != ""
+        assert VcpkgArchive.tree("1.3.2#3", listing) not in ("", VcpkgArchive.tree("1.4", listing))
+
+    def test_a_variable_the_port_leaves_unresolved_has_no_archive(self) -> None:
+        source = ArchiveSources.of("vcpkg")
+        assert source is not None
+
+        def unresolved(found: dict[str, Any]) -> None:
+            key = next(u for u in found if u.endswith("70441b06a856824248bc5a81a9cc6adc57636a36"))
+            found[key] = found[key] | {
+                "content": base64.b64encode(
+                    b"vcpkg_from_github(REPO a/b REF ${SOMETHING} SHA512 " + b"ab" * 64 + b")"
+                ).decode()
+            }
+            blob = hashlib.sha1(
+                b"blob %d\0" % len(base64.b64decode(found[key]["content"]))
+                + base64.b64decode(found[key]["content"]),
+                usedforsecurity=False,
+            ).hexdigest()
+            del found[key]
+            found[key.rsplit("/", 1)[0] + "/" + blob] = {
+                "encoding": "base64",
+                "content": base64.b64encode(b"x").decode(),
+            }
+
+        assert source.locate(self.NAME, "1.4", self.bound(unresolved)) is None
+
+    @pytest.mark.parametrize("name", ["", "Zlib", "a/b", "../x", "a b"])
+    def test_a_name_that_is_not_a_port_asks_for_nothing(self, name: str) -> None:
+        assert ArchiveSources.of("vcpkg").documents(name, "1.0") == ()  # type: ignore[union-attr]
+
+
+class TestNativeArchives:
+    """The registries that publish their own archive and digest, read from their real documents."""
+
+    @staticmethod
+    def locate(ecosystem: str, name: str, version: str, *documents: Any) -> Located | None:
+        source = ArchiveSources.of(ecosystem)
+        assert source is not None
+        wanted = source.documents(name, version)
+        assert wanted, f"{ecosystem}: no documents for {name}@{version}"
+        found = dict(zip((d.url for d in wanted), documents, strict=False))
+        for more, document in zip(
+            source.followed(name, version, found), documents[len(found) :], strict=False
+        ):
+            found[more.url] = document
+        return source.locate(name, version, found)
+
+    def test_npm_the_tarball_and_the_sha512_integrity(self) -> None:
+        found = self.locate("npm", "left-pad", "1.3.0", Fixtures.load("npm_version.json"))
+        assert found is not None
+        assert (
+            found.url == "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz"
+            and found.filename == "left-pad-1.3.0.tgz"
+        )
+        assert found.digests == (
+            (
+                "sha512",
+                base64.b64decode(Fixtures.load("npm_version.json")["dist"]["integrity"][7:]).hex(),
+            ),
+        )
+
+    def test_npm_a_scoped_name_is_asked_as_it_is_written(self) -> None:
+        (document,) = ArchiveSources.of("npm").documents("@scope/demo", "1.0.0")  # type: ignore[union-attr]
+        assert document.url == "https://registry.npmjs.org/@scope/demo/1.0.0"
+
+    def test_npm_a_release_with_only_the_legacy_sha1_has_no_archive(self) -> None:
+        document = Fixtures.load("npm_version.json")
+        document["dist"]["integrity"] = ""
+        assert self.locate("npm", "left-pad", "1.3.0", document) is None
+
+    def test_npm_a_tarball_on_another_host_has_no_archive(self) -> None:
+        document = Fixtures.load("npm_version.json")
+        document["dist"]["tarball"] = "https://evil.example.invalid/x.tgz"
+        assert self.locate("npm", "left-pad", "1.3.0", document) is None
+
+    def test_pypi_the_source_distribution_with_its_sha256(self) -> None:
+        found = self.locate("pypi", "six", "1.16.0", Fixtures.load("pypi_version.json"))
+        sdist = next(
+            f for f in Fixtures.load("pypi_version.json")["urls"] if f["packagetype"] == "sdist"
+        )
+        assert found is not None and found.filename == "six-1.16.0.tar.gz"
+        assert found.url == sdist["url"] and found.digests == (
+            ("sha256", sdist["digests"]["sha256"]),
+        )
+
+    def test_pypi_a_release_with_only_a_wheel_gets_the_wheel(self) -> None:
+        document = Fixtures.load("pypi_version.json")
+        document["urls"] = [f for f in document["urls"] if f["packagetype"] != "sdist"]
+        found = self.locate("pypi", "six", "1.16.0", document)
+        assert found is not None and found.filename.endswith(".whl")
+
+    def test_pypi_a_file_on_another_host_has_no_archive(self) -> None:
+        document = Fixtures.load("pypi_version.json")
+        for f in document["urls"]:
+            f["url"] = "https://evil.example.invalid/" + f["filename"]
+        assert self.locate("pypi", "six", "1.16.0", document) is None
+
+    def test_cargo_the_checksum_and_the_static_host(self) -> None:
+        found = self.locate("cargo", "fnv", "1.0.7", Fixtures.load("cargo_version.json"))
+        assert found is not None
+        assert found.url == "https://static.crates.io/crates/fnv/fnv-1.0.7.crate"
+        assert found.digests == (
+            ("sha256", "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"),
+        )
+
+    def test_cargo_a_document_for_another_version_is_not_this_archive(self) -> None:
+        assert self.locate("cargo", "fnv", "1.0.6", Fixtures.load("cargo_version.json")) is None
+
+    def test_rubygems_the_sha_and_the_gem(self) -> None:
+        found = self.locate("rubygems", "rake", "13.0.6", Fixtures.load("rubygems_version.json"))
+        assert found is not None and found.url == "https://rubygems.org/gems/rake-13.0.6.gem"
+        assert found.digests == (
+            ("sha256", "5ce4bf5037b4196c24ac62834d8db1ce175470391026bd9e557d669beeb19097"),
+        )
+
+    def test_nuget_the_registration_names_the_catalog_whose_hash_is_the_nupkgs(self) -> None:
+        found = self.locate(
+            "nuget",
+            "Newtonsoft.Json",
+            "13.0.3",
+            Fixtures.load("nuget_registration.json"),
+            Fixtures.load("nuget_catalog.json"),
+        )
+        assert found is not None
+        assert (
+            found.url
+            == "https://api.nuget.org/v3-flatcontainer/newtonsoft.json/13.0.3/newtonsoft.json.13.0.3.nupkg"
+        )
+        assert found.digests == (
+            ("sha512", base64.b64decode(Fixtures.load("nuget_catalog.json")["packageHash"]).hex()),
+        )
+
+    def test_nuget_a_catalog_address_off_the_registrys_own_path_is_not_followed(self) -> None:
+        source = ArchiveSources.of("nuget")
+        assert source is not None
+        (document,) = source.documents("Newtonsoft.Json", "13.0.3")
+        registration = Fixtures.load("nuget_registration.json") | {
+            "catalogEntry": "https://evil.example.invalid/x.json"
+        }
+        assert source.followed("Newtonsoft.Json", "13.0.3", {document.url: registration}) == ()
+
+    def test_nuget_a_hash_that_is_not_sha512_is_no_check(self) -> None:
+        catalog = Fixtures.load("nuget_catalog.json") | {"packageHashAlgorithm": "SHA256"}
+        assert (
+            self.locate(
+                "nuget",
+                "Newtonsoft.Json",
+                "13.0.3",
+                Fixtures.load("nuget_registration.json"),
+                catalog,
+            )
+            is None
+        )
+
+    def test_gomod_the_zip_is_held_to_the_h1_the_checksum_database_records(self) -> None:
+        found = self.locate(
+            "gomod", "github.com/pkg/errors", "v0.9.1", Fixtures.text("gomod_sumdb.txt")
+        )
+        assert found is not None
+        assert found.url == "https://proxy.golang.org/github.com/pkg/errors/@v/v0.9.1.zip"
+        assert found.digests == (("go-h1", "h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4="),)
+
+    def test_gomod_a_version_recorded_without_its_v_is_asked_for_with_it(self) -> None:
+        source = ArchiveSources.of("gomod")
+        assert source is not None
+        assert source.documents("github.com/pkg/errors", "0.9.1")[0].url.endswith(
+            "/lookup/github.com/pkg/errors@v0.9.1"
+        )
+        found = self.locate(
+            "gomod", "github.com/pkg/errors", "0.9.1", Fixtures.text("gomod_sumdb.txt")
+        )
+        assert found is not None and found.url.endswith("/@v/v0.9.1.zip")
+
+    def test_gomod_upper_case_is_escaped_in_both_addresses(self) -> None:
+        source = ArchiveSources.of("gomod")
+        assert source is not None
+        assert "/github.com/!azure/go@" in source.documents("github.com/Azure/go", "v1.0.0")[0].url
+        recorded = "github.com/Azure/go v1.0.0 h1:" + base64.b64encode(b"\x01" * 32).decode() + "\n"
+        found = source.locate("github.com/Azure/go", "v1.0.0", {"u": recorded})
+        assert found is not None and "/github.com/!azure/go/@v/v1.0.0.zip" in found.url
+
+    def test_gomod_the_h1_is_compared_as_written_not_lower_cased(self) -> None:
+        import io
+        import zipfile
+
+        from cordon_scanner.intel.registries.archive_sources.git import GoZip
+
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("m@v1/a.go", "package m\n")
+        recorded = GoZip.h1(buffer.getvalue())
+        assert recorded != recorded.lower()
+        assert ArchiveFetch.digest_ok(buffer.getvalue(), (("go-h1", recorded),))
+        assert not ArchiveFetch.digest_ok(buffer.getvalue(), (("go-h1", recorded.lower()),))
+
+    def test_gomod_a_line_for_the_go_mod_file_is_not_the_zip(self) -> None:
+        only_mod = "\n".join(
+            line for line in Fixtures.text("gomod_sumdb.txt").splitlines() if "/go.mod" in line
+        )
+        assert self.locate("gomod", "github.com/pkg/errors", "v0.9.1", only_mod) is None
+
+    def test_hex_the_checksum_and_the_tarball(self) -> None:
+        found = self.locate("hex", "jason", "1.4.4", Fixtures.load("hex_release.json"))
+        assert found is not None and found.url == "https://repo.hex.pm/tarballs/jason-1.4.4.tar"
+        assert found.digests == (
+            ("sha256", "c5eb0cab91f094599f94d55bc63409236a8ec69a21a67814529e8d5f6cc90b3b"),
+        )
+
+    def test_pub_the_archive_sha256_of_the_version_asked(self) -> None:
+        document = Fixtures.load("pub_package.json")
+        newest = document["versions"][-1]
+        found = self.locate("pub", "equatable", newest["version"], document)
+        assert found is not None and found.url == newest["archive_url"]
+        assert found.digests == (("sha256", newest["archive_sha256"]),)
+        assert self.locate("pub", "equatable", "0.0.0-none", document) is None
+
+    def test_maven_the_jar_and_the_strongest_digest_kept_beside_it(self) -> None:
+        source = ArchiveSources.of("maven")
+        assert source is not None
+        base = "https://repo.maven.apache.org/maven2/commons-io/commons-io/2.18.0/commons-io-2.18.0.jar"
+        assert [d.url for d in source.documents("commons-io:commons-io", "2.18.0")] == [
+            f"{base}.{a}" for a in ("sha512", "sha256", "sha1", "md5")
+        ]
+        stated = {f"{base}.sha1": Fixtures.text("maven_commons_io.jar.sha1")}
+        found = source.locate("commons-io:commons-io", "2.18.0", stated)
+        assert (
+            found is not None
+            and found.url == base
+            and found.digests == (("sha1", "44084ef756763795b31c578403dd028ff4a22950"),)
+        )
+        stronger = stated | {f"{base}.sha512": "ab" * 64 + "  commons-io-2.18.0.jar\n"}
+        again = source.locate("commons-io:commons-io", "2.18.0", stronger)
+        assert again is not None and again.digests == (("sha512", "ab" * 64),)
+
+    def test_maven_a_digest_file_of_the_wrong_width_is_skipped(self) -> None:
+        source = ArchiveSources.of("maven")
+        assert source is not None
+        base = "https://repo.maven.apache.org/maven2/commons-io/commons-io/2.18.0/commons-io-2.18.0.jar"
+        broken = {
+            f"{base}.sha512": "abcd",
+            f"{base}.sha1": Fixtures.text("maven_commons_io.jar.sha1"),
+        }
+        found = source.locate("commons-io:commons-io", "2.18.0", broken)
+        assert found is not None and found.digests[0][0] == "sha1"
+
+    def test_gradle_is_maven_central_under_its_own_name(self) -> None:
+        maven, gradle = ArchiveSources.of("maven"), ArchiveSources.of("gradle")
+        assert maven is not None and gradle is not None and gradle.ecosystem == "gradle"
+        assert maven.documents("g:a", "1.0") == gradle.documents("g:a", "1.0") != ()
+
+    @pytest.mark.parametrize(
+        ("ecosystem", "name", "version"),
+        [
+            ("npm", "", "1"),
+            ("pypi", "a/../b", "1"),
+            ("cargo", "a/b", "1"),
+            ("rubygems", "a b", "1"),
+            ("nuget", "../x", "1"),
+            ("gomod", "a//b", "v1"),
+            ("hex", "a?b", "1"),
+            ("pub", "", "1"),
+            ("maven", "a", "1"),
+            ("maven", "a:b:c", "1"),
+            ("maven", "a:b", "../1"),
+        ],
+    )
+    def test_a_name_or_version_that_is_not_one_asks_for_nothing(
+        self, ecosystem: str, name: str, version: str
+    ) -> None:
+        assert ArchiveSources.of(ecosystem).documents(name, version) == ()  # type: ignore[union-attr]
+
+    def test_vscode_the_open_vsx_reader_is_the_source_and_the_marketplace_names_no_digest(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cordon_scanner.intel.base import PackageArchive
+        from cordon_scanner.intel.registries.openvsx import OpenVsx
+
+        monkeypatch.setattr(
+            OpenVsx,
+            "archive",
+            classmethod(lambda cls, n, v: PackageArchive("vscode", n, v, f"{n}-{v}.vsix", b"x")),
+        )
+        archive = ArchiveSources.package_archive("vscode", "Acme.tool", "1.0.0")
+        assert (archive.ecosystem, archive.filename) == ("vscode", "Acme.tool-1.0.0.vsix")
+        assert ArchiveSources.of("vscode").fetch("", "1.0.0") is None  # type: ignore[union-attr]
+
+    def test_hackage_the_content_md5_header_is_the_digest(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        data = b"tarball"
+        stated = base64.b64encode(hashlib.md5(data, usedforsecurity=False).digest()).decode()
+        monkeypatch.setattr(
+            RegistryRequest, "headers", staticmethod(lambda url, allow: {"content-md5": stated})
+        )
+        monkeypatch.setattr(
+            RegistryRequest, "fetch_bytes", staticmethod(lambda url, allow, **k: data)
+        )
+        archive = ArchiveSources.of("hackage").fetch("tagged", "0.8.6")  # type: ignore[union-attr]
+        assert (
+            archive is not None
+            and archive.strength == "md5"
+            and archive.filename == "tagged-0.8.6.tar.gz"
+        )
+
+    def test_hackage_bytes_that_do_not_match_or_no_header_are_refused(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        stated = base64.b64encode(hashlib.md5(b"tarball", usedforsecurity=False).digest()).decode()
+        monkeypatch.setattr(
+            RegistryRequest, "headers", staticmethod(lambda url, allow: {"content-md5": stated})
+        )
+        monkeypatch.setattr(
+            RegistryRequest, "fetch_bytes", staticmethod(lambda url, allow, **k: b"tampered")
+        )
+        with pytest.raises(RegistryError, match="does not match the md5"):
+            ArchiveSources.of("hackage").fetch("tagged", "0.8.6")  # type: ignore[union-attr]
+        monkeypatch.setattr(RegistryRequest, "headers", staticmethod(lambda url, allow: {}))
+        with pytest.raises(RegistryError, match="states no MD5"):
+            ArchiveSources.of("hackage").fetch("tagged", "0.8.6")  # type: ignore[union-attr]

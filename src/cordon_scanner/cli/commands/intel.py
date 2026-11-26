@@ -141,7 +141,7 @@ class IntelCommand:
                         {"target": target, "release": "@".join(identity[1:]), "error": str(exc)}
                     )
                     failed = True
-            if identity is None or identity[0] not in ReleaseHistory.ECOSYSTEMS:
+            if identity is None or identity[0] not in ReleaseHistory.ecosystems():
                 results.append({"target": target, "skipped": "not a release this can compare"})
                 continue
             try:

@@ -22,9 +22,7 @@ be resolved is skipped, never treated as clean or as malware.
 
 from __future__ import annotations
 
-import base64
 import functools
-import hashlib
 import json
 import re
 import tarfile
@@ -260,11 +258,16 @@ class DependencyPayload:
     def from_registry(name: str, spec: str, into: Path) -> Resolved | None:
         """The highest published version the range accepts, sha512-checked."""
         from cordon_scanner.intel.advisories.versions import Versions
-        from cordon_scanner.sources.previous import PreviousRelease
+        from cordon_scanner.intel.registries.archive_sources.table import ArchiveSources
+        from cordon_scanner.intel.registries.registry_client import RegistryClient, RegistryError
+        from cordon_scanner.sources.package import PackageTarget
 
-        document = PreviousRelease._document(
-            f"https://registry.npmjs.org/{urllib.parse.quote(name, safe='@')}"
-        )
+        try:
+            document = RegistryClient._fetch(
+                f"https://registry.npmjs.org/{urllib.parse.quote(name, safe='@')}"
+            )
+        except RegistryError as exc:
+            raise ValueError(str(exc)) from exc
         versions = document.get("versions") or {}
         if spec.strip() == "latest":
             spec = str((document.get("dist-tags") or {}).get("latest") or "")
@@ -274,15 +277,12 @@ class DependencyPayload:
         if not accepted:
             return None
         version = max(accepted, key=lambda v: Versions.sort_key("npm", v))
-        dist = versions[version].get("dist") or {}
-        integrity = str(dist.get("integrity") or "")
-        if not integrity.startswith("sha512-"):
+        try:
+            archive = ArchiveSources.package_archive("npm", name, version)
+        except RegistryError:
             return None
-        blob = PreviousRelease._artefact(str(dist.get("tarball") or ""), "npm")
-        if base64.b64encode(hashlib.sha512(blob).digest()).decode() != integrity[7:]:
-            return None
-        path = into / PreviousRelease._safe(f"{name.replace('/', '__')}-{version}.tgz")
-        path.write_bytes(blob)
+        path = into / PackageTarget.safe_filename(f"{name.replace('/', '__')}-{version}.tgz", "npm")
+        path.write_bytes(archive.data)
         return Resolved(name, version, path)
 
     @staticmethod

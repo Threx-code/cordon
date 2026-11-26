@@ -1,0 +1,27 @@
+{
+ "sha": "318707972085eef7ea54f533c69040b05e3bf6b6",
+ "tree": [
+  {
+   "mode": "100644",
+   "path": "portfile.cmake",
+   "sha": "70441b06a856824248bc5a81a9cc6adc57636a36",
+   "size": 2902,
+   "type": "blob"
+  },
+  {
+   "mode": "100644",
+   "path": "vcpkg.json",
+   "sha": "4680ef72ccbe05ff3e13f219096c9e9e4f3f80c7",
+   "size": 296,
+   "type": "blob"
+  },
+  {
+   "mode": "100644",
+   "path": "usage",
+   "sha": "0000000000000000000000000000000000000000",
+   "size": 1,
+   "type": "blob"
+  }
+ ],
+ "truncated": false
+}

@@ -8,17 +8,14 @@ checked against the digest the registry publishes before anything reads it.
 
 from __future__ import annotations
 
-import base64
 import contextlib
-import hashlib
 import re
 import tarfile
 import tempfile
-import urllib.parse
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 
@@ -40,7 +37,7 @@ class Previous:
     path: Path
     label: str
     publisher_change: str = ""
-    """On npm, a sentence naming both accounts when the publisher differs; empty otherwise."""
+    """A sentence naming both accounts when the registry names the publisher of each and they differ; empty otherwise."""
 
 
 class PreviousRelease:
@@ -48,6 +45,14 @@ class PreviousRelease:
     #: from the archive rather than from what the command line named.
     FROM_ARCHIVE: ClassVar[frozenset[str]] = frozenset({"npm", "pypi"})
     """The release published before this one, fetched for comparison."""
+
+    @staticmethod
+    def supported() -> frozenset[str]:
+        """Every ecosystem a previous release can be fetched for: the ones with a verified archive (`FROM_ARCHIVE` is only those whose
+        archive names its own package, so `identify` can read the identity from it)."""
+        from cordon_scanner.intel.registries.archive_sources.table import ArchiveSources
+
+        return ArchiveSources.fetchable()
 
     @staticmethod
     def identify(target: Path) -> Identity | None:
@@ -91,123 +96,47 @@ class PreviousRelease:
         return Identity(ecosystem, name.group(1), version.group(1)) if name and version else None
 
     @staticmethod
-    def _document(url: str) -> dict[str, Any]:
-        """A registry document, through the bounded, redirect-free registry client."""
-        from cordon_scanner.intel.registries.registry_client import RegistryClient, RegistryError
-
-        try:
-            return RegistryClient._fetch(url)
-        except RegistryError as exc:
-            raise ValueError(str(exc)) from exc
-
-    @staticmethod
-    def _artefact(url: str, ecosystem: str) -> bytes:
-        """An archive the registry names, fetched only from that registry's own file hosts.
-
-        The packument chooses the URL, so it is untrusted: a tarball URL pointing anywhere else, or
-        a redirect, would have the scanner fetch from a host the publisher picked.
-        """
-        from cordon_scanner.intel.registries.registry_client import RegistryClient, RegistryError
-
-        try:
-            return RegistryClient._fetch_bytes(url, ecosystem)
-        except RegistryError as exc:
-            raise ValueError(str(exc)) from exc
-
-    @staticmethod
     def fetch_previous(identity: Identity, into: Path) -> Previous | None:
-        """Download the release published before `identity`, verified, into `into`."""
-        if identity.ecosystem not in ("npm", "pypi"):
-            return PreviousRelease._from_registry(identity, into)
-        if identity.ecosystem == "npm":
-            document = PreviousRelease._document(
-                f"https://registry.npmjs.org/{urllib.parse.quote(identity.name, safe='@')}"
-            )
-            times = document.get("time", {})
-            published = {v: t for v, t in times.items() if v in document.get("versions", {})}
-            version = PreviousRelease._before("npm", identity.version, published)
-            if version is None:
-                return None
-            meta = document["versions"][version]
-            blob = PreviousRelease._artefact(meta["dist"]["tarball"], "npm")
-            integrity = meta["dist"].get("integrity", "")
-            # sha512 only: a release with nothing but npm's legacy sha1 shasum cannot be checked
-            # against a digest an attacker could not also have chosen.
-            if not integrity.startswith("sha512-"):
-                raise ValueError("previous release carries no sha512 integrity to check")
-            if base64.b64encode(hashlib.sha512(blob).digest()).decode() != integrity[7:]:
-                raise ValueError("previous release failed its integrity check")
-            path = into / PreviousRelease._safe(f"{identity.name.replace('/', '__')}-{version}.tgz")
-            path.write_bytes(blob)
-            before = (meta.get("_npmUser") or {}).get("name", "")
-            now = ((document["versions"].get(identity.version) or {}).get("_npmUser") or {}).get(
-                "name", ""
-            )
-            change = (
-                f"{identity.name} {identity.version} was published by `{now}`; {version} by `{before}`."
-                if before and now and before != now
-                else ""
-            )
-            return Previous(path, f"{identity.name} {version}", change)
+        """Download the release published before `identity`, verified, into `into`.
 
-        document = PreviousRelease._document(
-            f"https://pypi.org/pypi/{urllib.parse.quote(identity.name, safe='')}/json"
-        )
-        releases = document.get("releases", {})
-        published = {
-            v: min(f["upload_time_iso_8601"] for f in files)
-            for v, files in releases.items()
-            if files and (v == identity.version or not any(f.get("yanked") for f in files))
-        }
-        version = PreviousRelease._before("pypi", identity.version, published)
-        if version is None:
-            return None
-        files = releases[version]
-        chosen = next((f for f in files if f.get("packagetype") == "sdist"), files[0])
-        blob = PreviousRelease._artefact(chosen["url"], "pypi")
-        if hashlib.sha256(blob).hexdigest() != chosen["digests"]["sha256"]:
-            raise ValueError("previous release failed its digest check")
-        path = into / PreviousRelease._safe(str(chosen["filename"]))
-        path.write_bytes(blob)
-        return Previous(path, f"{identity.name} {version}")
-
-    @staticmethod
-    def _before(ecosystem: str, version: str, published: dict[str, str]) -> str | None:
-        """The release before `version` on its own line: of the versions published before it, the
-        highest below it in the ecosystem's version order. Not the latest published before it:
-        maintained lines interleave in time, and `express` 4.21.2 was compared with 5.0.1, out a
-        month before it on the next major line."""
+        The release before it is read from the registry's history (the one its registry record is built from) and its archive is
+        fetched by the ecosystem's archive source, which checks it against what the registry states; the label says so when that
+        check is weaker than a SHA-2 digest."""
         from cordon_scanner.intel.registries.archive_sources.base import ArchiveFetch
-
-        return ArchiveFetch.before(ecosystem, version, published)
-
-    @staticmethod
-    def _from_registry(identity: Identity, into: Path) -> Previous | None:
-        """Crates.io, RubyGems, NuGet, the Go proxy, Hex, pub and Maven Central: the release before
-        this one by the ecosystem's version order, fetched and verified against the digest its
-        registry publishes (`RegistryClient.package_archive`)."""
         from cordon_scanner.intel.registries.archive_sources.table import ArchiveSources
         from cordon_scanner.intel.registries.registry_client import RegistryError
         from cordon_scanner.sources.package import PackageTarget
 
         try:
-            version = ArchiveSources.previous(identity.ecosystem, identity.name, identity.version)
-            if version is None:
+            before = ArchiveFetch.previous_release(
+                identity.ecosystem, identity.name, identity.version
+            )
+            if before is None:
                 return None
-            archive = ArchiveSources.package_archive(identity.ecosystem, identity.name, version)
+            archive = ArchiveSources.package_archive(
+                identity.ecosystem, identity.name, before.version
+            )
+            now = next(
+                (
+                    r.publisher
+                    for r in ArchiveFetch.releases(
+                        identity.ecosystem, identity.name, identity.version
+                    )
+                    if r.version == identity.version
+                ),
+                "",
+            )
         except RegistryError as exc:
             raise ValueError(str(exc)) from exc
         path = into / PackageTarget.safe_filename(archive.filename, identity.ecosystem)
         path.write_bytes(archive.data)
         weak = f" (checked by {archive.strength} only)" if archive.strength else ""
-        return Previous(path, f"{identity.name} {version}{weak}")
-
-    @staticmethod
-    def _safe(filename: str) -> str:
-        """A registry-chosen filename as one plain path component inside the workspace."""
-        from cordon_scanner.sources.package import PackageTarget
-
-        return PackageTarget.safe_filename(filename, "pypi" if filename.endswith(".whl") else "npm")
+        change = (
+            f"{identity.name} {identity.version} was published by `{now}`; {before.version} by `{before.publisher}`."
+            if before.publisher and now and before.publisher != now
+            else ""
+        )
+        return Previous(path, f"{identity.name} {before.version}{weak}", change)
 
     @staticmethod
     @contextlib.contextmanager

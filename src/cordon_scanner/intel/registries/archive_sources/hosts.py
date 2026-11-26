@@ -55,7 +55,7 @@ class PublicHost:
         addresses = {entry[4][0] for entry in found[: cls.MAX_ADDRESSES]}
         try:
             return bool(addresses) and all(
-                ipaddress.ip_address(a.split("%")[0]).is_global for a in addresses
+                ipaddress.ip_address(str(a).split("%")[0]).is_global for a in addresses
             )
         except ValueError:
             return False

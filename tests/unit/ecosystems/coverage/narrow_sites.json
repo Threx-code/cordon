@@ -6,7 +6,6 @@
  {"ids": ["npm", "pypi", "rubygems"], "site": "src/cordon_sandbox/observe.py::BASE_IMAGES#0"},
  {"ids": ["npm", "pypi", "rubygems"], "site": "src/cordon_sandbox/observe.py::TOOLCHAIN_DOMAINS#0"},
  {"ids": ["gomod", "maven", "npm", "nuget"], "site": "src/cordon_scanner/analysis/shared/source_paths.py::PUBLISHED_PINS#0"},
- {"ids": ["cargo", "gomod", "gradle", "hex", "maven", "npm", "nuget", "pub", "pypi", "rubygems"], "site": "src/cordon_scanner/cli/commands/review.py::COMPARABLE#0"},
  {"ids": ["npm", "pypi"], "site": "src/cordon_scanner/cloud/device_attestation.py::SPLITTERS#0"},
  {"ids": ["npm", "pypi"], "site": "src/cordon_scanner/cloud/fixer.py::FIXABLE#0"},
  {"ids": ["npm", "pypi"], "site": "src/cordon_scanner/cloud/fixer.py::WRITERS#0"},
@@ -44,9 +43,6 @@
  {"ids": ["ansible", "bazel", "cocoapods", "conan", "conda", "homebrew", "nix", "terraform", "vcpkg"], "site": "src/cordon_scanner/intel/advisories/upstream_advisories.py::SUPPORTED#0"},
  {"ids": ["npm", "pypi"], "site": "src/cordon_scanner/intel/malware/datadog_malware.py::DIRECTORIES#0"},
  {"ids": ["gradle", "image", "maven", "npm", "pypi", "rubygems"], "site": "src/cordon_scanner/intel/provenance/attest.py::READERS#0"},
- {"ids": ["cargo", "gomod", "gradle", "hex", "maven", "nuget", "pub", "rubygems"], "site": "src/cordon_scanner/intel/registries/more_registries.py::ARCHIVE_ECOSYSTEMS#0"},
- {"ids": ["gradle", "hex", "maven", "pub"], "site": "src/cordon_scanner/intel/registries/more_registries.py::MoreRegistries.archive#0"},
- {"ids": ["gradle", "maven"], "site": "src/cordon_scanner/intel/registries/more_registries.py::MoreRegistries.versions#0"},
  {"ids": ["actions", "ansible", "bazel", "cargo", "cocoapods", "composer", "conan", "conda", "cran", "gomod", "hackage", "hex", "homebrew", "image", "julia", "maven", "nuget", "opam", "pub", "rubygems", "terraform", "vcpkg"], "site": "src/cordon_scanner/intel/registries/more_registries.py::reader#0"},
  {"ids": ["actions", "ansible", "bazel", "cargo", "cocoapods", "composer", "conan", "conda", "cran", "gomod", "gradle", "hackage", "helm", "hex", "homebrew", "julia", "maven", "nix", "npm", "nuget", "opam", "pub", "pypi", "rubygems", "swift", "terraform", "vcpkg"], "site": "src/cordon_scanner/intel/registries/popular.py::POPULAR_PACKAGES#0"},
  {"ids": ["cargo", "npm", "pypi"], "site": "src/cordon_scanner/intel/registries/popular.py::_KNOWN_NEIGHBOURS#0"},
@@ -56,9 +52,6 @@
  {"ids": ["gradle", "maven"], "site": "src/cordon_scanner/intel/registries/registry_client.py::RegistryClient.attestation_payload#0"},
  {"ids": ["actions", "ansible", "bazel", "cargo", "cocoapods", "composer", "conan", "conda", "cran", "gomod", "gradle", "hackage", "helm", "hex", "homebrew", "image", "julia", "maven", "nuget", "opam", "pub", "rubygems", "terraform", "vcpkg"], "site": "src/cordon_scanner/intel/registries/registry_hosts.py::ALIASES#0"},
  {"ids": ["actions", "ansible", "bazel", "cargo", "cocoapods", "composer", "conan", "conda", "cran", "gomod", "hackage", "hex", "homebrew", "image", "julia", "maven", "nuget", "opam", "pub", "rubygems", "terraform", "vcpkg"], "site": "src/cordon_scanner/intel/registries/registry_hosts.py::HOSTS#0"},
- {"ids": ["cargo", "composer", "conda", "gomod", "hex", "maven", "npm", "nuget", "pub", "pypi", "rubygems"], "site": "src/cordon_scanner/intel/registries/registry_request.py::ARCHIVE_HOSTS#0"},
- {"ids": ["cargo", "gomod", "gradle", "hex", "maven", "npm", "nuget", "pub", "pypi", "rubygems"], "site": "src/cordon_scanner/intel/registries/release_history.py::ECOSYSTEMS#0"},
- {"ids": ["gradle", "maven"], "site": "src/cordon_scanner/intel/registries/release_history.py::ReleaseHistory.timeline#0"},
  {"ids": ["cargo", "composer", "cran", "gomod", "hex", "maven", "npm", "nuget", "pub", "pypi", "rubygems", "swift"], "site": "src/cordon_scanner/mcp/packages.py::ECOSYSTEMS#0"},
  {"ids": ["cargo", "gomod", "hex", "maven", "npm", "nuget", "pub", "pypi", "rubygems"], "site": "src/cordon_scanner/mcp/packages.py::FETCHABLE#0"},
  {"ids": ["cargo", "composer", "npm", "nuget", "pypi", "rubygems"], "site": "src/cordon_scanner/mcp/packages.py::_REGISTRY_FLAGS#0"},
@@ -67,6 +60,5 @@
  {"ids": ["cargo", "gomod", "hex", "image", "maven", "npm", "nuget", "pub", "pypi", "rubygems"], "site": "src/cordon_scanner/sources/package.py::TYPES#0"},
  {"ids": ["cargo", "gomod", "hex", "maven", "npm", "nuget", "pub", "pypi", "rubygems"], "site": "src/cordon_scanner/sources/package.py::_SUFFIX#0"},
  {"ids": ["gomod", "maven", "npm"], "site": "src/cordon_scanner/sources/package.py::segments#0"},
- {"ids": ["npm", "pypi"], "site": "src/cordon_scanner/sources/previous.py::FROM_ARCHIVE#0"},
- {"ids": ["npm", "pypi"], "site": "src/cordon_scanner/sources/previous.py::PreviousRelease.fetch_previous#0"}
+ {"ids": ["npm", "pypi"], "site": "src/cordon_scanner/sources/previous.py::FROM_ARCHIVE#0"}
 ]

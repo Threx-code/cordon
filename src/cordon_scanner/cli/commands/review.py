@@ -44,10 +44,7 @@ MAX_BASE_FILE_BYTES = 32 << 20
 #: Packages whose releases are fetched and compared under --online, most consequential first.
 MAX_FETCHED = 40
 #: Registries whose archives can be fetched and verified (`RegistryClient.package_archive`).
-COMPARABLE = frozenset(
-    {"npm", "pypi", "cargo", "rubygems", "nuget", "gomod", "hex", "pub", "maven", "gradle"}
-    | ArchiveSources.ids()
-)
+COMPARABLE = ArchiveSources.fetchable()
 
 
 #: Why a release of an ecosystem without a verified archive source is not fetched, where there is

@@ -37,7 +37,6 @@ ROLES: dict[str, tuple[str, str]] = {
     "ReuseKeys": ("cordon_scanner.intel.malware.reuse_index", "ReuseKeys"),
     "LICENSE_UNKNOWN": ("cordon_scanner.intel.store.licenses", "LicenseCategory.UNKNOWN"),
     "LicenseClassifier": ("cordon_scanner.intel.store.licenses", "LicenseClassifier"),
-    "MoreRegistries": ("cordon_scanner.intel.registries.more_registries", "MoreRegistries"),
     "OsvImport": ("cordon_scanner.intel.advisories.osv_import", "OsvImport"),
     "UPSTREAM_ECOSYSTEMS": ("cordon_scanner.intel.advisories.upstream_advisories", "SUPPORTED"),
     "UpstreamAdvisories": (
@@ -51,6 +50,7 @@ ROLES: dict[str, tuple[str, str]] = {
     "RegistryError": ("cordon_scanner.intel.registries.registry_client", "RegistryError"),
     "RegistryRecord": ("cordon_scanner.intel.registries.registry_record", "RegistryRecord"),
     "ReleaseHistory": ("cordon_scanner.intel.registries.release_history", "ReleaseHistory"),
+    "ArchiveSources": ("cordon_scanner.intel.registries.archive_sources.table", "ArchiveSources"),
     "VersionRanges": ("cordon_scanner.intel.advisories.ranges", "VersionRanges"),
     "Versions": ("cordon_scanner.intel.advisories.versions", "Versions"),
     "YOUNG_DEPENDENCY_DAYS": (
@@ -140,7 +140,6 @@ if TYPE_CHECKING:
         PublishedManifestQueries,
         RangeMatching,
         RegistryRecords,
-        RegistryVersions,
         ReleaseAgeQueries,
         ReleaseHistories,
         RemovedNameList,
@@ -151,6 +150,7 @@ if TYPE_CHECKING:
         SignatureCheck,
         ToolApprovals,
         UpstreamLookup,
+        VerifiedArchives,
         VersionOrdering,
     )
     from cordon_scanner.intel.malware import atr as _intel_malware_atr
@@ -178,7 +178,6 @@ if TYPE_CHECKING:
         terraform_provenance as _intel_provenance_terraform_provenance,
     )
     from cordon_scanner.intel.registries import installers as _intel_registries_installers
-    from cordon_scanner.intel.registries import more_registries as _intel_registries_more_registries
     from cordon_scanner.intel.registries import names as _intel_registries_names
     from cordon_scanner.intel.registries import (
         private_registries as _intel_registries_private_registries,
@@ -188,6 +187,9 @@ if TYPE_CHECKING:
     from cordon_scanner.intel.registries import registry_record as _intel_registries_registry_record
     from cordon_scanner.intel.registries import release_history as _intel_registries_release_history
     from cordon_scanner.intel.registries import removed as _intel_registries_removed
+    from cordon_scanner.intel.registries.archive_sources import (
+        table as _intel_registries_archive_sources_table,
+    )
     from cordon_scanner.intel.store import datafile as _intel_store_datafile
     from cordon_scanner.intel.store import dbsync as _intel_store_dbsync
     from cordon_scanner.intel.store import licenses as _intel_store_licenses
@@ -209,7 +211,6 @@ if TYPE_CHECKING:
     ReuseKeys: ReuseKeyRules = _intel_malware_reuse_index.ReuseKeys
     LICENSE_UNKNOWN: enum.Enum = _intel_store_licenses.LicenseCategory.UNKNOWN
     LicenseClassifier: LicenseExpressions = _intel_store_licenses.LicenseClassifier
-    MoreRegistries: RegistryVersions = _intel_registries_more_registries.MoreRegistries
     OsvImport: OsvRepositories = _intel_advisories_osv_import.OsvImport
     UPSTREAM_ECOSYSTEMS: frozenset[str] = _intel_advisories_upstream.SUPPORTED
     UpstreamAdvisories: UpstreamLookup = _intel_advisories_upstream.UpstreamAdvisories
@@ -220,6 +221,7 @@ if TYPE_CHECKING:
     RegistryError: type[Exception] = _intel_registries_registry_client.RegistryError
     RegistryRecord: RegistryRecords = _intel_registries_registry_record.RegistryRecord
     ReleaseHistory: ReleaseHistories = _intel_registries_release_history.ReleaseHistory
+    ArchiveSources: VerifiedArchives = _intel_registries_archive_sources_table.ArchiveSources
     VersionRanges: RangeMatching = _intel_advisories_ranges.VersionRanges
     Versions: VersionOrdering = _intel_advisories_versions.Versions
     YOUNG_DEPENDENCY_DAYS: int = _intel_registries_release_history.YOUNG_DEPENDENCY_DAYS
@@ -297,6 +299,7 @@ __all__ = [
     "AdvisoryFiles",
     "AdvisoryTextSymbols",
     "AnsibleSignatures",
+    "ArchiveSources",
     "AtrEngine",
     "AttestationDocuments",
     "BazelProvenance",
@@ -318,7 +321,6 @@ __all__ = [
     "LiveMcp",
     "LiveMcpError",
     "McpApprovals",
-    "MoreRegistries",
     "OfficialInstallers",
     "OpenPgp",
     "OsvImport",

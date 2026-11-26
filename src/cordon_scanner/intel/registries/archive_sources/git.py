@@ -15,6 +15,7 @@ MAX_DEPTH = 64
 GIT_COMMIT = "git-commit"
 GIT_TAG = "git-tag"
 GIT_TREE = "git-tree-sha1"
+GO_H1 = "go-h1"
 
 
 class GitTar:
@@ -95,3 +96,28 @@ class GitTar:
         except (tarfile.TarError, OSError, EOFError, ValueError):
             return ""
         return cls._tree(root).hex()
+
+
+class GoZip:
+    """Go's `h1:` hash of a module zip (`golang.org/x/mod/sumdb/dirhash` Hash1): the SHA-256 of one `<sha256 hex>  <name>` line per file,
+    sorted by name, which is what go.sum and the checksum database record, so a proxy's zip is checked against the log, not itself."""
+
+    @staticmethod
+    def h1(data: bytes) -> str:
+        import base64
+        import zipfile
+
+        lines = []
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                for info in sorted(archive.infolist(), key=lambda i: i.filename):
+                    if info.is_dir():
+                        continue
+                    if "\n" in info.filename:
+                        return ""
+                    lines.append(
+                        f"{hashlib.sha256(archive.read(info)).hexdigest()}  {info.filename}\n"
+                    )
+        except (zipfile.BadZipFile, OSError, ValueError, EOFError):
+            return ""
+        return "h1:" + base64.b64encode(hashlib.sha256("".join(lines).encode()).digest()).decode()

@@ -795,6 +795,8 @@
   "intel/registries/registry_image": "intel/registries/registry_image",
   "intel/registries/registry_record": "intel/registries/registry_record",
   "intel/registries/archive_sources/base": "intel/registries/archive_sources/base",
+  "intel/registries/archive_sources/native": "intel/registries/archive_sources/native",
+  "intel/registries/archive_sources/vcpkg": "intel/registries/archive_sources/vcpkg",
   "intel/registries/archive_sources/oci": "intel/registries/archive_sources/oci",
   "intel/registries/archive_sources/git": "intel/registries/archive_sources/git",
   "intel/registries/archive_sources/git_sourced": "intel/registries/archive_sources/git_sourced",

@@ -8,8 +8,6 @@ disk -- its comments, its layout, and that it still loads.
 from __future__ import annotations
 
 import argparse
-import base64
-import hashlib
 import io
 import json
 import os
@@ -32,14 +30,13 @@ from cordon_scanner.foundation.config.policy import OrgConstraints
 from cordon_scanner.foundation.errors import ConfigError, ExitCode
 from cordon_scanner.foundation.models import Category, Suppression
 from cordon_scanner.intel.registries import registry_client, registry_request
-from cordon_scanner.intel.registries.more_registries import MoreRegistries
+from cordon_scanner.intel.registries.archive_sources.table import ArchiveSources
 from cordon_scanner.intel.registries.registry_client import (
     PackageArchive,
     PackageFacts,
     RegistryClient,
     RegistryError,
 )
-from cordon_scanner.intel.registries.registry_request import RegistryRequest
 from cordon_scanner.sources.package import PackageTarget, PackageTargetError
 
 TODAY = date(2026, 10, 3)
@@ -121,7 +118,7 @@ class TestFetchingAndScanning:
                     raise result
                 return result
 
-            monkeypatch.setattr(RegistryClient, "package_archive", staticmethod(fake))
+            monkeypatch.setattr(ArchiveSources, "package_archive", staticmethod(fake))
 
         return install
 
@@ -191,77 +188,6 @@ class TestFetchingAndScanning:
         assert any(f["rule_id"].startswith(("MALWARE.", "SUSPECT.")) for f in report["findings"])
 
 
-class TestVerifiedArchivesForMoreRegistries:
-    @pytest.fixture
-    def serve(self, monkeypatch):
-        def install(facts: PackageFacts, body: bytes) -> list[str]:
-            fetched: list[str] = []
-            monkeypatch.setattr(MoreRegistries, "facts", staticmethod(lambda e, n, v: facts))
-
-            def fetch(url, ecosystem):
-                fetched.append(url)
-                return body
-
-            monkeypatch.setattr(RegistryRequest, "fetch_bytes", staticmethod(fetch))
-            return fetched
-
-        return install
-
-    def test_a_crate_matching_its_checksum(self, serve) -> None:
-        body = b"crate-bytes"
-        fetched = serve(
-            PackageFacts(
-                name="serde", version="1.0.0", digests=(hashlib.sha256(body).hexdigest(),)
-            ),
-            body,
-        )
-        archive = MoreRegistries.archive("cargo", "serde", "1.0.0")
-        assert archive.filename == "serde-1.0.0.crate" and archive.data == body
-        assert fetched == ["https://static.crates.io/crates/serde/serde-1.0.0.crate"]
-
-    def test_a_gem_that_does_not_match_is_refused(self, serve) -> None:
-        serve(PackageFacts(name="rack", version="3.1.6", digests=("ab" * 32,)), b"tampered")
-        with pytest.raises(RegistryError, match="does not match"):
-            MoreRegistries.archive("rubygems", "rack", "3.1.6")
-
-    def test_a_nupkg_is_verified_against_the_catalog_sha512(self, serve) -> None:
-        body = b"nupkg-bytes"
-        digest = "sha512-" + base64.b64encode(hashlib.sha512(body).digest()).decode()
-        fetched = serve(
-            PackageFacts(name="Newtonsoft.Json", version="13.0.1", digests=(digest,)), body
-        )
-        archive = MoreRegistries.archive("nuget", "Newtonsoft.Json", "13.0.1")
-        assert archive.filename == "newtonsoft.json.13.0.1.nupkg"
-        assert fetched == [
-            "https://api.nuget.org/v3-flatcontainer/newtonsoft.json/13.0.1/newtonsoft.json.13.0.1.nupkg"
-        ]
-
-    def test_nothing_to_verify_against_is_a_refusal_not_a_pass(self, serve) -> None:
-        fetched = serve(PackageFacts(name="serde", version="1.0.0"), b"x")
-        with pytest.raises(RegistryError, match="nothing to verify against"):
-            MoreRegistries.archive("cargo", "serde", "1.0.0")
-        assert fetched == []
-
-    def test_the_latest_is_resolved_when_no_version_is_named(self, serve) -> None:
-        body = b"x"
-        serve(
-            PackageFacts(
-                name="serde",
-                version=None,
-                latest="1.0.229",
-                digests=(hashlib.sha256(body).hexdigest(),),
-            ),
-            body,
-        )
-        assert MoreRegistries.archive("cargo", "serde", None).version == "1.0.229"
-
-    def test_archive_hosts_are_confined_per_registry(self) -> None:
-        with pytest.raises(RegistryError, match="allowlist"):
-            RegistryClient._fetch_bytes("https://evil.example/serde.crate", "cargo")
-        with pytest.raises(RegistryError, match="allowlist"):
-            RegistryClient._fetch_bytes("http://static.crates.io/serde.crate", "cargo")
-
-
 class TestLargeRegistryDocuments:
     def test_a_gzip_body_is_expanded(self) -> None:
         import gzip
@@ -284,26 +210,6 @@ class TestLargeRegistryDocuments:
         # the packages people install most.
         assert registry_client.MAX_RESPONSE_BYTES >= 40 << 20
         assert registry_request.MAX_RESPONSE_BYTES == registry_client.MAX_RESPONSE_BYTES
-
-    def test_a_pinned_npm_archive_reads_only_the_version_document(self, monkeypatch) -> None:
-        body = b"tarball"
-        integrity = "sha512-" + base64.b64encode(hashlib.sha512(body).digest()).decode()
-        asked: list[str] = []
-
-        def fetch(url, **kwargs):
-            asked.append(url)
-            return {
-                "version": "1.0.0",
-                "dist": {
-                    "tarball": "https://registry.npmjs.org/demo/-/demo-1.0.0.tgz",
-                    "integrity": integrity,
-                },
-            }
-
-        monkeypatch.setattr(RegistryClient, "_fetch", staticmethod(fetch))
-        monkeypatch.setattr(RegistryClient, "_fetch_bytes", staticmethod(lambda url, eco: body))
-        archive = RegistryClient._npm_archive("@scope/demo", "1.0.0")
-        assert asked == ["https://registry.npmjs.org/@scope/demo/1.0.0"] and archive.data == body
 
 
 class TestSuppressionFile:

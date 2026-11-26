@@ -54,6 +54,10 @@ class RecordSources:
     )
 
     @classmethod
+    def ids(cls) -> frozenset[str]:
+        return frozenset(s.ecosystem for s in cls.SOURCES)
+
+    @classmethod
     def of(cls, ecosystem: str) -> RecordSource | None:
         return next((s for s in cls.SOURCES if s.ecosystem == ecosystem), None)
 

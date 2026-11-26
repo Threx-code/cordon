@@ -25,6 +25,7 @@ from cordon_scanner.intel.registries.registry_request import RegistryRequest
 
 API: Final = "https://open-vsx.org/api"
 FILES: Final = "https://openvsx.eclipsecontent.org"
+FILE_HOSTS: Final = frozenset({"openvsx.eclipsecontent.org"})
 
 
 class OpenVsx:
@@ -100,11 +101,11 @@ class OpenVsx:
         if not published or not re.fullmatch(r"[0-9a-fA-F]{64}", published[0]):
             raise RegistryError(f"Open VSX publishes no SHA-256 for {name}@{version}")
         download = cls._on_file_host(files.get("download"))
-        data = RegistryRequest.fetch_bytes(download, "openvsx")
+        data = RegistryRequest.fetch_bytes(download, lambda host: host in FILE_HOSTS)
         if hashlib.sha256(data).hexdigest() != published[0].lower():
             raise RegistryError(f"{name}@{version} does not match the SHA-256 Open VSX publishes")
         filename = urllib.parse.unquote(download.rpartition("/")[2])
-        return PackageArchive("openvsx", name, version, filename, data)
+        return PackageArchive("vscode", name, version, filename, data)
 
 
 class MoreVersions:

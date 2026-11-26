@@ -13,7 +13,9 @@ from cordon_scanner.intel.registries.archive_sources.git import (
     GIT_COMMIT,
     GIT_TAG,
     GIT_TREE,
+    GO_H1,
     GitTar,
+    GoZip,
 )
 from cordon_scanner.intel.registries.record_sources.base import (
     Document,
@@ -28,7 +30,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 #: The algorithms an archive may be checked with, strongest first; anything else a registry states is not a check.
-STRENGTH = ("sha512", "sha384", "sha256", "sha1", GIT_TREE, GIT_COMMIT, "md5", GIT_TAG)
+STRENGTH = ("sha512", "sha384", "sha256", GO_H1, "sha1", GIT_TREE, GIT_COMMIT, "md5", GIT_TAG)
 #: The checks weaker than a SHA-2 digest the registry publishes: a review says which one an archive was checked with.
 WEAK = ("md5", "sha1", GIT_TREE, GIT_COMMIT, GIT_TAG)
 #: What the git checks are made of: the files themselves (tree), the commit id the tarball names (commit), or only that it names one (tag).
@@ -73,6 +75,10 @@ class ArchiveSource(ABC):
     def documents(self, name: str, version: str) -> tuple[Document, ...]:
         """The documents the archive is located from."""
 
+    def current(self, name: str) -> str:
+        """The release asked for when none is named: the newest the registry has not withdrawn (an image's is the tag `latest`)."""
+        return ArchiveFetch.latest(self.ecosystem, name)
+
     def fetch(self, name: str, version: str) -> PackageArchive | None:
         """The archive when it is pulled rather than fetched from one address (an OCI registry): checked by its own reader. None when the
         source locates its archive from documents (`locate`)."""
@@ -97,12 +103,16 @@ class ArchiveFetch:
         if not digests:
             return False
         return all(
-            ArchiveFetch.one_ok(data, algorithm, expected.lower())
+            ArchiveFetch.one_ok(
+                data, algorithm, expected if algorithm == GO_H1 else expected.lower()
+            )
             for algorithm, expected in digests
         )
 
     @staticmethod
     def one_ok(data: bytes, algorithm: str, expected: str) -> bool:
+        if algorithm == GO_H1:
+            return GoZip.h1(data) == expected
         if algorithm == GIT_TREE:
             return GitTar.tree_sha1(data) == expected
         if algorithm == GIT_COMMIT:
@@ -133,9 +143,7 @@ class ArchiveFetch:
         error: RegistryError | None = None
         for url in (found.url, *found.fallbacks):
             try:
-                return RegistryRequest.fetch_bytes(
-                    url, source.ecosystem, redirects=source.REDIRECTS, allow=source.allows
-                )
+                return RegistryRequest.fetch_bytes(url, source.allows, redirects=source.REDIRECTS)
             except RegistryError as exc:
                 if "HTTP 404" not in str(exc):
                     raise
@@ -178,14 +186,41 @@ class ArchiveFetch:
         return best
 
     @classmethod
-    def previous(cls, ecosystem: str, name: str, version: str) -> str | None:
+    def latest(cls, ecosystem: str, name: str) -> str:
+        """The newest release the registry has not withdrawn, by the ecosystem's version order (a pre-release only when there is no other)."""
+        from cordon_scanner.intel.advisories.versions import Versions
+
+        live = [r.version for r in cls.releases(ecosystem, name, "") if not r.withdrawn]
+        if not live:
+            raise RegistryError(f"{ecosystem} names no current version of {name}")
+        newest = live[0]
+        for candidate in live[1:]:
+            if Versions.compare(ecosystem, candidate, newest) > 0:
+                newest = candidate
+        return newest
+
+    @classmethod
+    def previous_release(cls, ecosystem: str, name: str, version: str) -> Release | None:
         """The release before `version` among the ones the registry has not withdrawn (`version` itself is kept whatever its state)."""
-        published = {
-            r.version: r.published
-            for r in cls.releases(ecosystem, name, version)
-            if not r.withdrawn or r.version == version
-        }
-        return cls.before(ecosystem, version, published)
+        listed = cls.releases(ecosystem, name, version)
+        # A release is written with or without its `v` (a Go module's always has one): the registry's own spelling is the key.
+        spelling = next(
+            (
+                s
+                for s in (version, f"v{version}", version.removeprefix("v"))
+                if any(r.version == s for r in listed)
+            ),
+            version,
+        )
+        releases = {r.version: r for r in listed if not r.withdrawn or r.version == spelling}
+        found = cls.before(ecosystem, spelling, {v: r.published for v, r in releases.items()})
+        return releases[found] if found is not None else None
+
+    @classmethod
+    def previous(cls, ecosystem: str, name: str, version: str) -> str | None:
+        """The version of the release before `version`."""
+        found = cls.previous_release(ecosystem, name, version)
+        return found.version if found is not None else None
 
     @staticmethod
     def releases(ecosystem: str, name: str, version: str) -> list[Release]:

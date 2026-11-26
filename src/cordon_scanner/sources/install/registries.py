@@ -43,9 +43,10 @@ class InstallRegistries:
 
     @staticmethod
     def public(ecosystem: str) -> frozenset[str]:
-        from cordon_scanner.intel.registries.registry_request import ARCHIVE_HOSTS
+        from cordon_scanner.intel.registries.archive_sources.table import ArchiveSources
 
-        return ARCHIVE_HOSTS.get(ecosystem, frozenset())
+        source = ArchiveSources.of(ecosystem)
+        return source.HOSTS if source is not None else frozenset()
 
     def canonical(self, url: str) -> str:
         """`url` on the host Cordon fetches it from (an alias replaced by its registry)."""
@@ -91,7 +92,7 @@ class InstallRegistries:
 
         registry = self.registry_for(url)
         if registry is None:
-            return RegistryRequest.fetch_bytes(url, ecosystem)
+            return RegistryRequest.fetch_bytes(url, lambda host: host in self.public(ecosystem))
         credential = PrivateRegistries.credential(registry)
         if credential is None:
             raise InstallRefused(

@@ -19,20 +19,24 @@ DIGITS = "0123456789"
 VERSION_CHARS = frozenset(LOWER + LOWER.upper() + DIGITS + "._+~-")
 
 
-def plain_version(version: str) -> bool:
-    """A version that can sit in a path: its own characters only, no empty part."""
-    return (
-        0 < len(version) <= 128
-        and set(version) <= VERSION_CHARS
-        and ".." not in version
-        and version[0] not in ".-"
-    )
+class Reading:
+    """The small readings the archive sources share."""
 
+    @staticmethod
+    def plain_version(version: str) -> bool:
+        """A version that can sit in a path: its own characters only, no empty part."""
+        return (
+            0 < len(version) <= 128
+            and set(version) <= VERSION_CHARS
+            and ".." not in version
+            and version[0] not in ".-"
+        )
 
-def file_name(url: str, fallback: str) -> str:
-    """The last path segment of an archive's URL (the name it is kept under)."""
-    segment = urllib.parse.unquote(urllib.parse.urlsplit(url).path.rsplit("/", 1)[-1])
-    return segment or fallback
+    @staticmethod
+    def file_name(url: str, fallback: str) -> str:
+        """The last path segment of an archive's URL (the name it is kept under)."""
+        segment = urllib.parse.unquote(urllib.parse.urlsplit(url).path.rsplit("/", 1)[-1])
+        return segment or fallback
 
 
 class UpstreamArchive(ArchiveSource):
@@ -67,7 +71,7 @@ class BazelArchive(UpstreamArchive):
             not name
             or name[0] not in self.FIRST
             or any(c not in self.REST for c in name)
-            or not plain_version(version)
+            or not Reading.plain_version(version)
         ):
             return ()
         return (Document(f"{self.RAW}/{name}/{version}/source.json"),)
@@ -79,7 +83,7 @@ class BazelArchive(UpstreamArchive):
         url, digest = str(source.get("url") or ""), Digest.sri(str(source.get("integrity") or ""))
         if not self.https(url) or digest is None:
             return None
-        return Located(url, file_name(url, f"{name}-{version}"), (digest,))
+        return Located(url, Reading.file_name(url, f"{name}-{version}"), (digest,))
 
 
 class OpamArchive(UpstreamArchive):
@@ -95,7 +99,7 @@ class OpamArchive(UpstreamArchive):
             not name
             or name[0] not in self.FIRST
             or any(c not in self.REST for c in name)
-            or not plain_version(version)
+            or not Reading.plain_version(version)
         ):
             return ()
         return (Document(f"{self.RAW}/{name}/{name}.{version}/opam", kind="text"),)
@@ -145,7 +149,7 @@ class OpamArchive(UpstreamArchive):
                 digests.append(found)
         if not self.https(url) or not digests:
             return None
-        return Located(url, file_name(url, f"{name}.{version}"), tuple(digests))
+        return Located(url, Reading.file_name(url, f"{name}.{version}"), tuple(digests))
 
 
 class ConanArchive(UpstreamArchive):
@@ -165,7 +169,7 @@ class ConanArchive(UpstreamArchive):
             or name[0] not in self.FIRST
             or any(c not in self.REST for c in name)
             or ".." in name
-            or not plain_version(version)
+            or not Reading.plain_version(version)
         ):
             return ()
         return (Document(f"{self.RAW}/{name}/config.yml", kind="text"),)
@@ -203,7 +207,7 @@ class ConanArchive(UpstreamArchive):
         urls = [u for u in Lines.items(entry, "url") if self.https(u)]
         if digest is None or not urls:
             return None
-        return Located(urls[0], file_name(urls[0], f"{name}-{version}"), (digest,))
+        return Located(urls[0], Reading.file_name(urls[0], f"{name}-{version}"), (digest,))
 
 
 class CranArchive(ArchiveSource):
@@ -223,7 +227,7 @@ class CranArchive(ArchiveSource):
             or name[0] not in self.FIRST
             or any(c not in self.REST for c in name)
             or ".." in name
-            or not plain_version(version)
+            or not Reading.plain_version(version)
         ):
             return ()
         return (
