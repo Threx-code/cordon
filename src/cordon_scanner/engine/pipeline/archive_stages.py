@@ -663,10 +663,10 @@ class ArchiveStages:
         elif image is None:
             # A source tree read from an archive: graded as a repository (`_person_run_ceiling`).
             acc.findings[:] = Ceilings.person_run_ceiling(acc.findings, units, ctx)
-            if History.history_distribution(units) == "openvsx":
+            if History.history_distribution(units) == History.EXTENSION:
                 # An editor extension against its own established release (`intel/openvsx.py`).
                 acc.findings[:] = History.established_release_ceiling(
-                    acc.findings, units, "openvsx", hook_paths=ctx.install_hook_paths
+                    acc.findings, units, History.EXTENSION, hook_paths=ctx.install_hook_paths
                 )
         return dependencies, target_kind, ctx
 

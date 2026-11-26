@@ -390,9 +390,11 @@ class TestOpenVsx:
 
     def test_a_vsix_is_known_to_release_history_by_its_publisher_and_name(self) -> None:
         units = self.vsix_units()
-        assert History.history_distribution(units) == "openvsx"
+        assert History.history_distribution(units) == "vscode"
         # As published: the API redirects any other spelling to this one.
-        assert History.history_identity(units, "openvsx") == ("openvsx", "Acme.tool", "1.2.0")
+        assert History.history_identity(units, "vscode") == ("vscode", "Acme.tool", "1.2.0")
+        # The old spelling is still read as input.
+        assert History.history_identity(units, "openvsx") == ("vscode", "Acme.tool", "1.2.0")
 
     def test_a_name_that_is_not_publisher_dot_extension_is_refused(self) -> None:
         from cordon_scanner.intel.registries.openvsx import OpenVsx
