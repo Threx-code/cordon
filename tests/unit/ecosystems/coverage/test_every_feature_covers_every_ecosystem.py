@@ -361,7 +361,7 @@ class TestEveryFeatureCoversEveryEcosystem:
 #: list when its shim and planner land; a listed cell must still fail (strict), so none stays listed.
 INSTALL_PENDING = frozenset(
     {
-        "conan", "gradle", "hackage", "homebrew", "image",
+        "conan", "gradle", "homebrew", "image",
         "opam", "vcpkg", "vscode",
     }
 )  # fmt: skip

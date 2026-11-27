@@ -33,7 +33,7 @@ class InstallGuardCommand:
     TOOLS: ClassVar[tuple[str, ...]] = (
         "npm", "pnpm", "yarn", "pip", "pip3", "uv", "poetry", "cargo", "go", "gem", "bundler",
         "dotnet", "dart", "flutter", "conda", "mamba", "composer", "mvn",
-        "terraform", "tofu", "helm", "ansible-galaxy", "mix", "bazel", "bazelisk", "julia", "nix", "swift", "Rscript", "R", "pod",
+        "terraform", "tofu", "helm", "ansible-galaxy", "mix", "bazel", "bazelisk", "julia", "nix", "swift", "Rscript", "R", "pod", "cabal",
     )  # fmt: skip
     #: The executable each tool runs, where its name here differs (`bundle` is Cordon's own command).
     EXECUTABLES: ClassVar[dict[str, str]] = {"bundler": "bundle"}
@@ -90,6 +90,7 @@ class InstallGuardCommand:
         from cordon_scanner.cli.commands.install.cran import CranTools
         from cordon_scanner.cli.commands.install.dotnet import DotnetTools
         from cordon_scanner.cli.commands.install.fetched import FetchedTools
+        from cordon_scanner.cli.commands.install.hackage import HackageTools
         from cordon_scanner.cli.commands.install.hex import HexTools
         from cordon_scanner.cli.commands.install.julia import JuliaTools
         from cordon_scanner.cli.commands.install.maven import MavenTools
@@ -131,6 +132,7 @@ class InstallGuardCommand:
             "Rscript": (CranTools.installs, CranTools.rscript),
             "R": (CranTools.installs, CranTools.rscript),
             "pod": (CocoaPodsTools.installs, CocoaPodsTools.pod),
+            "cabal": (HackageTools.installs, HackageTools.cabal),
         }
 
 
