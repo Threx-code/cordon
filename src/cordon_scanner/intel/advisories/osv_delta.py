@@ -143,7 +143,8 @@ class OsvDelta:
 
     @staticmethod
     def _get(path: str, *, byte_range: tuple[int, int] | None = None, limit: int) -> bytes:
-        from cordon_scanner.intel.advisories.osv_import import OSV_HOST, USER_AGENT
+        from cordon_scanner.intel.advisories.osv_import import OSV_HOST
+        from cordon_scanner.version import USER_AGENT
 
         url = f"https://{OSV_HOST}/{path}"
         headers = {"User-Agent": USER_AGENT}

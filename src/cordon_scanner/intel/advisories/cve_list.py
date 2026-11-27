@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, ClassVar, Final
 
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.version import USER_AGENT
 
 LATEST: Final = "https://api.github.com/repos/CVEProject/cvelistV5/releases/latest"
 MAX_BASELINE_BYTES: Final = 2 << 30
@@ -51,7 +52,7 @@ class CveList:
         and checked against the SHA-256 GitHub records for the asset."""
         request = urllib.request.Request(
             LATEST,
-            headers={"User-Agent": "cordon-scanner", "Accept": "application/vnd.github+json"},
+            headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"},
         )
         with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310
             release = json.loads(Download.read(response, 1 << 20))
@@ -70,7 +71,7 @@ class CveList:
         target = directory / "cve-list-baseline.zip"
         hasher = hashlib.sha256()
         size = 0
-        download = urllib.request.Request(url, headers={"User-Agent": "cordon-scanner"})  # noqa: S310
+        download = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})  # noqa: S310
         with urllib.request.urlopen(download, timeout=120) as response, target.open("wb") as out:  # noqa: S310
             for chunk in Download.chunks(response, size=1 << 20):
                 size += len(chunk)

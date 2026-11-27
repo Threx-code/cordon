@@ -57,6 +57,7 @@ from cordon_scanner.intel.advisories.upstream.homebrew import HomebrewBottles, H
 from cordon_scanner.intel.advisories.upstream.inference import Inference
 from cordon_scanner.intel.advisories.upstream.tags import TagInference
 from cordon_scanner.intel.advisories.upstream.vcpkg import VcpkgPorts, VcpkgVersions
+from cordon_scanner.version import USER_AGENT
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -794,7 +795,7 @@ class UpstreamAdvisories:
         request = urllib.request.Request(  # noqa: S310 - a fixed https URL
             url,
             data=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json", "User-Agent": "cordon-scanner"},
+            headers={"Content-Type": "application/json", "User-Agent": USER_AGENT},
         )
         with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310
             data = json.loads(Download.read(response, 64 << 20))

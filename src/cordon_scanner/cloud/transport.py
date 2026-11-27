@@ -14,12 +14,11 @@ from cordon_scanner.cloud import CloudError
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
-from cordon_scanner.version import __version__
+from cordon_scanner.version import USER_AGENT
 
 TIMEOUT_SECONDS: Final = 15.0
 
 MAX_RESPONSE_BYTES: Final = 8 << 20
-USER_AGENT: Final = f"cordon-scanner/{__version__}"
 
 
 @dataclass(frozen=True)

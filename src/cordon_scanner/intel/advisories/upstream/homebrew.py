@@ -22,6 +22,7 @@ from cordon_scanner.intel.advisories.upstream.base import (
 )
 from cordon_scanner.intel.advisories.upstream.fetch import Fetch
 from cordon_scanner.intel.advisories.upstream.inference import Inference
+from cordon_scanner.version import USER_AGENT
 
 if TYPE_CHECKING:
     from cordon_scanner.foundation.results import Dependency
@@ -43,7 +44,7 @@ class HomebrewBottles:
     def _ghcr(path: str, accept: str, token: str | None) -> bytes:
         import urllib.request
 
-        headers = {"User-Agent": "cordon-scanner", "Accept": accept}
+        headers = {"User-Agent": USER_AGENT, "Accept": accept}
         if token:
             headers["Authorization"] = f"Bearer {token}"
         request = urllib.request.Request(f"https://ghcr.io{path}", headers=headers)
@@ -277,7 +278,7 @@ class HomebrewBottles:
         request = urllib.request.Request(
             f"https://ghcr.io/v2/{repository}/blobs/{digest}",
             headers={
-                "User-Agent": "cordon-scanner",
+                "User-Agent": USER_AGENT,
                 **({"Authorization": f"Bearer {bearer}"} if bearer else {}),
             },
         )

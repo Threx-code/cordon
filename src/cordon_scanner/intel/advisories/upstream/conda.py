@@ -19,6 +19,7 @@ from cordon_scanner.intel.advisories.upstream.base import (
     Upstream,
 )
 from cordon_scanner.intel.advisories.upstream.fetch import Fetch
+from cordon_scanner.version import USER_AGENT
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -54,7 +55,7 @@ class CondaPackage:
         import urllib.request
 
         request = urllib.request.Request(  # noqa: S310 - https, checked by the caller
-            url, headers={"Range": header, "User-Agent": "cordon-scanner"}
+            url, headers={"Range": header, "User-Agent": USER_AGENT}
         )
         with urllib.request.build_opener(NoRedirects).open(request, timeout=60) as response:
             if response.status != 206:
@@ -132,7 +133,7 @@ class CondaPackage:
         if url.endswith(".tar.bz2"):
             import urllib.request
 
-            request = urllib.request.Request(url, headers={"User-Agent": "cordon-scanner"})  # noqa: S310
+            request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})  # noqa: S310
             with urllib.request.urlopen(request, timeout=120) as response:  # noqa: S310
                 # The whole stream within the budget, not each read (`foundation/network/downloads.py`).
                 deadline = time.monotonic() + BUDGET_SECONDS

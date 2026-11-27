@@ -34,6 +34,7 @@ from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.intel.base import PrivateRegistry
 from cordon_scanner.intel.registries.challenge import Challenge
+from cordon_scanner.version import USER_AGENT
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -136,7 +137,7 @@ class PrivateRegistries:
         request = urllib.request.Request(  # noqa: S310 (https and the host checked above)
             url,
             headers={
-                "User-Agent": base.USER_AGENT,
+                "User-Agent": USER_AGENT,
                 "Accept": accept,
                 "Authorization": authorization or PrivateRegistries._authorization(credential),
             },
@@ -333,7 +334,7 @@ class PrivateRegistries:
         direct = PrivateRegistries._authorization(credential)
         request = urllib.request.Request(
             f"https://{registry.host}/v2/",
-            headers={"User-Agent": base.USER_AGENT, "Authorization": direct},
+            headers={"User-Agent": USER_AGENT, "Authorization": direct},
         )
         try:
             with urllib.request.build_opener(NoRedirects).open(

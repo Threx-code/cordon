@@ -42,6 +42,7 @@ from cordon_scanner.foundation.network.redirects import ClosedErrors, HttpsRedir
 
 #: helm `pkg/registry/constants.go`: ProvLayerMediaType, and ChartLayerMediaType with the
 from cordon_scanner.intel.provenance import openpgp
+from cordon_scanner.version import USER_AGENT
 
 #: LegacyChartLayerMediaType older charts were pushed with.
 PROVENANCE_LAYER: Final = "application/vnd.cncf.helm.chart.provenance.v1.prov"
@@ -69,7 +70,7 @@ class HelmProvenance:
         """The body, or None where the server has no such file."""
         if urllib.parse.urlsplit(url).scheme != "https":
             raise ValueError("not https")
-        request = urllib.request.Request(url, headers={"User-Agent": "cordon-scanner"})  # noqa: S310 - https only
+        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})  # noqa: S310 - https only
         opener = urllib.request.build_opener(HttpsRedirects, ClosedErrors)
         try:
             with opener.open(request, timeout=TIMEOUT) as response:
