@@ -130,6 +130,31 @@ class OwnNameReaders:
             return f"{publisher}.{name}".lower()
         return None
 
+    #: What an image names itself in its config blob: the title its publisher gives it, else the repository it says it was
+    #: built from (`org.opencontainers.image.title`, `.source`).
+    _IMAGE_NAME: ClassVar[re.Pattern[str]] = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+
+    @staticmethod
+    def image_config(path: str, content: FileContent) -> str | None:
+        """The name a published image's config blob gives itself; None for any other blob or file."""
+        document = OwnNameReaders.json_object(content)
+        settings = document.get("config")
+        if "rootfs" not in document or not isinstance(settings, dict):
+            return None
+        labels = settings.get("Labels")
+        if not isinstance(labels, dict):
+            return None
+        title = labels.get("org.opencontainers.image.title")
+        if isinstance(title, str) and OwnNameReaders._IMAGE_NAME.fullmatch(title.strip()):
+            return title.strip()
+        source = labels.get("org.opencontainers.image.source")
+        last = (
+            source.rstrip("/").rpartition("/")[2].removesuffix(".git")
+            if isinstance(source, str)
+            else ""
+        )
+        return last if OwnNameReaders._IMAGE_NAME.fullmatch(last) else None
+
     @staticmethod
     def gradle_root(path: str, content: FileContent) -> str | None:
         found = re.search(r"""rootProject\.name\s*=\s*["']([^"'\n]{1,200})["']""", content.text)

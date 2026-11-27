@@ -8,6 +8,7 @@ ecosystem, each with its source and licence), the manifests of a real project (c
 from __future__ import annotations
 
 import io
+import json
 import zipfile
 from dataclasses import dataclass
 
@@ -35,6 +36,9 @@ NUPKG = (
     / "nuget"
     / "microsoft.netcore.targets.5.0.0.nupkg"
 )
+RECORDS = (
+    ROOT / "tests" / "unit" / "intel" / "advisories" / "upstream" / "charts_images_records.json"
+)
 RULE = "SUSPECT.TYPOSQUAT.PACKAGE_NAME.001"
 
 
@@ -54,6 +58,10 @@ class Real:
             with zipfile.ZipFile(io.BytesIO(NUPKG.read_bytes())) as archive:
                 member = next(n for n in archive.namelist() if n.endswith(".nuspec"))
                 return archive.read(member)
+        if self.capture == "traefik-config":
+            # The real image config blob (its OCI labels) of traefik 3.0.4, as the registry served it.
+            records = json.loads(RECORDS.read_text(encoding="utf-8"))
+            return json.dumps(records["image"]["config"], indent=1).encode()
         if self.capture.startswith("conformance/"):
             return (CONFORMANCE / self.capture.removeprefix("conformance/")).read_bytes()
         return (CAPTURES / self.capture).read_bytes()
@@ -92,6 +100,7 @@ CASES = [
     Real("helm", "Chart.yaml", "redis", "redis", "redis-Chart.yaml"),
     Real("hex", "metadata.config", "jason", "jason", "jason-1.4.4-metadata.config"),
     Real("homebrew", "Formula/j/jq.rb", "jq", "jq", "jq.rb"),
+    Real("image", "blobs/sha256/" + "ab" * 32, "Traefik", "Traefik", "traefik-config"),
     Real("julia", "Project.toml", "DataFrames", "DataFrames", "DataFrames-Project.toml"),
     Real(
         "maven",
@@ -158,7 +167,7 @@ class TestEveryEcosystemStatesHowItsOwnNameIsRead:
         none = {
             e.id for e in EcosystemRegistry.all_ecosystems() if isinstance(e.own_name, NoOwnName)
         }
-        assert none == {"actions", "image", "terraform"}
+        assert none == {"actions", "terraform"}
 
     def test_only_the_formats_it_was_measured_on_may_block(self) -> None:
         assert IdentityFindings.own_name_measured_on() == {"npm", "pypi"}

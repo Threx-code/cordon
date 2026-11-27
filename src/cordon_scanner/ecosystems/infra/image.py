@@ -39,7 +39,7 @@ from cordon_scanner.ecosystems.infra.references import (
     PublicRegistries,
     ReferenceGrammar,
 )
-from cordon_scanner.ecosystems.own_names import NoOwnName
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -571,8 +571,9 @@ class ImageEcosystem(BaseEcosystem):
     """Container images a build pulls, a Compose file runs, and a Kubernetes manifest deploys."""
 
     id = "image"
-    own_name = NoOwnName(
-        "a container build file or a compose file names no image of its own: an image is named by the repository it is pushed to (registry host, namespace, name), which none of the files it is built from states"
+    own_name = OwnName(
+        ("blobs/sha256/*", "?" * 64 + ".json"),
+        readers=(("blobs/sha256/*", "image_config"), ("?" * 64 + ".json", "image_config")),
     )
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
