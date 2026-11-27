@@ -33,7 +33,7 @@ class InstallGuardCommand:
     TOOLS: ClassVar[tuple[str, ...]] = (
         "npm", "pnpm", "yarn", "pip", "pip3", "uv", "poetry", "cargo", "go", "gem", "bundler",
         "dotnet", "dart", "flutter", "conda", "mamba", "composer", "mvn",
-        "terraform", "tofu", "helm", "ansible-galaxy", "mix", "bazel", "bazelisk", "julia", "nix",
+        "terraform", "tofu", "helm", "ansible-galaxy", "mix", "bazel", "bazelisk", "julia", "nix", "swift",
     )  # fmt: skip
     #: The executable each tool runs, where its name here differs (`bundle` is Cordon's own command).
     EXECUTABLES: ClassVar[dict[str, str]] = {"bundler": "bundle"}
@@ -95,6 +95,7 @@ class InstallGuardCommand:
         from cordon_scanner.cli.commands.install.nix import NixTools
         from cordon_scanner.cli.commands.install.node import NodeTools
         from cordon_scanner.cli.commands.install.python import PythonTools
+        from cordon_scanner.cli.commands.install.swift import SwiftTools
 
         return {
             "npm": (NodeTools.npm_installs, NodeTools.npm),
@@ -124,6 +125,7 @@ class InstallGuardCommand:
             "bazelisk": (BazelTools.installs, BazelTools.bazel),
             "julia": (JuliaTools.installs, JuliaTools.julia),
             "nix": (NixTools.installs, NixTools.nix),
+            "swift": (SwiftTools.installs, SwiftTools.swift),
         }
 
 
