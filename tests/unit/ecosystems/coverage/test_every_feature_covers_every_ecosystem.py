@@ -81,6 +81,17 @@ class Coverage:
         )
 
     @staticmethod
+    def verdict_areas() -> frozenset[str]:
+        """Every ecosystem whose verdict area (`Verdict.ECOSYSTEM_AREAS`) has a line in the shipped model."""
+        import gzip
+        import json
+
+        from cordon_scanner.decide.verdict import MODEL_PATH, Verdict
+
+        areas = json.loads(gzip.decompress(MODEL_PATH.read_bytes()))["areas"]
+        return frozenset(e for e, area in Verdict.ECOSYSTEM_AREAS.items() if area in areas)
+
+    @staticmethod
     def previous_release() -> frozenset[str]:
         from cordon_scanner.sources.previous import PreviousRelease
 
@@ -276,6 +287,7 @@ class Features:
             Coverage.provenance_reasons,
         ),
         "version ordering for advisory ranges": (Coverage.version_order, dict),
+        "verdict model areas": (Coverage.verdict_areas, dict),
         "popular package lists": (Coverage.popular_lists, dict),
         "advisory sources (OSV or the upstream project)": (Coverage.advisory_sources, dict),
         "campaign fingerprints": (Coverage.campaign_fingerprints, dict),
