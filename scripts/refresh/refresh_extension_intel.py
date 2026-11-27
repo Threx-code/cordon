@@ -51,7 +51,7 @@ class ExtensionIntelRefresh:
 
     @staticmethod
     def _get(url: str) -> bytes:
-        request = urllib.request.Request(url, headers={"User-Agent": "cordon-intel-refresh"})  # noqa: S310 - fixed https URLs
+        request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})  # noqa: S310 - fixed https URLs
         with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310
             return cast(bytes, response.read())
 

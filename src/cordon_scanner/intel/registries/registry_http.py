@@ -27,6 +27,7 @@ from cordon_scanner.intel.registries.registry_hosts import (
     Redirected,
 )
 from cordon_scanner.intel.registries.registry_request import PackageNotFound, RegistryError
+from cordon_scanner.version import USER_AGENT
 
 
 class RegistryHttp:
@@ -47,7 +48,7 @@ class RegistryHttp:
         request = urllib.request.Request(  # noqa: S310 (scheme checked above)
             url,
             headers={
-                "User-Agent": base.USER_AGENT,
+                "User-Agent": USER_AGENT,
                 "Accept": accept,
                 "Accept-Encoding": "gzip",
                 **(headers or {}),
@@ -147,7 +148,7 @@ class RegistryHttp:
         out when it answers 401 with `WWW-Authenticate: Bearer realm=...`. The body as served:
         a manifest's digest is the hash of exactly these bytes."""
         # https is checked by the caller.
-        headers = {"User-Agent": base.USER_AGENT, "Accept": accept}
+        headers = {"User-Agent": USER_AGENT, "Accept": accept}
         request = urllib.request.Request(url, headers=headers)  # noqa: S310
         opener = urllib.request.build_opener(NoRedirects)
         try:

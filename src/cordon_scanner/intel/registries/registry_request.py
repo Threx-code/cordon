@@ -14,6 +14,7 @@ from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.pinned import PinnedHTTPS
 from cordon_scanner.foundation.network.redirects import NoRedirects
+from cordon_scanner.version import USER_AGENT
 
 TIMEOUT_SECONDS = 5.0
 
@@ -42,8 +43,6 @@ interactive and a retry that costs more than the answer is worth is not one."""
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 """Statuses that mean "ask again". Everything else is a decision: a 404 is the
 registry saying it does not have the package, and asking twice does not help."""
-
-USER_AGENT = "cordon-scanner (+https://github.com/Threx-code/cordon)"
 
 
 class RegistryError(RuntimeError):
@@ -140,7 +139,6 @@ __all__ = [
     "RETRY_BACKOFF_SECONDS",
     "RETRY_STATUSES",
     "TIMEOUT_SECONDS",
-    "USER_AGENT",
     "PackageNotFound",
     "RegistryError",
     "RegistryRequest",

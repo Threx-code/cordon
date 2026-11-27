@@ -21,6 +21,7 @@ from cordon_scanner.engine.registry import Registry
 from cordon_scanner.notify.channel import ChannelRefused, Occasion
 from cordon_scanner.notify.summary import Summary
 from cordon_scanner.notify.transport import HttpsTransport, Reply, RetryPolicy
+from cordon_scanner.version import USER_AGENT
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -149,7 +150,7 @@ class Notifier:
     def _deliver(
         self, name: str, url: str, message: Message, delivery: str, deadline: float
     ) -> Delivery:
-        headers = {"Content-Type": "application/json", "User-Agent": HttpsTransport.USER_AGENT}
+        headers = {"Content-Type": "application/json", "User-Agent": USER_AGENT}
         headers.update(message.headers)
         error = ""
         for attempt in range(1, self._policy.attempts + 1):

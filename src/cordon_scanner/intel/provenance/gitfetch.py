@@ -26,13 +26,13 @@ from typing import Any, Final
 
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
+from cordon_scanner.version import USER_AGENT
 
 MAX_PACK_BYTES: Final = 512 << 20
 
 MAX_DEPTH: Final = 64
 SOCKET_SECONDS: Final = 120.0
 DEADLINE_SECONDS: Final = 900.0
-AGENT: Final = "git/2.45.0 (cordon-scanner)"
 
 _TYPES: Final = {1: b"commit", 2: b"tree", 3: b"blob", 4: b"tag"}
 
@@ -49,7 +49,7 @@ class GitFetch:
 
     @staticmethod
     def _request(url: str, body: bytes | None) -> tuple[bytes, str]:
-        headers = {"User-Agent": AGENT, "Git-Protocol": "version=2"}
+        headers = {"User-Agent": USER_AGENT, "Git-Protocol": "version=2"}
         if body is not None:
             headers["Content-Type"] = "application/x-git-upload-pack-request"
             headers["Accept"] = "application/x-git-upload-pack-result"
@@ -127,7 +127,7 @@ class GitFetch:
             body = b"".join(
                 [
                     GitFetch._pkt("command=fetch\n"),
-                    GitFetch._pkt(f"agent={AGENT}\n"),
+                    GitFetch._pkt(f"agent={USER_AGENT}\n"),
                     b"0001",
                     GitFetch._pkt("no-progress\n"),
                     GitFetch._pkt(f"want {want}\n"),

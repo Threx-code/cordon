@@ -39,6 +39,7 @@ from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.pinned import PinnedHTTPS
 from cordon_scanner.foundation.network.redirects import ClosedErrors
 from cordon_scanner.intel.registries.challenge import Challenge
+from cordon_scanner.version import USER_AGENT
 
 MEDIA_INDEX: Final = (
     "application/vnd.oci.image.index.v1+json",
@@ -115,7 +116,7 @@ class RegistryImage:
     def _open(self, url: str, accept: str | None = None) -> Any:
         for attempt in range(2):
             request = urllib.request.Request(url)  # noqa: S310 - https, or a registry on localhost
-            request.add_header("User-Agent", "cordon-scanner")
+            request.add_header("User-Agent", USER_AGENT)
             if accept:
                 request.add_header("Accept", accept)
             if self.token:
@@ -161,7 +162,7 @@ class RegistryImage:
             query["scope"] = f"repository:{self.repository}:pull"
         url = f"{realm}?{urllib.parse.urlencode(query)}"
         try:
-            request = urllib.request.Request(url, headers={"User-Agent": "cordon-scanner"})  # noqa: S310
+            request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})  # noqa: S310
             with urllib.request.urlopen(request, timeout=TIMEOUT) as response:  # noqa: S310
                 body = json.loads(Download.read(response, 1 << 20))
         except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:

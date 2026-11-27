@@ -26,6 +26,7 @@ from typing import Any, Final
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import ClosedErrors
+from cordon_scanner.version import USER_AGENT
 
 API: Final = "https://api.github.com"
 TIMEOUT: Final = 15.0
@@ -47,7 +48,7 @@ class GitHubRepository:
     def current(owner: str, name: str) -> tuple[str, str] | None:
         """`(owner, name)` as GitHub names the repository now, or None where it cannot say."""
         quoted = "/".join(urllib.parse.quote(part, safe="-._") for part in (owner, name))
-        headers = {"Accept": "application/vnd.github+json", "User-Agent": "cordon-scanner"}
+        headers = {"Accept": "application/vnd.github+json", "User-Agent": USER_AGENT}
         token = os.environ.get("GITHUB_TOKEN", "")
         if token:
             headers["Authorization"] = f"Bearer {token}"

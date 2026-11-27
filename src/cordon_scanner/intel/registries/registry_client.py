@@ -48,10 +48,10 @@ from cordon_scanner.intel.registries.registry_request import (
     RETRY_BACKOFF_SECONDS,
     RETRY_STATUSES,
     TIMEOUT_SECONDS,
-    USER_AGENT,
     PackageNotFound,
     RegistryError,
 )
+from cordon_scanner.version import USER_AGENT
 
 MAX_REDIRECTS = 0
 """Redirects are not followed.

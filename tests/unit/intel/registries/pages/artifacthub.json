@@ -1,0 +1,131 @@
+{
+ "packages": [
+  {
+   "package_id": "7918f2cb-0742-4993-b58a-673129604cf6",
+   "name": "kube-prometheus-stack",
+   "normalized_name": "kube-prometheus-stack",
+   "category": 4,
+   "category_display_name": "Monitoring and logging",
+   "logo_image_id": "0503add5-3fce-4b63-bbf3-b9f649512a86",
+   "stars": 1237,
+   "official": true,
+   "description": "kube-prometheus-stack collects Kubernetes manifests, Grafana dashboards, and Prometheus rules combined with documentation and scripts to provide easy to operate end-to-end Kubernetes cluster monitoring with Prometheus using the Prometheus Operator.",
+   "version": "94.2.0",
+   "app_version": "v0.95.2",
+   "license": "Apache-2.0",
+   "deprecated": false,
+   "has_values_schema": false,
+   "signed": true,
+   "signatures": [
+    "prov"
+   ],
+   "security_report_summary": {
+    "low": 10,
+    "high": 35,
+    "medium": 82,
+    "unknown": 11,
+    "critical": 0
+   },
+   "all_containers_images_whitelisted": false,
+   "production_organizations_count": 30,
+   "ts": 1795797386,
+   "repository": {
+    "url": "https://prometheus-community.github.io/helm-charts",
+    "cncf": true,
+    "kind": 0,
+    "name": "prometheus-community",
+    "official": false,
+    "display_name": "prometheus-community",
+    "repository_id": "61b55c4e-f8ef-4a51-9595-695560540ca3",
+    "scanner_disabled": false,
+    "organization_name": "prometheus",
+    "verified_publisher": true,
+    "organization_display_name": "Prometheus"
+   }
+  },
+  {
+   "package_id": "f475c82a-27a5-4f71-8413-fe70d31268a2",
+   "name": "cert-manager",
+   "normalized_name": "cert-manager",
+   "category": 6,
+   "category_display_name": "Security",
+   "logo_image_id": "6d75ecff-a328-495b-a7fc-12cd84499974",
+   "stars": 999,
+   "official": true,
+   "cncf": true,
+   "description": "A Helm chart for cert-manager",
+   "version": "1.21.3",
+   "app_version": "v1.21.3",
+   "license": "Apache-2.0",
+   "deprecated": false,
+   "has_values_schema": true,
+   "signed": true,
+   "signatures": [
+    "prov"
+   ],
+   "security_report_summary": {
+    "low": 0,
+    "high": 4,
+    "medium": 13,
+    "unknown": 3,
+    "critical": 0
+   },
+   "all_containers_images_whitelisted": false,
+   "production_organizations_count": 41,
+   "ts": 1792787917,
+   "repository": {
+    "url": "https://charts.jetstack.io",
+    "kind": 0,
+    "name": "cert-manager",
+    "official": false,
+    "display_name": "cert-manager",
+    "repository_id": "f4c99bff-136d-4481-b701-9964b6c28e6e",
+    "scanner_disabled": false,
+    "organization_name": "cert-manager",
+    "verified_publisher": true,
+    "organization_display_name": "cert-manager"
+   }
+  },
+  {
+   "package_id": "e6f213e9-2add-4cc6-92ba-05a025d1f222",
+   "name": "argo-cd",
+   "normalized_name": "argo-cd",
+   "category": 3,
+   "category_display_name": "Integration and delivery",
+   "logo_image_id": "e16221f4-a3b1-49f6-9b65-cb4dbf30ed83",
+   "stars": 847,
+   "official": true,
+   "cncf": true,
+   "description": "A Helm chart for Argo CD, a declarative, GitOps continuous delivery tool for Kubernetes.",
+   "version": "10.20.0",
+   "app_version": "v3.6.3",
+   "deprecated": false,
+   "has_values_schema": false,
+   "signed": true,
+   "signatures": [
+    "prov"
+   ],
+   "security_report_summary": {
+    "low": 32,
+    "high": 59,
+    "medium": 237,
+    "unknown": 5,
+    "critical": 0
+   },
+   "all_containers_images_whitelisted": false,
+   "production_organizations_count": 25,
+   "ts": 1795599587,
+   "repository": {
+    "url": "https://argoproj.github.io/argo-helm",
+    "kind": 0,
+    "name": "argo",
+    "official": false,
+    "repository_id": "05f5fe20-d21b-4413-8327-715958b51bde",
+    "scanner_disabled": false,
+    "organization_name": "argoproj",
+    "verified_publisher": true,
+    "organization_display_name": "Argo Project"
+   }
+  }
+ ]
+}

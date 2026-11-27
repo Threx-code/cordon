@@ -47,7 +47,7 @@ from typing import ClassVar
 from cordon_scanner.foundation.paths import PackagePaths
 
 DATA = PackagePaths.data("intel")
-AGENT = "cordon-scanner refresh_removed_names (https://github.com/Threx-code/cordon)"
+AGENT = "Mozilla/5.0"
 #: How old a list may be before `--check` fails: a name can be registered again.
 STALE_DAYS = 14
 

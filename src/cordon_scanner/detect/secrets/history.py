@@ -40,6 +40,7 @@ from cordon_scanner.foundation.models import Confidence, Finding, Location, Seve
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
+from cordon_scanner.version import USER_AGENT
 
 MAX_VERIFICATIONS = 50
 TIMEOUT_SECONDS = 6.0
@@ -210,7 +211,7 @@ class SecretLiveness:
     ) -> urllib.request.Request:
         headers = {
             "Authorization": f"Bearer {token}",
-            "User-Agent": "cordon-scanner verify-secrets",
+            "User-Agent": USER_AGENT,
             **(extra or {}),
         }
         return urllib.request.Request(url, headers=headers, method=method)  # noqa: S310 - fixed https URLs below
@@ -261,7 +262,7 @@ class SecretLiveness:
                             "https://gitlab.com/api/v4/personal_access_tokens/self",
                             headers={
                                 "PRIVATE-TOKEN": t,
-                                "User-Agent": "cordon-scanner verify-secrets",
+                                "User-Agent": USER_AGENT,
                             },
                         ),
                         cls._status(200, 401),
@@ -293,7 +294,7 @@ class SecretLiveness:
                             headers={
                                 "x-api-key": t,
                                 "anthropic-version": "2023-06-01",
-                                "User-Agent": "cordon-scanner verify-secrets",
+                                "User-Agent": USER_AGENT,
                             },
                         ),
                         cls._status(200, 401),
@@ -305,7 +306,7 @@ class SecretLiveness:
                             headers={
                                 "Authorization": "Basic "
                                 + base64.b64encode(f"{t}:".encode()).decode(),
-                                "User-Agent": "cordon-scanner verify-secrets",
+                                "User-Agent": USER_AGENT,
                             },
                         ),
                         cls._status(200, 401),
