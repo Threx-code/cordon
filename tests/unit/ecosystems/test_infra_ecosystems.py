@@ -304,8 +304,11 @@ class TestNoFormatNoise:
     )
     def test_a_brewfile_extension_is_judged(self, tmp_path, name) -> None:
         result = InfraHelpers.scan(tmp_path, {name: 'brew "jq"\nvscode "ellacrity.recoil"\n'})
-        assert any(f.rule_id == "MALWARE.EXTENSION.KNOWN.001" for f in result.findings)
-        assert "jq" in {d.name for d in result.dependencies}
+        # The extension is an editor-extension dependency, which owns the verdict: reported once.
+        malware = [f.rule_id for f in result.findings if f.rule_id.startswith("MALWARE.")]
+        assert malware == ["MALWARE.DEPENDENCY.KNOWN.001"], malware
+        found = {(d.name, d.ecosystem) for d in result.dependencies}
+        assert {("jq", "homebrew"), ("ellacrity.recoil", "vscode")} <= found
 
 
 class TestTerraformParsedOnce:

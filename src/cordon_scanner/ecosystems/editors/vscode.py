@@ -7,7 +7,7 @@
   .devcontainer/devcontainer.json,     `customizations.vscode.extensions` (and the older top-level `extensions`):
   .devcontainer/<name>/devcontainer.json,  ids installed into the container, `publisher.name` or
   .devcontainer.json                   `publisher.name@version`; `-publisher.name` asks for one NOT to be installed
-  .gitpod.yml                          `vscode.extensions`: Open VSX ids, `id@version`, or the URL of a .vsix
+  .gitpod.yml, .gitpod.yaml           `vscode.extensions`: Open VSX ids, `id@version`, or the URL of a .vsix
   extension.vsixmanifest               an extension's own manifest inside its .vsix: its identity (publisher,
                                        name, version) and the extensions it depends on or packs
 ```
@@ -78,6 +78,7 @@ class VsCodeEcosystem(BaseEcosystem):
     """Editor extensions, read from the files that name them."""
 
     id = "vscode"
+    bundle_keyword = "vscode"
     purl_type = "vscode-extension"
     manifest_globs: tuple[str, ...] = (
         "**/.vscode/extensions.json",
@@ -86,6 +87,7 @@ class VsCodeEcosystem(BaseEcosystem):
         "**/.devcontainer/*/devcontainer.json",
         "**/.devcontainer.json",
         "**/.gitpod.yml",
+        "**/.gitpod.yaml",
         "**/extension.vsixmanifest",
     )
     lockfile_globs: tuple[str, ...] = ()
@@ -121,6 +123,7 @@ class VsCodeEcosystem(BaseEcosystem):
         (".code-workspace", "_workspace", "extensions.recommendations"),
         ("extensions.json", "_recommendations", "recommendations"),
         (".gitpod.yml", "_gitpod", "vscode.extensions"),
+        (".gitpod.yaml", "_gitpod", "vscode.extensions"),
         ("devcontainer.json", "_devcontainer", "customizations.vscode.extensions"),
     )
 
@@ -134,7 +137,11 @@ class VsCodeEcosystem(BaseEcosystem):
             return self._vsix(content)
         read = getattr(self, reader[1])
         try:
-            data = self._yaml(content) if content.path.endswith(".yml") else self._jsonc(content)
+            data = (
+                self._yaml(content)
+                if content.path.endswith((".yml", ".yaml"))
+                else self._jsonc(content)
+            )
         except ValueError as exc:
             return BaseEcosystem._err(content, self.id, str(exc))
         if not isinstance(data, dict):
