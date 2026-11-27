@@ -200,10 +200,10 @@ if TYPE_CHECKING:
         hackage_tuf as _intel_provenance_releases_hackage_tuf,
     )
     from cordon_scanner.intel.provenance.releases import (
-        openvsx_signature as _intel_provenance_releases_openvsx_signature,
+        nuget_signature as _intel_provenance_releases_nuget_signature,
     )
     from cordon_scanner.intel.provenance.releases import (
-        nuget_signature as _intel_provenance_releases_nuget_signature,
+        openvsx_signature as _intel_provenance_releases_openvsx_signature,
     )
     from cordon_scanner.intel.registries import installers as _intel_registries_installers
     from cordon_scanner.intel.registries import names as _intel_registries_names
@@ -363,8 +363,8 @@ __all__ = [
     "McpApprovals",
     "NuGetSignature",
     "OfficialInstallers",
-    "OpenVsxSignature",
     "OpenPgp",
+    "OpenVsxSignature",
     "OsvImport",
     "PackageNotFound",
     "PopularPackageNames",

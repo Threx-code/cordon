@@ -3,7 +3,7 @@ for is held, the SHA-256 it publishes, and what an unknown or unreachable regist
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -37,7 +37,7 @@ class Registry:
         monkeypatch.setattr(RegistryHttp, "text", staticmethod(text))
         return asked
 
-    LISTING = {
+    LISTING: ClassVar[dict[str, Any]] = {
         "allVersions": {
             "latest": f"{API}/latest",
             "pre-release": f"{API}/pre-release",

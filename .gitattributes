@@ -16,3 +16,6 @@ corpus/** binary
 # The README terminal's recordings are the bytes a pseudo-terminal wrote (CRLF and all), cut by
 # byte counts in their timing files: rewriting a line ending would shift every count after it.
 docs/assets/terminal/** binary
+
+# Real-file captures are kept byte for byte (CRLF and all): the provenance table holds their hash.
+tests/**/*_captures/** binary

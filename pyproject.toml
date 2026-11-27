@@ -301,6 +301,8 @@ sources = ["src/cordon_scanner/_native/anchors.c"]
 target-version = "py311"
 line-length = 100
 src = ["src", "tests"]
+# Real files taken from registries and repositories, kept byte for byte (each folder has a CAPTURES.md): not this project's code.
+extend-exclude = ["tests/**/*_captures"]
 
 [tool.ruff.lint]
 select = [

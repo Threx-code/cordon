@@ -130,7 +130,9 @@ class TestTheReleaseCheck:
             Copies.units(files), self.context(offline=False)
         )
         assert [f.rule_id for f in found] == ["VULNERABLE.PROVENANCE.INVALID.001"]
-        assert "changed" in found[0].message and found[0].location.path.endswith("extension/package.json")
+        assert "changed" in found[0].message and found[0].location.path.endswith(
+            "extension/package.json"
+        )
 
     def test_the_real_copy_is_no_finding(self, monkeypatch: pytest.MonkeyPatch) -> None:
         Registry.serve(monkeypatch)
