@@ -10,6 +10,7 @@ expected to fail and fail the run the moment they pass, so the entry is taken of
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import ClassVar
 
 import pytest
@@ -372,3 +373,85 @@ class TestEveryFeatureCoversEveryEcosystem:
             len(ALL) == 29
             and {"npm", "pypi", "cargo", "maven", "actions", "image", "vscode"} <= ALL
         )
+
+
+class TestNoPhantomCoverage:
+    """A row may only count what production code uses. Every `Name.attr` (or upper-case table) a row's reader takes
+    from `cordon_scanner` must be referenced as code (a load, not a comment, docstring or its own definition) somewhere
+    in `src/`. A table read only by this guard made a feature look covered while nothing shipped used it (an SBOM
+    "served by" table, a credential table, both caught in review): this makes that a failure."""
+
+    @staticmethod
+    def reads() -> set[tuple[str, str, str]]:
+        """(reader, Name, attr) for every name a reader imports from cordon_scanner and reads."""
+        import ast
+
+        tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+        readers = [
+            m
+            for c in tree.body
+            if isinstance(c, ast.ClassDef) and c.name in ("Coverage", "More")
+            for m in c.body
+            if isinstance(m, ast.FunctionDef)
+        ]
+        out: set[tuple[str, str, str]] = set()
+        for reader in readers:
+            imported = {
+                a.asname or a.name
+                for n in ast.walk(reader)
+                if isinstance(n, ast.ImportFrom) and (n.module or "").startswith("cordon_scanner")
+                for a in n.names
+            }
+            for node in ast.walk(reader):
+                if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+                    if node.value.id in imported:
+                        out.add((reader.name, node.value.id, node.attr))
+                elif isinstance(node, ast.Name) and node.id in imported and node.id.isupper():
+                    out.add((reader.name, node.id, ""))
+        return out
+
+    @staticmethod
+    def referenced() -> set[str]:
+        """Every attribute and name loaded as code anywhere in src/."""
+        import ast
+
+        from support import ROOT as REPO
+
+        names: set[str] = set()
+        for path in (REPO / "src" / "cordon_scanner").rglob("*.py"):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
+                    names.add(node.attr)
+                elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                    names.add(node.id)
+        return names
+
+    #: Read by a row and not yet by production, each being wired in now. An entry that production starts to use
+    #: fails `test_what_is_being_wired_is_still_unwired` until it comes off; nothing is ever added here to pass.
+    BUILDING: ClassVar[frozenset[str]] = frozenset(
+        {
+            # The registries' own reasons for publishing no provenance: the report is to give the reason with an
+            # `unsupported` provenance status, so a user sees why, not only that.
+            "provenance_reasons: PROVENANCE_NOT_PUBLISHED",
+        }
+    )
+
+    def phantom(self) -> set[str]:
+        reads = self.reads()
+        assert len({r for r, _, _ in reads}) >= 20, "the guard's readers were not found"
+        used = self.referenced()
+        return {
+            f"{reader}: {name}.{attr}" if attr else f"{reader}: {name}"
+            for reader, name, attr in reads
+            if (attr or name) not in used
+        }
+
+    def test_every_row_reads_what_production_uses(self) -> None:
+        unexpected = sorted(self.phantom() - self.BUILDING)
+        assert not unexpected, "read by the guard but by no production code: " + ", ".join(
+            unexpected
+        )
+
+    def test_what_is_being_wired_is_still_unwired(self) -> None:
+        done = sorted(self.BUILDING - self.phantom())
+        assert not done, "now used by production, take it off BUILDING: " + ", ".join(done)
