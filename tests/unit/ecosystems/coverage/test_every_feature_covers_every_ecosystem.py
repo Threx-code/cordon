@@ -186,9 +186,9 @@ class More:
 
     @classmethod
     def subjects(cls) -> frozenset[str]:
-        from cordon_scanner.contracts.subjects import SubjectParts
+        from cordon_scanner.contracts.name_fold import NameFolds
 
-        return cls.ids(SubjectParts.folds_by_id()) & (ALL | {"vscode"})
+        return cls.ids(NameFolds.BY_ID) & (ALL | {"vscode"})
 
     @classmethod
     def own_name_findings(cls) -> frozenset[str]:
@@ -215,6 +215,18 @@ class More:
             for ecosystem in EcosystemRegistry.all_ecosystems()
             if isinstance(ecosystem.published_archive, NoArchive)
         }
+
+    @classmethod
+    def credential_homes(cls) -> frozenset[str]:
+        from cordon_scanner.analysis.shared.credential_homes import ECOSYSTEM_CREDENTIALS
+
+        return cls.ids(e for e, credential in ECOSYSTEM_CREDENTIALS.items() if credential.services)
+
+    @classmethod
+    def credential_homes_reasons(cls) -> dict[str, str]:
+        from cordon_scanner.analysis.shared.credential_homes import ECOSYSTEM_CREDENTIALS
+
+        return {e: c.reason for e, c in ECOSYSTEM_CREDENTIALS.items() if not c.services}
 
     @classmethod
     def private_registries(cls) -> frozenset[str]:
@@ -256,6 +268,7 @@ class Features:
         "device attestation splitters": (More.device_attestation, dict),
         "subject canonicalisation": (More.subjects, dict),
         "manifest findings (own name)": (More.own_name_findings, dict),
+        "credential homes": (More.credential_homes, More.credential_homes_reasons),
         "package format sniffing": (More.package_format, More.package_format_reasons),
     }
     #: Features being built now: expected to fail until they cover every ecosystem; the entry comes off when they do.

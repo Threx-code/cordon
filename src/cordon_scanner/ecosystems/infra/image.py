@@ -32,7 +32,6 @@ from cordon_scanner.ecosystems.base import (
     DeclaredDependency,
     LockGraph,
     Manifest,
-    NameFold,
 )
 from cordon_scanner.ecosystems.infra.references import (
     HUB_HOSTS,
@@ -580,8 +579,6 @@ class ImageEcosystem(BaseEcosystem):
         return True
 
     purl_type = "docker"
-    #: https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pull (repository names are lower case)
-    name_fold = NameFold.LOWER
     published_archive = (OciLayoutArchive(), DockerSaveArchive())
     manifest_globs: tuple[str, ...] = (
         "**/Dockerfile",

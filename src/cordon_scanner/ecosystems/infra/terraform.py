@@ -36,7 +36,6 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
-    NameFold,
 )
 from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.foundation.models import Scope
@@ -706,8 +705,6 @@ class TerraformEcosystem(BaseEcosystem):
         return parts[-2] if len(parts) >= 2 else None
 
     purl_type = "terraform"
-    #: https://developer.hashicorp.com/terraform/language/providers/requirements#source-addresses
-    name_fold = NameFold.LOWER
     published_archive = (ProviderArchive(),)
     manifest_globs: tuple[str, ...] = ("**/*.tf", "**/*.tf.json")
     lockfile_globs: tuple[str, ...] = ("**/.terraform.lock.hcl",)

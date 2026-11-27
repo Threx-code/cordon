@@ -34,7 +34,6 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
-    NameFold,
 )
 from cordon_scanner.foundation.formats.safexml import Element, SafeXml, SafeXmlError
 from cordon_scanner.foundation.models import Hook, Scope
@@ -557,8 +556,6 @@ class NuGetEcosystem(BaseEcosystem):
         return bool(declared_spec) and not declared_spec.startswith("[")
 
     purl_type = "nuget"
-    #: https://learn.microsoft.com/en-us/nuget/reference/nuspec#id
-    name_fold = NameFold.LOWER
     published_archive = (NuGetArchive(),)
     manifest_globs: tuple[str, ...] = (
         "**/*.csproj",

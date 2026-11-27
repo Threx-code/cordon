@@ -32,7 +32,6 @@ from cordon_scanner.ecosystems.base import (
     DeclaredDependency,
     LockGraph,
     Manifest,
-    NameFold,
 )
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -354,8 +353,6 @@ class VcpkgEcosystem(BaseEcosystem):
 
     id = "vcpkg"
     purl_type = "vcpkg"
-    #: https://learn.microsoft.com/en-us/vcpkg/reference/vcpkg-json#name
-    name_fold = NameFold.LOWER
     published_archive = NoArchive(
         "the vcpkg registry is a git repository of ports (a portfile.cmake and a vcpkg.json each) whose sources are the upstream project's own archive, named by the REF and SHA512 in the portfile (captured: vcpkg/portfile.cmake)"
     )

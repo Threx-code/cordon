@@ -36,7 +36,6 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
-    NameFold,
 )
 from cordon_scanner.ecosystems.packages.ocaml.opam_syntax import (
     COMPILER_PACKAGES,
@@ -211,8 +210,6 @@ class OpamEcosystem(BaseEcosystem):
 
     id = "opam"
     purl_type = "opam"
-    #: https://opam.ocaml.org/doc/Manual.html (unclear on case: kept)
-    name_fold = NameFold.KEPT
     published_archive = NoArchive(
         "an opam package's archive is the upstream project's own source tarball, named by the `url` in its opam file; no opam metadata is inside it (captured: opam cache-small)"
     )

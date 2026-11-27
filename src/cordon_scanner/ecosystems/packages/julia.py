@@ -33,7 +33,6 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
-    NameFold,
 )
 from cordon_scanner.foundation.models import Scope
 
@@ -478,8 +477,6 @@ class JuliaEcosystem(BaseEcosystem):
 
     id = "julia"
     purl_type = "julia"
-    #: https://pkgdocs.julialang.org/v1/toml-files/
-    name_fold = NameFold.KEPT
     published_archive = (JuliaArchive(),)
     manifest_globs: tuple[str, ...] = ("**/Project.toml", "**/JuliaProject.toml")
     lockfile_globs: tuple[str, ...] = (

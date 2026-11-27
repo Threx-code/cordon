@@ -91,6 +91,10 @@ class SameArchiveAs:
     ecosystem: str
 
 
+PublishedArchive = tuple[ArchiveShape, ...] | NoArchive | SameArchiveAs
+"""What an ecosystem declares of its published archives."""
+
+
 class PypiArchive(ArchiveShape):
     precedence = 10
 
@@ -378,5 +382,6 @@ __all__ = [
     "ArchiveLevels",
     "ArchiveShape",
     "NoArchive",
+    "PublishedArchive",
     "SameArchiveAs",
 ]

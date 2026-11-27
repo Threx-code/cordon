@@ -75,7 +75,7 @@ CREDENTIAL_HOMES: Final[tuple[tuple[re.Pattern[str], Home], ...]] = (
     ),
     (
         re.compile(
-            r"^(?:GITHUB_TOKEN|GH_TOKEN|GITHUB_PAT|GH_PAT|GITHUB_API_TOKEN|GITHUB_ACCESS_TOKEN)$"
+            r"^(?:GITHUB_TOKEN|GH_TOKEN|GITHUB_PAT|GH_PAT|GITHUB_API_TOKEN|GITHUB_ACCESS_TOKEN|HOMEBREW_GITHUB_API_TOKEN)$"
         ),
         Home(
             "GitHub",
@@ -121,7 +121,11 @@ CREDENTIAL_HOMES: Final[tuple[tuple[re.Pattern[str], Home], ...]] = (
     ),
     (
         re.compile(r"^(?:DOCKER_PASSWORD|DOCKERHUB_TOKEN|DOCKER_HUB_TOKEN|DOCKERHUB_PASSWORD)$"),
-        Home("Docker Hub", ("docker.io", "docker.com"), ("docker", "registry", "harbor")),
+        Home(
+            "Docker Hub",
+            ("docker.io", "docker.com"),
+            ("docker", "registry", "harbor"),
+        ),
     ),
     (
         re.compile(r"^(?:STRIPE_SECRET_KEY|STRIPE_API_KEY)$"),
@@ -145,17 +149,199 @@ CREDENTIAL_HOMES: Final[tuple[tuple[re.Pattern[str], Home], ...]] = (
     ),
     (
         re.compile(r"^(?:CARGO_REGISTRY_TOKEN)$"),
-        Home("crates.io", ("crates.io",), ("cargo", "crates", "registry", "artifactory", "jfrog")),
+        Home(
+            "crates.io",
+            ("crates.io",),
+            ("cargo", "crates", "registry", "artifactory", "jfrog"),
+        ),
     ),
     (
         re.compile(r"^(?:GEM_HOST_API_KEY|RUBYGEMS_API_KEY)$"),
-        Home("RubyGems", ("rubygems.org",), ("gem", "artifactory", "jfrog", "nexus")),
+        Home(
+            "RubyGems",
+            ("rubygems.org",),
+            ("gem", "artifactory", "jfrog", "nexus"),
+        ),
     ),
     (
         re.compile(r"^(?:NUGET_API_KEY|NUGET_AUTH_TOKEN)$"),
-        Home("NuGet", ("nuget.org",), ("nuget", "artifactory", "jfrog", "nexus", "pkgs.dev.azure")),
+        Home(
+            "NuGet",
+            ("nuget.org",),
+            ("nuget", "artifactory", "jfrog", "nexus", "pkgs.dev.azure"),
+        ),
+    ),
+    # The registries below were added so that every ecosystem has its publisher's credential here, or a
+    # reason it has none (`NO_CREDENTIAL`). Each name is the one the registry's own tool documents.
+    (
+        # https://hexdocs.pm/hex/Mix.Tasks.Hex.Config.html
+        re.compile(r"^HEX_API_KEY$"),
+        Home("Hex", ("hex.pm", "hexdocs.pm"), ("hex", "hexpm", "artifactory")),
+    ),
+    (
+        # https://getcomposer.org/doc/03-cli.md#composer-auth (one JSON of tokens for every host it names)
+        re.compile(r"^COMPOSER_AUTH$"),
+        Home(
+            "Composer",
+            ("packagist.org", "packagist.com", "github.com", "gitlab.com", "bitbucket.org"),
+            ("packagist", "satis", "artifactory", "jfrog", "nexus"),
+        ),
+    ),
+    (
+        # https://docs.conan.io/2/reference/environment.html
+        re.compile(r"^CONAN_PASSWORD(?:_\w+)?$"),
+        Home(
+            "Conan",
+            ("conan.io", "jfrog.io"),
+            ("conan", "artifactory", "jfrog"),
+        ),
+    ),
+    (
+        # https://developer.hashicorp.com/terraform/cli/config/config-file#environment-variable-credentials
+        re.compile(r"^TF_TOKEN_\w+$"),
+        Home(
+            "Terraform registry",
+            ("terraform.io", "hashicorp.com"),
+            ("terraform", "tfe", "registry"),
+        ),
+    ),
+    (
+        # https://docs.ansible.com/ansible/latest/reference_appendices/config.html
+        re.compile(r"^ANSIBLE_GALAXY_TOKEN$"),
+        Home(
+            "Ansible Galaxy",
+            ("ansible.com", "redhat.com"),
+            ("galaxy", "automation", "hub", "pulp"),
+        ),
+    ),
+    (
+        # https://docs.cachix.org/getting-started
+        re.compile(r"^CACHIX_AUTH_TOKEN$"),
+        Home("Cachix", ("cachix.org",), ("cachix", "nix", "attic")),
+    ),
+    (
+        # https://raw.githubusercontent.com/microsoft/vscode-vsce/main/README.md
+        re.compile(r"^VSCE_PAT$"),
+        Home(
+            "Visual Studio Marketplace",
+            ("visualstudio.com", "dev.azure.com"),
+            (),
+        ),
+    ),
+    (
+        # https://raw.githubusercontent.com/eclipse/openvsx/master/cli/README.md
+        re.compile(r"^OVSX_PAT$"),
+        Home("Open VSX", ("open-vsx.org", "eclipse.org"), ("openvsx", "vsx")),
+    ),
+    (
+        # https://docs.gradle.org/current/userguide/publishing_gradle_plugins.html
+        re.compile(r"^GRADLE_PUBLISH_(?:KEY|SECRET)$"),
+        Home(
+            "Gradle Plugin Portal",
+            ("gradle.org",),
+            ("gradle", "artifactory", "nexus"),
+        ),
+    ),
+    (
+        # https://raw.githubusercontent.com/Anaconda-Platform/anaconda-client/master/binstar_client/utils/config.py
+        re.compile(r"^ANACONDA_API_TOKEN$"),
+        Home(
+            "Anaconda.org",
+            ("anaconda.org", "anaconda.com"),
+            ("anaconda", "conda", "artifactory"),
+        ),
+    ),
+    (
+        # https://raw.githubusercontent.com/CocoaPods/cocoapods-trunk/master/lib/pod/command/trunk.rb
+        re.compile(r"^COCOAPODS_TRUNK_TOKEN$"),
+        Home("CocoaPods Trunk", ("cocoapods.org",), ()),
+    ),
+    (
+        # https://docs.brew.sh/Manpage (the GitHub Packages registry Homebrew pulls bottles from)
+        re.compile(r"^HOMEBREW_DOCKER_REGISTRY_(?:BASIC_AUTH_)?TOKEN$"),
+        Home(
+            "GitHub Packages",
+            ("ghcr.io", "github.com"),
+            ("github", "ghe"),
+        ),
     ),
 )
+
+
+@dataclass(frozen=True)
+class Credential:
+    """What an ecosystem's publisher authenticates with: the services (`Home.service`) whose credentials it uses, or
+    why it has none to name (the fact about how it is published, with the page that says so)."""
+
+    services: tuple[str, ...]
+    reason: str = ""
+
+
+#: Every ecosystem, by id: its credentials in `CREDENTIAL_HOMES`, or why it has none.
+ECOSYSTEM_CREDENTIALS: Final[dict[str, Credential]] = {
+    "actions": Credential(("GitHub",)),
+    "ansible": Credential(("Ansible Galaxy",)),
+    "bazel": Credential(
+        (),
+        "a Bazel module is published by a pull request to the Bazel Central Registry on GitHub, so its credential is the GitHub one (https://github.com/bazelbuild/bazel-central-registry)",
+    ),
+    "cargo": Credential(("crates.io",)),
+    "cocoapods": Credential(("CocoaPods Trunk",)),
+    "composer": Credential(("Composer",)),
+    "conan": Credential(("Conan",)),
+    "conda": Credential(("Anaconda.org",)),
+    "cran": Credential(
+        (),
+        "a CRAN package is submitted through a web form with an e-mail confirmation, so it has no token (https://cran.r-project.org/web/packages/policies.html)",
+    ),
+    "gomod": Credential(
+        (),
+        "a Go module is published by pushing a git tag; the proxy fetches it, so there is no registry credential (https://go.dev/ref/mod#vcs)",
+    ),
+    "gradle": Credential(("Gradle Plugin Portal",)),
+    "hackage": Credential(
+        (),
+        "cabal reads the Hackage token from `--token` or its config file, not from a variable (cabal-install Upload.hs: https://github.com/haskell/cabal)",
+    ),
+    "helm": Credential(
+        (),
+        "helm takes registry credentials from `helm registry login` flags and its registry config file; the login command documents no variable (https://helm.sh/docs/helm/helm_registry_login/)",
+    ),
+    "hex": Credential(("Hex",)),
+    "homebrew": Credential(("GitHub", "GitHub Packages")),
+    "image": Credential(("Docker Hub",)),
+    "julia": Credential(
+        (),
+        "a Julia package is registered by a pull request to the General registry on GitHub, so its credential is the GitHub one (https://github.com/JuliaRegistries/General)",
+    ),
+    "maven": Credential(
+        (),
+        "Maven names a server's credentials by the `id` the user gives it in settings.xml, so no variable name is fixed (https://maven.apache.org/settings.html#servers)",
+    ),
+    "nix": Credential(("Cachix",)),
+    "npm": Credential(("npm",)),
+    "nuget": Credential(("NuGet",)),
+    "opam": Credential(
+        (),
+        "an opam package is published by a pull request to opam-repository on GitHub, so its credential is the GitHub one (https://github.com/ocaml/opam-repository)",
+    ),
+    "pub": Credential(
+        (),
+        "pub reads a token from whichever variable the user names with `dart pub token add --env-var`, so no name is fixed (https://dart.dev/tools/pub/cmd/pub-token)",
+    ),
+    "pypi": Credential(("PyPI",)),
+    "rubygems": Credential(("RubyGems",)),
+    "swift": Credential(
+        (),
+        "SwiftPM keeps a registry login in the keychain or .netrc, and publishes by git tag, so no variable is documented (https://docs.swift.org/swiftpm/documentation/packagemanagerdocs/)",
+    ),
+    "terraform": Credential(("Terraform registry",)),
+    "vcpkg": Credential(
+        (),
+        "a vcpkg port is published by a pull request to microsoft/vcpkg on GitHub, so its credential is the GitHub one (https://github.com/microsoft/vcpkg)",
+    ),
+    "vscode": Credential(("Visual Studio Marketplace", "Open VSX")),
+}
 
 _HOST: Final = re.compile(r"^[a-z][a-z0-9+.-]*://(?:[^@/\s]*@)?(\[[0-9a-f:.]+\]|[^/:?#\s]+)", re.I)
 
@@ -236,4 +422,11 @@ class SecretFlow:
         return not any(word in labels or host.startswith(word) for word in home.words)
 
 
-__all__ = ["CREDENTIAL_CUSTODIANS", "CREDENTIAL_HOMES", "Home", "SecretFlow"]
+__all__ = [
+    "CREDENTIAL_CUSTODIANS",
+    "CREDENTIAL_HOMES",
+    "ECOSYSTEM_CREDENTIALS",
+    "Credential",
+    "Home",
+    "SecretFlow",
+]

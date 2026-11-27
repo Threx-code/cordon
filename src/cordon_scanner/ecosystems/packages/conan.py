@@ -37,7 +37,6 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
-    NameFold,
 )
 from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Hook, Scope
@@ -728,8 +727,6 @@ class ConanEcosystem(BaseEcosystem):
 
     id = "conan"
     purl_type = "conan"
-    #: https://docs.conan.io/2/reference/conanfile/attributes.html#name (unclear on case: kept)
-    name_fold = NameFold.KEPT
     published_archive = (ConanArchive(),)
     manifest_globs: tuple[str, ...] = (
         "**/conanfile.txt",

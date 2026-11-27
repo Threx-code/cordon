@@ -36,7 +36,6 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
-    NameFold,
 )
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -715,8 +714,6 @@ class BazelEcosystem(BaseEcosystem):
 
     id = "bazel"
     purl_type = "bazel"
-    #: https://bazel.build/external/module#module_name
-    name_fold = NameFold.KEPT
     published_archive = NoArchive(
         "the Bazel Central Registry holds only MODULE.bazel and a source.json naming the upstream project's own archive; the archive is whatever that project publishes (captured: bazel/source)"
     )

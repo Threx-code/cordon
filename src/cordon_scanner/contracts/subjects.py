@@ -31,8 +31,7 @@ from enum import StrEnum
 from typing import ClassVar, Final
 from urllib.parse import quote, urlsplit
 
-from cordon_scanner.ecosystems.base import NameFold
-from cordon_scanner.ecosystems.registry import EcosystemRegistry
+from cordon_scanner.contracts.name_fold import NameFolds
 
 
 class SubjectKind(StrEnum):
@@ -61,11 +60,6 @@ _SEGMENT: Final = re.compile(r"[^\s/\\?#]+")
 class SubjectParts:
     """The vocabulary and the checks the canonical forms share: what each registry folds, and what a part may be."""
 
-    #: How a name is folded for purl types no ecosystem adapter owns (forges that host packages).
-    FORGE_FOLDS: ClassVar[dict[str, NameFold]] = {
-        "github": NameFold.LOWER,
-        "bitbucket": NameFold.LOWER,
-    }
     #: The purl type of each name an ecosystem goes by.
     PURL_TYPES: ClassVar[dict[str, str]] = {
         "go": "golang",
@@ -102,29 +96,6 @@ class SubjectParts:
         if not re.fullmatch(r"[a-z][a-z0-9.+-]*", purl_type):
             raise InvalidSubject(f"ecosystem: {ecosystem!r} is not a package type")
         return purl_type
-
-    @classmethod
-    def name_fold(cls, ecosystem: str, purl_type: str) -> NameFold:
-        """How the registry of `ecosystem` (an adapter id) folds a package name; failing that, how the registry
-        that owns `purl_type` does; the case is kept for a type nobody owns."""
-        by_id = cls.folds_by_id()
-        key = ecosystem.strip().lower()
-        if key in by_id:
-            return by_id[key]
-        return cls.folds_by_type().get(purl_type, NameFold.KEPT)
-
-    @classmethod
-    def folds_by_id(cls) -> dict[str, NameFold]:
-        """The fold of each ecosystem adapter, by its id."""
-        return {adapter.id: adapter.name_fold for adapter in EcosystemRegistry.all_ecosystems()}
-
-    @classmethod
-    def folds_by_type(cls) -> dict[str, NameFold]:
-        """The fold of each purl type an adapter owns (the first, where two share one), and of the forges'."""
-        found: dict[str, NameFold] = dict(cls.FORGE_FOLDS)
-        for adapter in EcosystemRegistry.all_ecosystems():
-            found.setdefault(adapter.purl_type, adapter.name_fold)
-        return found
 
     @staticmethod
     def collapse(text: str) -> str:
@@ -241,7 +212,7 @@ class CanonicalIds:
         namespace = SubjectParts.optional(parts, "namespace")
         if namespace is None and "/" in name:
             namespace, _, name = name.rpartition("/")
-        fold = SubjectParts.name_fold(SubjectParts.need(parts, "ecosystem"), purl_type)
+        fold = NameFolds.of(SubjectParts.need(parts, "ecosystem"), purl_type)
         if namespace:
             namespace = "/".join(
                 SubjectParts.fold(piece, fold.lower, False)

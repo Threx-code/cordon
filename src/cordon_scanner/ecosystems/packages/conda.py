@@ -28,7 +28,6 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
-    NameFold,
 )
 from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Scope
@@ -515,8 +514,6 @@ class CondaEcosystem(BaseEcosystem):
         return name.split("::", 1)[0] if "::" in name else None
 
     purl_type = "conda"
-    #: https://docs.conda.io/projects/conda-build/en/stable/resources/package-spec.html
-    name_fold = NameFold.LOWER
     published_archive = (CondaArchive(),)
     manifest_globs: tuple[str, ...] = (
         "**/environment.yml",

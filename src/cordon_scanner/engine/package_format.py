@@ -8,8 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from cordon_scanner.ecosystems.archive_shapes import GO_MODULE_ROOT, ArchiveLevels
-from cordon_scanner.ecosystems.registry import EcosystemRegistry, RegistryFacts
+from cordon_scanner.ecosystems.registry import RegistryFacts
 
 if TYPE_CHECKING:
     from cordon_scanner.detect.base import FileUnit
@@ -24,19 +23,11 @@ class PackageFormat:
         Recognised by the shape each ecosystem declares for its own packages (`published_archive`, asked in
         `precedence` order), at the archive's first level only. That level matters: a repository snapshot that
         vendors a package tarball is still a repository, and its own lockfiles are still the project's. An
-        ecosystem whose archives have the same shape as a repository snapshot declares why it has none.
+        ecosystem declares why it has none where it has no archive of its own. A Composer dist and an action
+        download are the git host's own archive of a repository at a ref, so an archive of that shape is rightly read
+        as the published package, and a plain checked-out folder never is (it has no archive members): do not "fix" this.
         """
-        levels = ArchiveLevels.of(units)
-        found = sorted(
-            (shape.precedence, shape.format or ecosystem.id, shape)
-            for ecosystem in EcosystemRegistry.all_ecosystems()
-            if isinstance(ecosystem.published_archive, tuple)
-            for shape in ecosystem.published_archive
-        )
-        for _, name, shape in found:
-            if shape.matches(levels):
-                return name
-        return ""
+        return RegistryFacts.published_format(units)
 
     @staticmethod
     def renamed_npm(units: list[FileUnit]) -> bool:
@@ -45,7 +36,7 @@ class PackageFormat:
         23 gradle, nix, opam and swift repositories in the #18 A/B), so it is read both ways
         (`union`)."""
         manifest = RegistryFacts.archive_manifest(PackageFormat.of(units))
-        return manifest is not None and manifest not in (ArchiveLevels.of(units).top)
+        return manifest is not None and manifest not in (RegistryFacts.top_level_members(units))
 
     @staticmethod
     def union(package: list[Finding], repository: list[Finding]) -> list[Finding]:
@@ -70,4 +61,4 @@ class PackageFormat:
         return out
 
 
-__all__ = ["GO_MODULE_ROOT", "PackageFormat"]
+__all__ = ["PackageFormat"]

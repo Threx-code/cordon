@@ -7,13 +7,13 @@ from __future__ import annotations
 
 import pytest
 
+from cordon_scanner.contracts.name_fold import NameFolds
 from cordon_scanner.contracts.subjects import (
     CanonicalIds,
     InvalidSubject,
     SubjectKind,
     SubjectParts,
 )
-from cordon_scanner.ecosystems.base import BaseEcosystem, NameFold
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 
 ID = CanonicalIds.canonical_id
@@ -110,17 +110,20 @@ class TestEveryEcosystemFoldsItsOwnWay:
 
     @pytest.mark.parametrize("ecosystem", sorted(EcosystemRegistry.BY_ID))
     def test_the_id_follows_the_fold_the_adapter_declares(self, ecosystem: str) -> None:
-        fold = EcosystemRegistry.BY_ID[ecosystem].name_fold
+        fold = NameFolds.BY_ID[ecosystem]
         name = ID(SubjectKind.PACKAGE, {"ecosystem": ecosystem, "name": MIXED}).rsplit("/", 1)[-1]
         assert name == SubjectParts.fold(MIXED, fold.lower, fold.one_separator)
 
-    @pytest.mark.parametrize("ecosystem", sorted(EcosystemRegistry.BY_ID))
-    def test_every_ecosystem_declares_its_fold_itself(self, ecosystem: str) -> None:
-        adapter = type(EcosystemRegistry.BY_ID[ecosystem])
-        assert isinstance(vars(adapter).get("name_fold"), NameFold)
+    def test_the_table_holds_exactly_the_registered_ecosystems(self) -> None:
+        assert set(NameFolds.BY_ID) == set(EcosystemRegistry.BY_ID)
 
-    def test_the_base_adapter_has_no_default_fold(self) -> None:
-        assert not hasattr(BaseEcosystem, "name_fold")
+    @pytest.mark.parametrize("ecosystem", sorted(EcosystemRegistry.BY_ID))
+    def test_a_purl_type_that_is_not_the_id_folds_as_its_ecosystem_does(
+        self, ecosystem: str
+    ) -> None:
+        purl_type = EcosystemRegistry.BY_ID[ecosystem].purl_type
+        if purl_type in NameFolds.BY_TYPE:
+            assert NameFolds.BY_TYPE[purl_type] == NameFolds.BY_ID[ecosystem]
 
     @pytest.mark.parametrize(
         ("ecosystem", "name", "expected"),

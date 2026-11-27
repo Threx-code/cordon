@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import ArchiveLevels
 from cordon_scanner.ecosystems.base import BaseEcosystem, Ecosystem, ReleaseFile
 from cordon_scanner.ecosystems.editors.vscode import VsCodeEcosystem
 from cordon_scanner.ecosystems.infra.infra import INFRA_ECOSYSTEMS
@@ -44,6 +45,7 @@ from cordon_scanner.foundation.paths import ContainerPaths
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+    from cordon_scanner.detect.base import FileUnit
     from cordon_scanner.ecosystems.base import ImageReferences
     from cordon_scanner.ecosystems.infra import image as _ecosystems_infra_image
     from cordon_scanner.foundation.dependencies import InstalledEcosystemFacts, InstallTool
@@ -359,6 +361,25 @@ class RegistryPublishing:
     @staticmethod
     def bracket_ranges(ecosystem: str) -> bool:
         return RegistryFacts._of(ecosystem).bracket_ranges()
+
+    @staticmethod
+    def published_format(units: Sequence[FileUnit]) -> str:
+        """Which published-package format the archive of `units` is, or "": the first shape an ecosystem declares
+        for its packages (`published_archive`, asked in `precedence` order) that the archive's members fit."""
+        levels = ArchiveLevels.of(units)
+        found = sorted(
+            (shape.precedence, shape.format or ecosystem.id, shape)
+            for ecosystem in EcosystemRegistry.all_ecosystems()
+            if isinstance(ecosystem, BaseEcosystem)
+            and isinstance(ecosystem.published_archive, tuple)
+            for shape in ecosystem.published_archive
+        )
+        return next((name for _, name, shape in found if shape.matches(levels)), "")
+
+    @staticmethod
+    def top_level_members(units: Sequence[FileUnit]) -> frozenset[str]:
+        """The members of the archive of `units` that sit in it (not in an archive inside it)."""
+        return ArchiveLevels.of(units).top
 
     @staticmethod
     def archive_manifest(ecosystem: str) -> str | None:

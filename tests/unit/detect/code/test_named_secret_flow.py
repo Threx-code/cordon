@@ -11,8 +11,13 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner import Scanner
-from cordon_scanner.analysis.shared.credential_homes import SecretFlow
+from cordon_scanner.analysis.shared.credential_homes import (
+    CREDENTIAL_HOMES,
+    ECOSYSTEM_CREDENTIALS,
+    SecretFlow,
+)
 from cordon_scanner.detect.code.secretflow import GoFlow, JavaScriptFlow
+from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.foundation.config.settings import Config
 
 RULE = "SUSPECT.EXFIL.NAMED_SECRET.001"
@@ -49,6 +54,49 @@ class TestHomes:
     )
     def test_misdirected(self, name, host, expected) -> None:
         assert SecretFlow.misdirected(name, host) is expected
+
+
+#: Each registry credential, the host of its own registry.
+REGISTRY_CREDENTIALS = [
+    ("HEX_API_KEY", "hex.pm"),
+    ("COMPOSER_AUTH", "packagist.org"),
+    ("CONAN_PASSWORD", "center2.conan.io"),
+    ("CONAN_PASSWORD_MYREMOTE", "center2.conan.io"),
+    ("TF_TOKEN_app_terraform_io", "app.terraform.io"),
+    ("TF_TOKEN_registry_terraform_io", "registry.terraform.io"),
+    ("ANSIBLE_GALAXY_TOKEN", "galaxy.ansible.com"),
+    ("CACHIX_AUTH_TOKEN", "app.cachix.org"),
+    ("VSCE_PAT", "marketplace.visualstudio.com"),
+    ("OVSX_PAT", "open-vsx.org"),
+    ("GRADLE_PUBLISH_KEY", "plugins.gradle.org"),
+    ("GRADLE_PUBLISH_SECRET", "plugins.gradle.org"),
+    ("ANACONDA_API_TOKEN", "api.anaconda.org"),
+    ("COCOAPODS_TRUNK_TOKEN", "trunk.cocoapods.org"),
+    ("HOMEBREW_GITHUB_API_TOKEN", "api.github.com"),
+    ("HOMEBREW_DOCKER_REGISTRY_TOKEN", "ghcr.io"),
+    ("HOMEBREW_DOCKER_REGISTRY_BASIC_AUTH_TOKEN", "ghcr.io"),
+]
+
+
+class TestEveryEcosystemsCredential:
+    @pytest.mark.parametrize(("name", "host"), REGISTRY_CREDENTIALS)
+    def test_a_registry_credential_is_fine_at_its_own_registry(self, name, host) -> None:
+        assert SecretFlow.home_of(name) is not None
+        assert not SecretFlow.misdirected(name, host)
+
+    @pytest.mark.parametrize(("name", "host"), REGISTRY_CREDENTIALS)
+    def test_and_misdirected_anywhere_else(self, name, host) -> None:
+        assert SecretFlow.misdirected(name, "collect.example.invalid")
+
+    def test_every_ecosystem_has_a_credential_or_a_reason(self) -> None:
+        assert set(ECOSYSTEM_CREDENTIALS) == set(EcosystemRegistry.BY_ID)
+        for ecosystem, credential in ECOSYSTEM_CREDENTIALS.items():
+            assert bool(credential.services) != bool(credential.reason), ecosystem
+
+    def test_every_service_an_ecosystem_names_is_a_home(self) -> None:
+        homes = {home.service for _, home in CREDENTIAL_HOMES}
+        for ecosystem, credential in ECOSYSTEM_CREDENTIALS.items():
+            assert set(credential.services) <= homes, ecosystem
 
 
 class TestPython:

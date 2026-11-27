@@ -43,6 +43,7 @@ from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Severity
 from cordon_scanner.intel.advisories import exploited
 from cordon_scanner.intel.advisories.advisories import Advisory, AdvisoryDatabase
+from support import ROOT
 
 CARGO_LOCK = """version = 3
 
@@ -148,11 +149,11 @@ class RealArchives:
     """The members of real, legitimate package archives (`package_format_captures/members.json`, with the
     source and sha256 of each), as the units a scan of that archive would hold."""
 
-    FOLDER = Path(__file__).parent / "package_format_captures"
+    FOLDER = ROOT / "tests" / "unit" / "intel" / "advisories" / "package_format_captures"
 
     @classmethod
     def members(cls, key: str) -> list[str]:
-        table = json.loads((cls.FOLDER / "members.json").read_text())
+        table = json.loads((cls.FOLDER / "members.json").read_text(encoding="utf-8"))
         return list(table[key]["members"])
 
     @classmethod
@@ -254,20 +255,24 @@ class TestTheReasonsAreTheFormatsOwn:
     """Each ecosystem declared to have no archive of its own is backed by the capture that shows it."""
 
     def test_a_bazel_module_names_the_upstream_projects_archive(self) -> None:
-        source = json.loads((RealArchives.FOLDER / "bazel-source.json").read_text())
+        source = json.loads((RealArchives.FOLDER / "bazel-source.json").read_text(encoding="utf-8"))
         assert source["url"].endswith(".tar.gz") and "github.com/abseil" in source["url"]
 
     def test_a_pod_names_a_git_source(self) -> None:
-        spec = json.loads((RealArchives.FOLDER / "cocoapods-podspec.json").read_text())
+        spec = json.loads(
+            (RealArchives.FOLDER / "cocoapods-podspec.json").read_text(encoding="utf-8")
+        )
         assert spec["source"]["git"].endswith(".git")
 
     def test_a_vcpkg_port_names_the_upstream_archive_by_ref_and_hash(self) -> None:
-        portfile = (RealArchives.FOLDER / "vcpkg-portfile.cmake").read_text()
+        portfile = (RealArchives.FOLDER / "vcpkg-portfile.cmake").read_text(encoding="utf-8")
         assert "vcpkg_from_github" in portfile and "REF" in portfile and "SHA512" in portfile
 
     def test_a_terraform_module_download_is_a_git_source(self) -> None:
         headers = (
-            (RealArchives.FOLDER / "terraform-module-download-headers.txt").read_text().lower()
+            (RealArchives.FOLDER / "terraform-module-download-headers.txt")
+            .read_text(encoding="utf-8")
+            .lower()
         )
         assert "x-terraform-get: git::https://" in headers
 

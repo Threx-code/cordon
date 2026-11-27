@@ -12,11 +12,9 @@ execute untrusted tooling against attacker-controlled metadata inside the tool
 whose entire purpose is avoiding that, and it would make results
 non-reproducible because a resolver consults a live registry.
 
-**Name normalisation is per-ecosystem.** Registries disagree about what makes
-two names the same: PyPI folds separators and case, npm folds case, Maven
-composes group and artifact, Go encodes capitals. Typosquat detection is
-meaningless without this, and it is where most tools generate their false
-positives.
+**Name normalisation is per-ecosystem.** Registries disagree about what makes two names the same: PyPI
+folds separators and case, npm folds case, Maven composes group and artifact, Go encodes capitals.
+Typosquat detection is meaningless without this, and it is where most tools generate their false positives.
 """
 
 from __future__ import annotations
@@ -24,10 +22,9 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from cordon_scanner.ecosystems.archive_shapes import ArchiveShape, NoArchive, SameArchiveAs
+from cordon_scanner.ecosystems.archive_shapes import PublishedArchive
 from cordon_scanner.foundation.dependencies import InstallTool
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Hook, Scope
@@ -154,25 +151,6 @@ PUBLIC_REGISTRY_NAMES = frozenset(
 A sentinel rather than an empty string, so the rules that read a spec can tell
 "inherited from somewhere this file does not name" from "no constraint at
 all" -- the first is pinned and the second is not."""
-
-
-PublishedArchive = tuple[ArchiveShape, ...] | NoArchive | SameArchiveAs
-"""What an ecosystem declares of its published archives (`ecosystems/archive_shapes.py`)."""
-
-
-class NameFold(Enum):
-    """How a registry treats the case and the separators of a package name, so two spellings of one package get one id.
-
-    Keeping the case can never merge two packages wrongly; folding it can, so an ecosystem folds only where its own
-    registry documents that the spellings are one name."""
-
-    KEPT = (False, False)
-    LOWER = (True, False)
-    PEP_503 = (True, True)
-
-    def __init__(self, lower: bool, one_separator: bool) -> None:
-        self.lower = lower
-        self.one_separator = one_separator
 
 
 @dataclass(frozen=True, slots=True)
@@ -494,11 +472,6 @@ class Ecosystem(Protocol):
 
     id: str
     purl_type: str
-    name_fold: NameFold
-
-    @property
-    def published_archive(self) -> PublishedArchive: ...
-
     manifest_globs: tuple[str, ...]
     lockfile_globs: tuple[str, ...]
     registry_hosts: frozenset[str]
@@ -784,10 +757,7 @@ class BaseEcosystem(
 
     id: str = "base"
     purl_type: str = "generic"
-    published_archive: PublishedArchive
-    """The archive shape(s) of this ecosystem's published packages, or why there is none (no default: each ecosystem states it)."""
-    name_fold: NameFold
-    """How this registry folds a package name (no default: each ecosystem states it, with the registry's own page)."""
+    published_archive: PublishedArchive  # no default: each ecosystem states it
     manifest_globs: tuple[str, ...] = ()
     lockfile_globs: tuple[str, ...] = ()
     installed_with_package: tuple[str, ...] = ()
@@ -1024,7 +994,6 @@ __all__ = [
     "LockEntry",
     "LockGraph",
     "Manifest",
-    "NameFold",
     "NamingDefaults",
     "TraitDefaults",
     "VersionDefaults",

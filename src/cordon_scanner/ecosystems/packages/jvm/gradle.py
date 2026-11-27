@@ -34,7 +34,6 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
-    NameFold,
 )
 from cordon_scanner.ecosystems.packages.jvm.maven import MavenEcosystem
 from cordon_scanner.foundation.formats.safexml import SafeXml, SafeXmlError
@@ -254,8 +253,6 @@ class GradleEcosystem(BaseEcosystem):
         return version.upper().endswith("-SNAPSHOT")
 
     purl_type = "maven"
-    #: https://maven.apache.org/guidelines.html#create-a-pom (served by Maven: case kept)
-    name_fold = NameFold.KEPT
     published_archive = SameArchiveAs("maven")
     manifest_globs: tuple[str, ...] = (
         "**/build.gradle",

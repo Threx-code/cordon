@@ -30,7 +30,6 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
-    NameFold,
 )
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -642,8 +641,6 @@ class BundlerLock:
 class RubyGemsEcosystem(BaseEcosystem):
     id = "rubygems"
     purl_type = "gem"
-    #: https://guides.rubygems.org/specification-reference/#name
-    name_fold = NameFold.KEPT
     published_archive = (GemArchive(),)
     manifest_globs: tuple[str, ...] = (
         "**/Gemfile",

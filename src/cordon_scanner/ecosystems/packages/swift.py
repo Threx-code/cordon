@@ -29,7 +29,6 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
-    NameFold,
 )
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -344,8 +343,6 @@ class SwiftEcosystem(BaseEcosystem):
         return name.rsplit("/", 1)[0] if "/" in name else None
 
     purl_type = "swift"
-    #: https://docs.swift.org/swiftpm/documentation/packagemanagerdocs/ (the stored id has always been lower case; kept)
-    name_fold = NameFold.LOWER
     published_archive = NoArchive(
         "SwiftPM resolves a package from its git repository at a tag; the archive of it is the git host's snapshot of the repository, with no packaging step of its own (no Swift registry archive exists in the captures: SwiftPM's own docs, https://docs.swift.org/swiftpm/documentation/packagemanagerdocs/)"
     )

@@ -36,7 +36,6 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
-    NameFold,
 )
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -839,8 +838,6 @@ class HomebrewEcosystem(BaseEcosystem):
         return full.rsplit("/", 1)[0] if full.count("/") >= 2 else None
 
     purl_type = "brew"
-    #: https://docs.brew.sh/Formula-Cookbook#grab-the-url
-    name_fold = NameFold.LOWER
     published_archive = (BottleArchive(),)
     manifest_globs: tuple[str, ...] = (
         "**/Brewfile",

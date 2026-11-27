@@ -29,7 +29,6 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
-    NameFold,
 )
 from cordon_scanner.ecosystems.packages.hex_literals import ElixirLiterals
 from cordon_scanner.foundation.models import Hook, Scope
@@ -780,8 +779,6 @@ class HexEcosystem(BaseEcosystem):
         return name.split("/", 1)[0] if "/" in name else None
 
     purl_type = "hex"
-    #: https://hex.pm/docs/publish
-    name_fold = NameFold.LOWER
     published_archive = (HexArchive(),)
     manifest_globs: tuple[str, ...] = ("**/mix.exs", "**/rebar.config")
     lockfile_globs: tuple[str, ...] = ("**/mix.lock", "**/rebar.lock")

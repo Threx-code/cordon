@@ -14,7 +14,6 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
-    NameFold,
 )
 
 # Each `*Ecosystem` imported below from its own module (GitHub Actions, Bazel, CocoaPods, Composer,
@@ -28,8 +27,6 @@ if TYPE_CHECKING:
 class CargoEcosystem(BaseEcosystem):
     id = "cargo"
     purl_type = "cargo"
-    #: https://doc.rust-lang.org/cargo/reference/manifest.html#the-name-field (the stored id has always kept the case)
-    name_fold = NameFold.KEPT
     published_archive = (CargoArchive(),)
     manifest_globs: tuple[str, ...] = ("**/Cargo.toml", "**/.cargo/config.toml", "**/.cargo/config")
     lockfile_globs: tuple[str, ...] = ("**/Cargo.lock",)
