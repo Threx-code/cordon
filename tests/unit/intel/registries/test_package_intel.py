@@ -267,6 +267,20 @@ class TestTheRefreshCannotBeKilledMidWrite:
         spec.loader.exec_module(module)
         return module
 
+    def test_every_source_is_a_static_method_called_with_no_arguments(self) -> None:
+        """A fetcher that lost its @staticmethod still runs when called on the class, and fails when called on an
+        instance (mypy: "Method must have at least one argument"); the table calls each with none."""
+        import inspect
+
+        script = self._script()
+        for ecosystem, (fetcher, _threshold) in script.SOURCES.items():
+            assert not inspect.signature(fetcher).parameters, ecosystem
+            owner, _, name = fetcher.__qualname__.rpartition(".")
+            assert owner == "PackageIntelRefresh", ecosystem
+            declared = vars(script.PackageIntelRefresh)[name]
+            assert isinstance(declared, staticmethod), f"{ecosystem}: {name} is not a staticmethod"
+            assert callable(getattr(script.PackageIntelRefresh(), name)), ecosystem
+
     def test_a_write_interrupted_leaves_the_previous_file(self, tmp_path) -> None:
         script = self._script()
         target = tmp_path / "pypi.txt"
