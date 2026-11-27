@@ -25,13 +25,13 @@ from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import ClosedErrors
+from cordon_scanner.version import USER_AGENT
 
 MAX_VSIX: Final = 200 << 20
 OPEN_VSX: Final = "https://open-vsx.org/api"
 GALLERY: Final = "https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery"
 _ID: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{0,127}\.[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _VERSION: Final = re.compile(r"^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$")
-_UA: Final = {"User-Agent": "cordon-scanner-mcp"}
 
 
 class ExtensionError(Exception):
@@ -81,7 +81,9 @@ class ExtensionFetcher:
     ) -> bytes:
         if not url.startswith("https://"):
             raise ExtensionError(f"refused a non-HTTPS address: {url[:80]}")
-        request = urllib.request.Request(url, data=data, headers={**_UA, **(headers or {})})  # noqa: S310 - https checked above
+        request = urllib.request.Request(  # noqa: S310 - https checked above
+            url, data=data, headers={"User-Agent": USER_AGENT, **(headers or {})}
+        )
         try:
             with cls._opener.open(request, timeout=120) as response:
                 body: bytes = Download.read(response, limit + 1)

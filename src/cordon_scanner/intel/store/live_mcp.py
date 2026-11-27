@@ -35,6 +35,7 @@ from typing import Any, Final
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
+from cordon_scanner.version import USER_AGENT
 
 PROTOCOL_VERSION: Final = "2025-06-18"
 
@@ -115,7 +116,7 @@ class LiveMcp:
             "Content-Type": "application/json",
             "Accept": "application/json, text/event-stream",
             "MCP-Protocol-Version": PROTOCOL_VERSION,
-            "User-Agent": "cordon-scanner (read-only MCP tool listing)",
+            "User-Agent": USER_AGENT,
         }
         if session:
             headers["Mcp-Session-Id"] = session

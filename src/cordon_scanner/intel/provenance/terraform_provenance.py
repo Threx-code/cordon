@@ -37,6 +37,7 @@ from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import ClosedErrors, HttpsRedirects
 from cordon_scanner.intel.provenance import openpgp
+from cordon_scanner.version import USER_AGENT
 
 API: Final = (
     "https://registry.terraform.io/v1/providers/{namespace}/{kind}/{version}/download/linux/amd64"
@@ -62,7 +63,7 @@ class TerraformProvenance:
         """The body, or None where the server has no such file."""
         if urllib.parse.urlsplit(url).scheme != "https":
             raise ValueError("not https")
-        request = urllib.request.Request(url, headers={"User-Agent": "cordon-scanner"})  # noqa: S310 - https only
+        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})  # noqa: S310 - https only
         opener = urllib.request.build_opener(HttpsRedirects, ClosedErrors)
         try:
             with opener.open(request, timeout=TIMEOUT) as response:

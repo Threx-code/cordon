@@ -137,21 +137,9 @@ class More:
 
     @classmethod
     def malware_dataset(cls) -> frozenset[str]:
-        from cordon_scanner.intel.malware.datadog_malware import DIRECTORIES
+        from cordon_scanner.intel.malware.malware_sources import MalwareSources
 
-        return cls.ids(DIRECTORIES)
-
-    @staticmethod
-    def malware_dataset_reasons() -> dict[str, str]:
-        """DataDog's dataset publishes samples for npm, PyPI and editor extensions only: for every other ecosystem
-        the dataset itself does not exist (its known malware comes from OSV's MAL- records, the advisory sources)."""
-        from cordon_scanner.intel.malware.datadog_malware import DIRECTORIES
-
-        return dict.fromkeys(
-            ALL - More.ids(DIRECTORIES),
-            "DataDog's malicious-packages dataset publishes no samples for this ecosystem; its known malware "
-            "comes from OSV's MAL- records through the advisory sources",
-        )
+        return cls.ids(MalwareSources.covered())
 
     @classmethod
     def sbom_ingest(cls) -> frozenset[str]:
@@ -253,6 +241,25 @@ class More:
     def agent_hook(cls) -> frozenset[str]:
         return cls.ids(More.compared("cordon_scanner.cloud.agent.agent_hook", "of"))
 
+    @classmethod
+    def install_guard(cls) -> frozenset[str]:
+        """Ecosystems with a shim whose every tool has a handler in the install command's table."""
+        from cordon_scanner.cli.commands.install.command import InstallGuardCommand
+        from cordon_scanner.sources.install.shims import Shims
+
+        handled = set(InstallGuardCommand._table())
+        by_ecosystem: dict[str, set[bool]] = {}
+        for tool, ecosystem in Shims.ECOSYSTEM.items():
+            command = Shims.COMMANDS.get(tool, tool)
+            by_ecosystem.setdefault(ecosystem, set()).add(command in handled)
+        return cls.ids(e for e, flags in by_ecosystem.items() if flags == {True})
+
+    @classmethod
+    def install_guard_reasons(cls) -> Mapping[str, str]:
+        from cordon_scanner.sources.install.shims import Shims
+
+        return Shims.NO_TOOL
+
 
 class Features:
     #: feature -> (its coverage, the ecosystems it cannot apply to with the reason why).
@@ -281,6 +288,7 @@ class Features:
         "name-signal readers": (More.name_signals, dict),
         "private registries": (More.private_registries, dict),
         "agent hook install recognition": (More.agent_hook, dict),
+        "install shims and planners": (More.install_guard, More.install_guard_reasons),
         "fixer (lockfile fix)": (More.fixer, dict),
         "device attestation splitters": (More.device_attestation, More.device_attestation_reasons),
         "subject canonicalisation": (More.subjects, dict),
@@ -300,6 +308,7 @@ class Features:
             "name-signal readers",
             "private registries",
             "agent hook install recognition",
+            "install shims and planners",
             "fixer (lockfile fix)",
             "manifest findings (own name)",
         }
@@ -346,3 +355,38 @@ class TestEveryFeatureCoversEveryEcosystem:
             len(ALL) == 29
             and {"npm", "pypi", "cargo", "maven", "actions", "image", "vscode"} <= ALL
         )
+
+
+#: Ecosystems whose install shim and planner are still being built. A builder takes its cell off this
+#: list when its shim and planner land; a listed cell must still fail (strict), so none stays listed.
+INSTALL_PENDING = frozenset(
+    {
+        "bazel", "cocoapods", "conan", "cran", "gradle", "hackage", "homebrew", "image",
+        "julia", "nix", "opam", "swift", "vcpkg", "vscode",
+    }
+)  # fmt: skip
+
+
+def install_cells() -> list[object]:
+    return [
+        pytest.param(e, marks=[pytest.mark.xfail(strict=True, reason="being built")])
+        if e in INSTALL_PENDING
+        else pytest.param(e)
+        for e in sorted(ALL)
+    ]
+
+
+class TestInstallGuardCoversEachEcosystem:
+    """One cell per ecosystem for "install shims and planners", so an ecosystem finished early is
+    not hidden behind one still being built."""
+
+    @pytest.mark.parametrize("ecosystem", install_cells())
+    def test_it_has_a_shim_with_a_planner_or_a_true_reason(self, ecosystem: str) -> None:
+        assert ecosystem in More.install_guard() or ecosystem in More.install_guard_reasons()
+
+    def test_a_pending_ecosystem_is_a_real_one(self) -> None:
+        assert INSTALL_PENDING <= ALL
+
+    def test_the_cells_are_exactly_what_the_feature_row_lacks(self) -> None:
+        lacking = ALL - More.install_guard() - set(More.install_guard_reasons())
+        assert lacking == INSTALL_PENDING

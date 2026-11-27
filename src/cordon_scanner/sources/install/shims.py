@@ -30,9 +30,26 @@ class ShimReport:
 
 
 class Shims:
-    TOOLS: ClassVar[tuple[str, ...]] = (
-        "npm", "pnpm", "yarn", "pip", "pip3", "uv", "poetry", "cargo", "go", "gem", "bundle", "dotnet", "dart", "flutter", "conda", "mamba", "composer", "mvn", "terraform", "tofu", "helm", "ansible-galaxy", "mix",
-    )  # fmt: skip
+    #: Each tool a shim is written for, and the ecosystem whose packages it installs. One table keyed
+    #: by tool, so an ecosystem's coverage is read from it and a tool cannot be added without one.
+    ECOSYSTEM: ClassVar[dict[str, str]] = {
+        "npm": "npm", "pnpm": "npm", "yarn": "npm",
+        "pip": "pypi", "pip3": "pypi", "uv": "pypi", "poetry": "pypi",
+        "cargo": "cargo", "go": "gomod", "gem": "rubygems", "bundle": "rubygems",
+        "dotnet": "nuget", "dart": "pub", "flutter": "pub", "conda": "conda", "mamba": "conda",
+        "composer": "composer", "mvn": "maven", "terraform": "terraform", "tofu": "terraform",
+        "helm": "helm", "ansible-galaxy": "ansible", "mix": "hex",
+    }  # fmt: skip
+
+    #: An ecosystem with no install tool, and why. Only where the thing itself does not exist.
+    NO_TOOL: ClassVar[dict[str, str]] = {
+        "actions": (
+            "GitHub Actions has no install command: the runner resolves each `uses:` reference "
+            "when a job starts, so there is nothing on the person's machine to put a shim in front of."
+        ),
+    }
+
+    TOOLS: ClassVar[tuple[str, ...]] = tuple(ECOSYSTEM)
 
     #: The Cordon command a shim runs, where it differs from the tool's name (`bundle` is Cordon's own
     #: offline-bundle command, so Bundler is `bundler`).

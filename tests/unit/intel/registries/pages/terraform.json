@@ -1,0 +1,89 @@
+{
+ "data": [
+  {
+   "type": "providers",
+   "id": "323",
+   "attributes": {
+    "alias": "aws",
+    "description": "Lifecycle management of AWS resources, including  EC2, Lambda, EKS, ECS, VPC, S3, RDS, DynamoDB, and more. This provider is maintained internally by the HashiCorp AWS Provider team.",
+    "downloads": 8659723560,
+    "featured": true,
+    "full-name": "hashicorp/aws",
+    "logo-url": "/images/providers/aws.png",
+    "name": "aws",
+    "namespace": "hashicorp",
+    "owner-name": "",
+    "robots-noindex": false,
+    "source": "https://github.com/hashicorp/terraform-provider-aws",
+    "tier": "official",
+    "unlisted": false,
+    "warning": ""
+   },
+   "links": {
+    "self": "/v2/providers/323"
+   }
+  },
+  {
+   "type": "providers",
+   "id": "365",
+   "attributes": {
+    "alias": "random",
+    "description": "Supports the use of randomness within Terraform configurations. This is a logical provider, which means that it works entirely within Terraform logic, and does not interact with any other services.",
+    "downloads": 3662037886,
+    "featured": false,
+    "full-name": "hashicorp/random",
+    "logo-url": "/images/providers/hashicorp.svg",
+    "name": "random",
+    "namespace": "hashicorp",
+    "owner-name": "",
+    "robots-noindex": false,
+    "source": "https://github.com/hashicorp/terraform-provider-random",
+    "tier": "official",
+    "unlisted": false,
+    "warning": ""
+   },
+   "links": {
+    "self": "/v2/providers/365"
+   }
+  },
+  {
+   "type": "providers",
+   "id": "354",
+   "attributes": {
+    "alias": "google",
+    "description": "Lifecycle management of GCP resources, including Compute Engine, Cloud Storage, Cloud SDK, Cloud SQL, GKE, BigQuery, Cloud Functions and more. This provider is collaboratively maintained by the Google Terraform Team at Google and the Terraform team at HashiCorp",
+    "downloads": 2912301379,
+    "featured": true,
+    "full-name": "hashicorp/google",
+    "logo-url": "/images/providers/google-cloud.svg",
+    "name": "google",
+    "namespace": "hashicorp",
+    "owner-name": "",
+    "robots-noindex": false,
+    "source": "https://github.com/hashicorp/terraform-provider-google",
+    "tier": "official",
+    "unlisted": false,
+    "warning": ""
+   },
+   "links": {
+    "self": "/v2/providers/354"
+   }
+  }
+ ],
+ "links": {
+  "first": "/v2/providers?page%5Bnumber%5D=1&page%5Bsize%5D=5&sort=-downloads",
+  "last": "/v2/providers?page%5Bnumber%5D=1573&page%5Bsize%5D=5&sort=-downloads",
+  "next": "/v2/providers?page%5Bnumber%5D=2&page%5Bsize%5D=5&sort=-downloads",
+  "prev": null
+ },
+ "meta": {
+  "pagination": {
+   "page-size": 5,
+   "current-page": 1,
+   "next-page": 2,
+   "prev-page": null,
+   "total-pages": 1573,
+   "total-count": 7864
+  }
+ }
+}

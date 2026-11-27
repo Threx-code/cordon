@@ -105,7 +105,7 @@ class HttpTransport:
         *,
         plain_hosts: frozenset[str] = frozenset(),
     ) -> dict[str, Any]:
-        from cordon_scanner.version import __version__
+        from cordon_scanner.version import USER_AGENT
 
         parsed_url = urllib.parse.urlsplit(url)
         plain_ok = (parsed_url.hostname or "").lower() in LOCAL_HOSTS | plain_hosts
@@ -120,7 +120,7 @@ class HttpTransport:
             headers={
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-                "User-Agent": f"cordon-scanner/{__version__}",
+                "User-Agent": USER_AGENT,
                 **headers,
             },
         )

@@ -44,36 +44,43 @@ So two filters, and the second is the one that makes a list this size safe:
 Each ecosystem records where its names came from, in the file header, because a
 security artefact whose provenance is not written down is not reviewable.
 
-Six ecosystems publish download-ranked data and are refreshed here. Maven Central
-and the Go module proxy publish no popularity signal at all -- Maven Central has
-no download API, and `index.golang.org` is a chronological feed -- so those two
-keep the curated in-code sets in `intel/real.py` and this script leaves them
-alone rather than fetching an unranked list and pretending it was ranked.
+Every supported ecosystem is covered, in one of two ways. A registry that publishes
+a popularity signal of its own (downloads, installs, stars, importers) is ranked by
+it and written to `<ecosystem>.txt`, an allowlist. A registry that publishes none
+-- Maven Central, CocoaPods, conda-forge, opam, vcpkg, Conan Center, the Bazel
+Central Registry, nixpkgs, the Swift Package Index -- is never pretended ranked: its
+whole index is sampled, every Nth name in the registry's own order, into
+`<ecosystem>.index.txt`, which nothing loads as an allowlist.
 """
 
 from __future__ import annotations
 
 import argparse
 import contextlib
+import csv
 import datetime as dt
+import gzip
+import io
 import json
 import os
 import re
 import sys
 import tempfile
 import time
+import tomllib
 import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 ROOT = next(
     (p for p in (Path.cwd(), *Path.cwd().parents) if (p / "src" / "cordon_scanner").is_dir()), None
 ) or sys.exit("run this from inside the Cordon repository")
 DATA = ROOT / "src" / "cordon_scanner" / "intel" / "data"
-USER_AGENT = "cordon-scanner package-intel refresh (+https://github.com/Threx-code/cordon)"
+#: A generic agent on purpose: a registry's access log must not learn who is asking, or about which repository.
+USER_AGENT = "Mozilla/5.0"
 TIMEOUT = 30
 
 #: Statuses that mean "not now" rather than "not ever", so a request carrying
@@ -103,6 +110,15 @@ MAX_BACKOFF = 60.0
 #: refusal outlasts the burst by minutes -- so the cheapest fix is not to trip it.
 #: This does not replace the retry; it makes the retry rare.
 PACE = 1.5
+
+#: Seconds between searches of GitHub, which allows an unauthenticated client ten a minute.
+SEARCH_PACE = 7.0
+
+#: Seconds between files of a static CDN, which does not rate-limit but is still not hammered.
+CDN_PACE = 0.05
+
+#: How many names an unranked registry's index file holds: every Nth name, N = ceil(size / this).
+INDEX_TARGET = 1_000
 
 
 class SourceUnavailable(RuntimeError):
@@ -496,6 +512,457 @@ class PackageIntelRefresh:
                 break
         return names, source
 
+    @staticmethod
+    def paged(url: str) -> object:
+        """One page of a registry that rate-limits: retried, and paced so the next page is not a burst.
+
+        A page that cannot be read raises `SourceUnavailable`, which fails the ecosystem. It never shortens
+        its list: a list cut short by a throttle reads downstream as the registry having shrunk.
+        """
+        payload = PackageIntelRefresh.fetch_json_retrying(url)
+        time.sleep(PACE)
+        return payload
+
+    @staticmethod
+    def hex_pm() -> tuple[list[tuple[str, int]], str]:
+        """Hex, for Elixir and Erlang, in all-time download order, from hex.pm's own package API.
+
+        The signal is `downloads.all`, the registry's own count; `sort=downloads` makes the order the
+        registry's too. Pages hold 100 packages and run until one is empty.
+        """
+        source = "https://hex.pm/api/packages"
+        names: list[tuple[str, int]] = []
+        for page in range(1, 61):
+            payload = PackageIntelRefresh.paged(f"{source}?sort=downloads&page={page}")
+            if not isinstance(payload, list) or not payload:
+                break
+            for entry in payload:
+                if not isinstance(entry, dict):
+                    continue
+                downloads = entry.get("downloads")
+                total = downloads.get("all") if isinstance(downloads, dict) else None
+                if isinstance(entry.get("name"), str) and isinstance(total, int):
+                    names.append((str(entry["name"]).lower(), total))
+        return names, source
+
+    @staticmethod
+    def hackage() -> tuple[list[tuple[str, int]], str]:
+        """Hackage, for Haskell, from the download table the registry publishes at `/packages/top`.
+
+        One request holds every package with its download count, so there is no paging to throttle.
+        """
+        source = "https://hackage.haskell.org/packages/top"
+        payload = PackageIntelRefresh.fetch_json_retrying(source)
+        if not isinstance(payload, list):
+            raise ValueError(f"{source} returned {type(payload).__name__}, expected a list")
+        names = [
+            (str(entry["packageName"]).lower(), int(entry["downloads"]))
+            for entry in payload
+            if isinstance(entry, dict)
+            and isinstance(entry.get("packageName"), str)
+            and isinstance(entry.get("downloads"), int)
+        ]
+        return names, source
+
+    @staticmethod
+    def artifact_hub() -> tuple[list[tuple[str, int]], str]:
+        """Helm charts, from Artifact Hub, ranked by stars.
+
+        Artifact Hub is the Helm project's own chart index (`helm search hub` reads it), and it publishes no
+        install counts, so its star count is the signal. A chart name held by several repositories keeps its
+        highest count, because the question asked of the list is whether a name is established anywhere.
+        """
+        source = "https://artifacthub.io/api/v1/packages/search"
+        best: dict[str, int] = {}
+        size = 60
+        for offset in range(0, 6000, size):
+            url = f"{source}?kind=0&sort=stars&limit={size}&offset={offset}"
+            payload = PackageIntelRefresh.as_object(PackageIntelRefresh.paged(url), url)
+            entries = payload.get("packages")
+            if not isinstance(entries, list) or not entries:
+                break
+            for entry in entries:
+                if isinstance(entry, dict) and isinstance(entry.get("name"), str):
+                    stars = int(entry.get("stars") or 0)
+                    name = str(entry["name"]).lower()
+                    best[name] = max(best.get(name, 0), stars)
+            if len(entries) < size:
+                break
+        return sorted(best.items()), source
+
+    @staticmethod
+    def terraform_providers() -> tuple[list[tuple[str, int]], str]:
+        """Terraform providers, in download order, from the registry's own v2 API.
+
+        Modules are not listed: a module's archive names nothing (see `PublishedMetadata.MODULE_REASON`),
+        so only a provider's name is something a release can be compared with.
+        """
+        source = "https://registry.terraform.io/v2/providers"
+        names: list[tuple[str, int]] = []
+        for page in range(1, 41):
+            url = f"{source}?page%5Bsize%5D=100&page%5Bnumber%5D={page}&sort=-downloads"
+            payload = PackageIntelRefresh.as_object(PackageIntelRefresh.paged(url), url)
+            data = payload.get("data")
+            if not isinstance(data, list) or not data:
+                break
+            for entry in data:
+                attributes = entry.get("attributes") if isinstance(entry, dict) else None
+                if (
+                    isinstance(attributes, dict)
+                    and isinstance(attributes.get("name"), str)
+                    and isinstance(attributes.get("downloads"), int)
+                ):
+                    names.append((str(attributes["name"]).lower(), attributes["downloads"]))
+        return names, source
+
+    @staticmethod
+    def julia() -> tuple[list[tuple[str, int]], str]:
+        """Julia, from the request counts the Julia project publishes for its package servers.
+
+        `package_requests.csv.gz` counts requests per package UUID; the General registry's `Registry.toml`
+        maps each UUID to its name. Both are the Julia project's own files.
+        """
+        registry = "https://raw.githubusercontent.com/JuliaRegistries/General/master/Registry.toml"
+        logs = (
+            "https://julialang-logs.s3.amazonaws.com/public_outputs/current/package_requests.csv.gz"
+        )
+        packages = tomllib.loads(
+            PackageIntelRefresh.fetch(registry, timeout=120).decode("utf-8")
+        ).get("packages")
+        if not isinstance(packages, dict):
+            raise ValueError(f"{registry} holds no packages table")
+        by_uuid = {
+            uuid: str(row["name"])
+            for uuid, row in packages.items()
+            if isinstance(row, dict) and isinstance(row.get("name"), str)
+        }
+        totals: dict[str, int] = {}
+        text = gzip.decompress(PackageIntelRefresh.fetch(logs, timeout=300)).decode("utf-8")
+        for row in csv.DictReader(io.StringIO(text)):
+            name = by_uuid.get(row.get("package_uuid", ""))
+            if name and row.get("status") in {"200", "302"}:
+                totals[name.lower()] = totals.get(name.lower(), 0) + int(
+                    row.get("request_count") or 0
+                )
+        return sorted(totals.items()), f"{registry}, {logs}"
+
+    @staticmethod
+    def galaxy() -> tuple[list[tuple[str, int]], str]:
+        """Ansible collections, from Galaxy's own index, ranked by the download count each entry carries.
+
+        The index endpoint cannot sort, so every page is read and the sorting is done here. The whole index
+        is a few thousand collections.
+        """
+        source = (
+            "https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/index/"
+        )
+        names: list[tuple[str, int]] = []
+        size = 100
+        for offset in range(0, 20_000, size):
+            url = f"{source}?limit={size}&offset={offset}"
+            payload = PackageIntelRefresh.as_object(PackageIntelRefresh.paged(url), url)
+            data = payload.get("data")
+            if not isinstance(data, list) or not data:
+                break
+            for entry in data:
+                if (
+                    isinstance(entry, dict)
+                    and isinstance(entry.get("namespace"), str)
+                    and isinstance(entry.get("name"), str)
+                ):
+                    names.append(
+                        (
+                            f"{entry['namespace']}.{entry['name']}".lower(),
+                            int(entry.get("download_count") or 0),
+                        )
+                    )
+            if len(data) < size:
+                break
+        return sorted(names, key=lambda item: -item[1]), source
+
+    #: Words to search Docker Hub and pkg.go.dev with. Neither lists its whole index, so breadth comes from
+    #: many queries and the order comes from each registry's own count (pull count, importer count).
+    SEARCH_TERMS: ClassVar[tuple[str, ...]] = (
+        "nginx", "redis", "postgres", "mysql", "mongo", "node", "python", "golang", "java", "ruby", "php",
+        "alpine", "ubuntu", "debian", "centos", "busybox", "traefik", "grafana", "prometheus", "elastic",
+        "kibana", "kafka", "rabbitmq", "memcached", "wordpress", "jenkins", "gitlab", "vault", "consul",
+        "envoy", "haproxy", "caddy", "minio", "etcd", "docker", "kubernetes", "terraform", "ansible",
+        "runner", "builder", "base", "web", "api", "server", "client", "proxy", "cache", "queue", "db",
+        "auth", "log", "metrics", "test", "http", "json", "yaml", "cli", "sql", "crypto", "uuid", "mock",
+        "config", "grpc", "cloud", "aws", "gcp", "azure",
+    )  # fmt: skip
+
+    @staticmethod
+    def docker_hub() -> tuple[list[tuple[str, int]], str]:
+        """Container images, from Docker Hub, ranked by pull count.
+
+        The official images come first, from their own listing in pull order. Community images come from
+        Hub's search over many queries: Hub lists no whole index, so each query contributes its hits and
+        the pull count Hub reports for each decides the order.
+        """
+        best: dict[str, int] = {}
+        official = "https://hub.docker.com/v2/repositories/library/"
+        # Hub answers 403 past the first 100 results of this listing: one page, which is its top hundred.
+        url = f"{official}?page_size=100&ordering=-pull_count"
+        payload = PackageIntelRefresh.as_object(PackageIntelRefresh.paged(url), url)
+        for entry in cast("list[Any]", payload.get("results") or []):
+            if isinstance(entry, dict) and isinstance(entry.get("name"), str):
+                best[str(entry["name"]).lower()] = int(entry.get("pull_count") or 0)
+        search = "https://hub.docker.com/v2/search/repositories/"
+        for term in PackageIntelRefresh.SEARCH_TERMS:
+            # Hub answers 403 past the first 200 results of a query, so two pages of 100.
+            for page in range(1, 3):
+                address = f"{search}?query={term}&page_size=100&page={page}"
+                payload = PackageIntelRefresh.as_object(PackageIntelRefresh.paged(address), address)
+                results = payload.get("results")
+                if not isinstance(results, list) or not results:
+                    break
+                for entry in results:
+                    if isinstance(entry, dict) and isinstance(entry.get("repo_name"), str):
+                        name = str(entry["repo_name"]).lower()
+                        best[name] = max(best.get(name, 0), int(entry.get("pull_count") or 0))
+        return sorted(best.items()), f"{official}, {search}"
+
+    @staticmethod
+    def pkg_go_dev() -> tuple[list[tuple[str, int]], str]:
+        """Go modules, from pkg.go.dev, ranked by how many other modules import them.
+
+        pkg.go.dev is the Go project's own index and `importedByCounts` its own measure. It lists no whole
+        index, so each query in `SEARCH_TERMS` contributes its hits and the count decides the order. The
+        standard library (module `std`) is not a published module and is left out.
+        """
+        source = "https://pkg.go.dev/v1/search"
+        best: dict[str, int] = {}
+        for term in PackageIntelRefresh.SEARCH_TERMS:
+            token = ""
+            for _ in range(3):
+                url = f"{source}?q={urllib.parse.quote(term)}&limit=100" + (
+                    f"&token={token}" if token else ""
+                )
+                payload = PackageIntelRefresh.as_object(PackageIntelRefresh.paged(url), url)
+                items = payload.get("items")
+                if not isinstance(items, list) or not items:
+                    break
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    module = item.get("modulePath")
+                    counts = item.get("importedByCounts")
+                    if isinstance(module, str) and module != "std" and isinstance(counts, dict):
+                        best[module.lower()] = max(
+                            best.get(module.lower(), 0), int(counts.get("modules") or 0)
+                        )
+                token = str(payload.get("nextPageToken") or "")
+                if not token:
+                    break
+        return sorted(best.items()), source
+
+    @staticmethod
+    def github_actions() -> tuple[list[tuple[str, int]], str]:
+        """GitHub Actions, from GitHub's own repository search, ranked by stars.
+
+        Actions have no registry of their own: the Marketplace has no API, and an action is the repository
+        that holds its `action.yml`. Stars are GitHub's own signal, and the `github-action` topic is the
+        repository owner's own statement that the repository is one. The search is unauthenticated and
+        returns at most 1,000 results, ten pages, so it is paced to stay inside GitHub's limit of ten
+        searches a minute and never carries a token.
+        """
+        source = "https://api.github.com/search/repositories"
+        names: list[tuple[str, int]] = []
+        for page in range(1, 11):
+            url = f"{source}?q=topic:github-action&sort=stars&order=desc&per_page=100&page={page}"
+            payload = PackageIntelRefresh.as_object(
+                PackageIntelRefresh.fetch_json_retrying(url), url
+            )
+            time.sleep(SEARCH_PACE)
+            items = payload.get("items")
+            if not isinstance(items, list) or not items:
+                break
+            for item in items:
+                if isinstance(item, dict) and isinstance(item.get("full_name"), str):
+                    names.append(
+                        (str(item["full_name"]).lower(), int(item.get("stargazers_count") or 0))
+                    )
+        return names, source
+
+    # ---------------------------------------------------------------------------
+    # Registries with no popularity signal. They are not allowlists: `RealPackages` reads `<ecosystem>.txt`
+    # and never `<ecosystem>.index.txt`, so a squat inside an index is not made safe by being listed.
+    # ---------------------------------------------------------------------------
+
+    @staticmethod
+    def sampled(names: list[str], source: str) -> tuple[list[str], str, int, int]:
+        """Every Nth name of the whole index in the registry's own order, N = ceil(size / INDEX_TARGET).
+
+        A deterministic sample that covers the whole alphabet and the whole age of the registry. The first
+        thousand names of an alphabetical index are all names beginning with a digit or an `a`. Returns the
+        sample, its source, the whole index's size and N.
+        """
+        step = max(1, -(-len(names) // INDEX_TARGET))
+        return names[::step], source, len(names), step
+
+    @staticmethod
+    def fetch_text_retrying(url: str) -> str:
+        """A text page from a host that is merely busy sometimes: retried, never shortened."""
+        last: Exception | None = None
+        for attempt in range(RETRIES):
+            try:
+                return PackageIntelRefresh.fetch(url).decode("utf-8", "replace")
+            except urllib.error.HTTPError as exc:
+                with contextlib.suppress(Exception):
+                    exc.close()
+                if exc.code not in RETRYABLE_STATUS:
+                    raise
+                last = exc
+            except (urllib.error.URLError, TimeoutError) as exc:
+                last = exc
+            if attempt < RETRIES - 1:
+                time.sleep(min(BACKOFF * (2**attempt), MAX_BACKOFF))
+        raise SourceUnavailable(f"{url} still refusing after {RETRIES} attempts: {last}")
+
+    @staticmethod
+    def github_tree(repository: str, reference: str, *, recursive: bool = False) -> list[str]:
+        """The entries of a directory of a public repository, in the order GitHub lists them.
+
+        Unauthenticated and without a token. The directory listing is the registry's own index for the
+        registries whose index is a directory of a repository (opam, vcpkg, Conan Center, the Bazel Central
+        Registry, nixpkgs).
+        """
+        url = f"https://api.github.com/repos/{repository}/git/trees/{reference}" + (
+            "?recursive=1" if recursive else ""
+        )
+        payload = PackageIntelRefresh.as_object(PackageIntelRefresh.fetch_json_retrying(url), url)
+        if payload.get("truncated"):
+            raise ValueError(f"{url} was truncated: the index is not whole")
+        tree = payload.get("tree")
+        if not isinstance(tree, list):
+            raise ValueError(f"{url} holds no tree")
+        return [
+            str(e["path"]) for e in tree if isinstance(e, dict) and isinstance(e.get("path"), str)
+        ]
+
+    @staticmethod
+    def opam() -> tuple[list[str], str, int, int]:
+        """opam, for OCaml: the directories of `packages/` in the opam repository."""
+        names = PackageIntelRefresh.github_tree("ocaml/opam-repository", "master:packages")
+        return PackageIntelRefresh.sampled(
+            names, "https://github.com/ocaml/opam-repository/tree/master/packages"
+        )
+
+    @staticmethod
+    def vcpkg() -> tuple[list[str], str, int, int]:
+        """vcpkg, for C and C++: the directories of `ports/` in the vcpkg repository."""
+        names = PackageIntelRefresh.github_tree("microsoft/vcpkg", "master:ports")
+        return PackageIntelRefresh.sampled(
+            names, "https://github.com/microsoft/vcpkg/tree/master/ports"
+        )
+
+    @staticmethod
+    def conan() -> tuple[list[str], str, int, int]:
+        """Conan Center: the directories of `recipes/` in the Conan Center Index repository."""
+        source = "https://github.com/conan-io/conan-center-index/tree/master/recipes"
+        names = PackageIntelRefresh.github_tree("conan-io/conan-center-index", "master:recipes")
+        return PackageIntelRefresh.sampled(names, source)
+
+    @staticmethod
+    def bazel() -> tuple[list[str], str, int, int]:
+        """Bazel modules: the directories of `modules/` in the Bazel Central Registry."""
+        source = "https://github.com/bazelbuild/bazel-central-registry/tree/main/modules"
+        names = PackageIntelRefresh.github_tree("bazelbuild/bazel-central-registry", "main:modules")
+        return PackageIntelRefresh.sampled(names, source)
+
+    @staticmethod
+    def nix() -> tuple[list[str], str, int, int]:
+        """Nix, from nixpkgs' `pkgs/by-name`: each package is `<shard>/<name>/package.nix`."""
+        paths = PackageIntelRefresh.github_tree(
+            "NixOS/nixpkgs", "master:pkgs/by-name", recursive=True
+        )
+        names = sorted(
+            {p.split("/")[1] for p in paths if p.count("/") == 2 and p.endswith("/package.nix")}
+        )
+        return PackageIntelRefresh.sampled(
+            names, "https://github.com/NixOS/nixpkgs/tree/master/pkgs/by-name"
+        )
+
+    @staticmethod
+    def conda() -> tuple[list[str], str, int, int]:
+        """conda-forge: the packages named in the channel's own `channeldata.json`, in its order."""
+        source = "https://conda.anaconda.org/conda-forge/channeldata.json"
+        payload = json.loads(PackageIntelRefresh.fetch(source, timeout=300))
+        packages = payload.get("packages") if isinstance(payload, dict) else None
+        if not isinstance(packages, dict):
+            raise ValueError(f"{source} holds no packages table")
+        return PackageIntelRefresh.sampled(list(packages), source)
+
+    @staticmethod
+    def swift() -> tuple[list[str], str, int, int]:
+        """Swift packages, from the Swift Package Index's `packages.json` (Apache-2.0).
+
+        Swift has no registry: a package is a git repository, and the community-run Swift Package Index is the
+        one list of them, so its list is the index. Each entry is a repository URL; the name is the repository's.
+        """
+        source = (
+            "https://raw.githubusercontent.com/SwiftPackageIndex/PackageList/main/packages.json"
+        )
+        payload = PackageIntelRefresh.fetch_json(source, timeout=120)
+        if not isinstance(payload, list):
+            raise ValueError(f"{source} returned {type(payload).__name__}, expected a list")
+        names = [
+            str(url).rstrip("/").removesuffix(".git").rsplit("/", 1)[-1].lower()
+            for url in payload
+            if isinstance(url, str)
+        ]
+        return PackageIntelRefresh.sampled(names, source)
+
+    @staticmethod
+    def cocoapods() -> tuple[list[str], str, int, int]:
+        """CocoaPods: every pod named in the CDN's 4,096 shard files, `all_pods_versions_<a>_<b>_<c>.txt`."""
+        source = "https://cdn.cocoapods.org"
+        names: set[str] = set()
+        digits = "0123456789abcdef"
+        for a in digits:
+            for b in digits:
+                for c in digits:
+                    url = f"{source}/all_pods_versions_{a}_{b}_{c}.txt"
+                    body = PackageIntelRefresh.fetch_text_retrying(url)
+                    names.update(line.split("/", 1)[0] for line in body.splitlines() if "/" in line)
+                    time.sleep(CDN_PACE)
+        return PackageIntelRefresh.sampled(sorted(names), f"{source}/all_pods_versions_*.txt")
+
+    @staticmethod
+    def maven() -> tuple[list[str], str, int, int]:
+        """Maven Central: `group:artifact` at every Nth place of the search index, N from its size.
+
+        Central publishes no popularity signal and its index has millions of entries, so the index is
+        sampled where it is: one request per sampled place, at `start = i * N`, in the order Central's
+        own search returns. The returned list is the sample, and the index size is its `numFound`.
+        """
+        source = "https://search.maven.org/solrsearch/select"
+        first = PackageIntelRefresh.as_object(
+            PackageIntelRefresh.fetch_json_retrying(f"{source}?q=*:*&rows=1&start=0&wt=json"),
+            source,
+        )
+        response = first.get("response")
+        found = response.get("numFound") if isinstance(response, dict) else None
+        if not isinstance(found, int) or found < 1:
+            raise ValueError(f"{source} reported no index size")
+        step = max(1, -(-found // INDEX_TARGET))
+        names: list[str] = []
+        for start in range(0, found, step):
+            url = f"{source}?q=*:*&rows=1&start={start}&wt=json"
+            payload = PackageIntelRefresh.as_object(PackageIntelRefresh.paged(url), url)
+            body = payload.get("response")
+            docs = body.get("docs") if isinstance(body, dict) else None
+            if (
+                isinstance(docs, list)
+                and docs
+                and isinstance(docs[0], dict)
+                and isinstance(docs[0].get("id"), str)
+            ):
+                names.append(str(docs[0]["id"]).lower())
+        return names, source, found, step
+
+    @staticmethod
     def pub_dev() -> tuple[list[tuple[str, int]], str]:
         """pub.dev, for Dart and Flutter, in popularity order.
 
@@ -717,6 +1184,8 @@ class PackageIntelRefresh:
     def write(
         ecosystem: str, names: list[str], *, source: str, threshold: int, fetched: int
     ) -> None:
+        # A name two sources hold (a provider under two namespaces, a package spelled in two cases) is one name.
+        names = sorted(set(names))
         DATA.mkdir(parents=True, exist_ok=True)
         path = DATA / f"{ecosystem}.txt"
 
@@ -801,9 +1270,35 @@ class PackageIntelRefresh:
         print(f"  wrote {path.relative_to(ROOT)} ({len(refused)} refused)")
 
     @staticmethod
+    def write_index(ecosystem: str, names: list[str], *, source: str, size: int, step: int) -> None:
+        """An unranked registry's strided index, in `<ecosystem>.index.txt`.
+
+        Not an allowlist, and written to a name that `RealPackages` never reads: a registry with no popularity
+        signal cannot tell its established names from its squats, so listing a name here must not make it safe.
+        """
+        header = [
+            f"# {ecosystem} package names, a sample of the registry's whole index. Generated; do not edit by hand.",
+            f"# Regenerate with: python3 scripts/refresh/refresh_package_intel.py --only {ecosystem}",
+            f"# Source:     {source}",
+            f"# Index size: {size:,} names",
+            f"# Stride:     every {step:,}th name in the registry's own order (N = ceil({size:,} / {INDEX_TARGET:,}))",
+            f"# Kept:       {len(names):,}",
+            f"# Refreshed:  {dt.date.today().isoformat()}",
+            "#",
+            "# NOT an allowlist. This registry publishes no popularity signal, so nothing here is known to be",
+            "# established; the file is read by measurements and by look-alike comparison, never by `RealPackages`.",
+        ]
+        PackageIntelRefresh._write_atomic(
+            DATA / f"{ecosystem}.index.txt", "\n".join([*header, *names, ""])
+        )
+        print(f"  wrote {ecosystem}.index.txt ({len(names):,} names of {size:,}, every {step:,}th)")
+
+    @staticmethod
     def main() -> int:
         parser = argparse.ArgumentParser(description=__doc__)
-        parser.add_argument("--only", nargs="+", choices=sorted(SOURCES), metavar="ECOSYSTEM")
+        parser.add_argument(
+            "--only", nargs="+", choices=sorted([*SOURCES, *INDEXES]), metavar="ECOSYSTEM"
+        )
         parser.add_argument(
             "--check",
             action="store_true",
@@ -812,9 +1307,22 @@ class PackageIntelRefresh:
         args = parser.parse_args()
 
         failed: list[str] = []
-        for ecosystem in args.only or sorted(SOURCES):
-            fetcher, threshold = SOURCES[ecosystem]
+        for ecosystem in args.only or sorted([*SOURCES, *INDEXES]):
             print(f"{ecosystem}:")
+            if ecosystem in INDEXES:
+                try:
+                    sample, source, size, step = INDEXES[ecosystem]()
+                except Exception as exc:  # a broken source must not abort the rest  # noqa: BLE001
+                    print(f"  FAILED: {type(exc).__name__}: {exc}", file=sys.stderr)
+                    failed.append(ecosystem)
+                    continue
+                print(f"  {size:,} in the index, every {step:,}th kept: {len(sample):,}")
+                if not args.check:
+                    PackageIntelRefresh.write_index(
+                        ecosystem, sample, source=source, size=size, step=step
+                    )
+                continue
+            fetcher, threshold = SOURCES[ecosystem]
             try:
                 ranked, source = fetcher()
             except Exception as exc:  # a broken source must not abort the rest  # noqa: BLE001
@@ -884,29 +1392,62 @@ SOURCES: dict[str, tuple[Callable[[], tuple[list[tuple[str, int]], str]], int]] 
     "homebrew": (PackageIntelRefresh.homebrew, 1_000),
     # Lifetime downloads on Open VSX: the extensions an editor's users actually install.
     "vscode": (PackageIntelRefresh.openvsx, 1_000),
+    # All-time downloads, hex.pm's own count.
+    "hex": (PackageIntelRefresh.hex_pm, 10_000),
+    # Downloads, from Hackage's own table.
+    "hackage": (PackageIntelRefresh.hackage, 100),
+    # Stars on Artifact Hub, the Helm project's index; it publishes no install counts.
+    "helm": (PackageIntelRefresh.artifact_hub, 3),
+    # All-time provider downloads, the Terraform registry's own count.
+    "terraform": (PackageIntelRefresh.terraform_providers, 10_000),
+    # Requests to the Julia package servers, from the Julia project's public logs.
+    "julia": (PackageIntelRefresh.julia, 1_000),
+    # Download counts Galaxy carries on each collection.
+    "ansible": (PackageIntelRefresh.galaxy, 1_000),
+    # Pulls, Docker Hub's own count.
+    "image": (PackageIntelRefresh.docker_hub, 100_000),
+    # Modules that import the module, pkg.go.dev's own count.
+    "gomod": (PackageIntelRefresh.pkg_go_dev, 50),
+    # Stars on GitHub, where an action lives; GitHub's own signal.
+    "actions": (PackageIntelRefresh.github_actions, 5),
 }
+
+#: Ecosystem -> fetcher of the registry's whole index, for registries that publish no popularity signal at
+#: all. Each returns (names, source, whole index size, N) and the names are every Nth of the index in the
+#: registry's own order. They write `<ecosystem>.index.txt`, which is not an allowlist.
+#:
+#: `gradle` has no entry: it resolves Maven artifacts, so its index is Maven's (`maven.index.txt`), read
+#: through `INDEX_SHARED`, not copied.
+INDEXES: dict[str, Callable[[], tuple[list[str], str, int, int]]] = {
+    "maven": PackageIntelRefresh.maven,
+    "cocoapods": PackageIntelRefresh.cocoapods,
+    "conda": PackageIntelRefresh.conda,
+    "opam": PackageIntelRefresh.opam,
+    "vcpkg": PackageIntelRefresh.vcpkg,
+    "conan": PackageIntelRefresh.conan,
+    "bazel": PackageIntelRefresh.bazel,
+    "nix": PackageIntelRefresh.nix,
+    "swift": PackageIntelRefresh.swift,
+}
+
+#: An ecosystem that shares another's index file, and whose.
+INDEX_SHARED = {"gradle": "maven"}
 
 #: Names per cranlogs request: the API takes a comma-separated list in the path.
 CRAN_BATCH = 100
 
-#: Supported ecosystems this script does not refresh, and why. Listed rather than
-#: omitted, because an ecosystem that is silently absent looks like one that was
-#: covered.
+#: What each registry's list is, and why, so an ecosystem is never silently absent.
 #:
-#: `maven`, `gradle`: Maven Central publishes no download statistics and no
-#: popularity ordering, so there is nothing to rank by. A curated set in
-#: `intel/real.py` carries them.
+#: Ranked by the registry's own count, written to `<ecosystem>.txt` (an allowlist): the ten registries that
+#: publish downloads, plus `hex`, `hackage`, `helm`, `terraform`, `julia`, `ansible`, `image`, `gomod` and
+#: `actions` (see `SOURCES` for each one's signal).
 #:
-#: `gomod`: `index.golang.org` is a chronological feed of every module version
-#: ever published. Fetching it would produce a list in publication order, which is
-#: not a popularity signal and would allowlist every squat in it.
+#: No ranking at all, written to `<ecosystem>.index.txt` (never an allowlist): `maven`, `cocoapods`,
+#: `conda`, `opam`, `vcpkg`, `conan`, `bazel`, `nix` and `swift` (see `INDEXES`). `gradle` reads Maven's file.
+#: `index.golang.org` is a chronological feed, which is why `gomod` is ranked from pkg.go.dev instead.
 #:
-#: `cocoapods`: the Specs repository is the whole registry with no ranking.
-#:
-#: An earlier version of this script also fetched Hex, for Elixir. Cordon has no
-#: Hex ecosystem, so the file it wrote was read by nothing -- three thousand names
-#: that looked like coverage. It returns when the ecosystem does.
-UNRANKED = ("maven", "gradle", "gomod", "cocoapods")
+#: `hex` returns after an earlier version of this script wrote a file that nothing read: the ecosystem is
+#: registered now, and `RealPackages` reads `hex.txt`.
 
 
 #: A name is refused only if its look-alike is this many times more downloaded.

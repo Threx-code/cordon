@@ -50,6 +50,7 @@ from cordon_scanner.intel.advisories.advisories import (
     DatabaseMeta,
 )
 from cordon_scanner.intel.advisories.advisory_text import AdvisoryTextSymbols
+from cordon_scanner.version import USER_AGENT
 
 OSV_HOST = "osv-vulnerabilities.storage.googleapis.com"
 
@@ -73,8 +74,6 @@ a scan target's archive."""
 MAX_UNCOMPRESSED_RECORD_BYTES = 8 << 20
 """One vulnerability record's JSON. A record this large is not a normal OSV
 entry and is not read past this bound."""
-
-USER_AGENT = "cordon-scanner (+https://github.com/Threx-code/cordon)"
 
 #: cordon ecosystem id -> OSV's own ecosystem name in its bulk export paths.
 #: https://ossf.github.io/osv-schema/#affectedpackage-field lists the set.

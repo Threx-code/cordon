@@ -32,13 +32,12 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 
 from cordon_sandbox.isolation import IsolationError
+from cordon_scanner.version import USER_AGENT
 
 TIMEOUT_SECONDS = 30.0
 MAX_ARTEFACT_BYTES = 256 << 20
 """Ceiling on what will be downloaded. A package larger than this is not
 something to analyse by accident."""
-
-USER_AGENT = "cordon-sandbox (+https://github.com/Threx-code/cordon)"
 
 ALLOWED_HOSTS = frozenset(
     {

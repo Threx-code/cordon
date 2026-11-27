@@ -52,10 +52,20 @@ package is `cordon_scanner` for the same reason, matching the distribution name,
 which was already `cordon-scanner`.
 """
 
+USER_AGENT = f"{PROGRAM}/{__version__}"
+"""The one agent every request the product makes carries: its name and version.
+
+A registry expects a client to say what it is (GitHub refuses an empty agent, crates.io asks for one), so the
+shipped product names itself. It names no repository and no person: the product runs on customers' machines
+and a header is read by whoever keeps the registry's logs. `tests/unit/foundation/test_one_user_agent.py`
+holds that every request in `src/` takes its agent from here.
+"""
+
 __all__ = [
     "ENGINE_API_VERSION",
     "PROGRAM",
     "RULEPACK_VERSION",
     "SCHEMA_VERSION",
+    "USER_AGENT",
     "__version__",
 ]
