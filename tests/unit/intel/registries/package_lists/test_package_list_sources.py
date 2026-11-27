@@ -1,6 +1,6 @@
 """Each registry's source reads that registry's real response.
 
-The pages in `pages/` are real responses from each registry's public API (see `pages/CAPTURES.md`), trimmed to whole
+The pages in `pages_captures/` are real responses from each registry's public API (see `pages_captures/CAPTURES.md`), trimmed to whole
 entries. The fetchers are run against them with the network replaced, so a registry that changes its response
 shape fails here instead of writing a short list.
 """
@@ -22,7 +22,7 @@ from support import ROOT
 
 
 class Pages:
-    DIRECTORY = ROOT / "tests" / "unit" / "intel" / "registries" / "package_lists" / "pages"
+    DIRECTORY = ROOT / "tests" / "unit" / "intel" / "registries" / "package_lists" / "pages_captures"
 
     @classmethod
     def read(cls, name: str) -> Any:

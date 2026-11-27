@@ -1,0 +1,99 @@
+{
+ "allVersions": {
+  "latest": "https://open-vsx.org/api/VMware/vscode-boot-dev-pack/latest",
+  "0.2.2": "https://open-vsx.org/api/VMware/vscode-boot-dev-pack/0.2.2",
+  "0.2.1": "https://open-vsx.org/api/VMware/vscode-boot-dev-pack/0.2.1",
+  "0.1.0": "https://open-vsx.org/api/VMware/vscode-boot-dev-pack/0.1.0",
+  "0.0.9": "https://open-vsx.org/api/VMware/vscode-boot-dev-pack/0.0.9"
+ },
+ "allVersionsUrl": "https://open-vsx.org/api/VMware/vscode-boot-dev-pack/versions",
+ "averageRating": 5.0,
+ "bugs": "https://github.com/spring-projects/sts4/issues",
+ "bundledExtensions": [
+  {
+   "extension": "vscode-spring-boot",
+   "namespace": "vmware",
+   "url": "https://open-vsx.org/api/vmware/vscode-spring-boot"
+  },
+  {
+   "extension": "vscode-spring-initializr",
+   "namespace": "vscjava",
+   "url": "https://open-vsx.org/api/vscjava/vscode-spring-initializr"
+  },
+  {
+   "extension": "vscode-spring-boot-dashboard",
+   "namespace": "vscjava",
+   "url": "https://open-vsx.org/api/vscjava/vscode-spring-boot-dashboard"
+  }
+ ],
+ "categories": [
+  "Programming Languages",
+  "Linters",
+  "Extension Packs"
+ ],
+ "dependencies": [],
+ "deprecated": false,
+ "description": "A collection of extensions for developing Spring Boot applications",
+ "displayName": "Spring Boot Extension Pack",
+ "downloadCount": 498676,
+ "downloadSizes": {
+  "universal": 260463
+ },
+ "downloadable": true,
+ "downloads": {
+  "universal": "https://open-vsx.org/api/VMware/vscode-boot-dev-pack/0.2.2/file/VMware.vscode-boot-dev-pack-0.2.2.vsix"
+ },
+ "engines": {
+  "vscode": "^1.26.0"
+ },
+ "extensionKind": [
+  "workspace",
+  "web"
+ ],
+ "files": {
+  "manifest": "https://open-vsx.org/api/VMware/vscode-boot-dev-pack/0.2.2/file/package.json",
+  "readme": "https://open-vsx.org/api/VMware/vscode-boot-dev-pack/0.2.2/file/readme.md",
+  "icon": "https://open-vsx.org/api/VMware/vscode-boot-dev-pack/0.2.2/file/STS4-256x256.png",
+  "vsixmanifest": "https://open-vsx.org/api/VMware/vscode-boot-dev-pack/0.2.2/file/extension.vsixmanifest",
+  "download": "https://open-vsx.org/api/VMware/vscode-boot-dev-pack/0.2.2/file/VMware.vscode-boot-dev-pack-0.2.2.vsix",
+  "signature": "https://open-vsx.org/api/VMware/vscode-boot-dev-pack/0.2.2/file/VMware.vscode-boot-dev-pack-0.2.2.sigzip",
+  "sha256": "https://open-vsx.org/api/VMware/vscode-boot-dev-pack/0.2.2/file/VMware.vscode-boot-dev-pack-0.2.2.sha256",
+  "publicKey": "https://open-vsx.org/api/-/public-key/14ccb407-4e79-41ed-be5a-6d608325c45a"
+ },
+ "galleryColor": "#0F3D5F",
+ "galleryTheme": "dark",
+ "homepage": "https://github.com/spring-projects/sts4",
+ "license": "EPL-1.0",
+ "localizedLanguages": [],
+ "name": "vscode-boot-dev-pack",
+ "namespace": "VMware",
+ "namespaceDisplayName": "VMware",
+ "namespaceUrl": "https://open-vsx.org/api/VMware",
+ "preRelease": false,
+ "preview": false,
+ "publishedBy": {
+  "avatarUrl": "https://avatars.githubusercontent.com/u/107705?v=4",
+  "fullName": "Martin Lippert",
+  "homepage": "https://github.com/martinlippert",
+  "loginName": "martinlippert",
+  "provider": "github"
+ },
+ "publishedWithTrustedPublishing": false,
+ "repository": "https://github.com/spring-projects/sts4.git",
+ "reviewCount": 1,
+ "reviewsUrl": "https://open-vsx.org/api/VMware/vscode-boot-dev-pack/reviews",
+ "sponsorLink": "",
+ "tags": [
+  "__web_extension",
+  "java",
+  "spring-boot",
+  "yaml"
+ ],
+ "targetPlatform": "universal",
+ "timestamp": "2025-01-28T08:06:27.092386Z",
+ "verified": true,
+ "version": "0.2.2",
+ "versionAlias": [
+  "latest"
+ ]
+}

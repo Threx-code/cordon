@@ -1,0 +1,99 @@
+{
+ "formulae": [
+  {
+   "name": "cowsay",
+   "full_name": "cowsay",
+   "tap": "homebrew/core",
+   "oldnames": [],
+   "aliases": [
+    "cowthink"
+   ],
+   "versioned_formulae": [],
+   "desc": "Apjanke's fork of the classic cowsay project",
+   "license": "GPL-3.0-only",
+   "homepage": "https://cowsay.diamonds",
+   "versions": {
+    "stable": "3.8.4",
+    "head": "HEAD",
+    "bottle": true
+   },
+   "urls": {
+    "stable": {
+     "url": "https://github.com/cowsay-org/cowsay/archive/refs/tags/v3.8.4.tar.gz",
+     "tag": null,
+     "revision": null,
+     "using": null,
+     "checksum": "c15bc10712835d3a9bcda780dc9453362567bf48d1185905dc7ef2334d79aadd"
+    },
+    "head": {
+     "url": "https://github.com/cowsay-org/cowsay.git",
+     "branch": "main",
+     "using": null
+    }
+   },
+   "patches": [],
+   "local_patch_checksums": {},
+   "revision": 0,
+   "version_scheme": 0,
+   "compatibility_version": null,
+   "autobump": true,
+   "no_autobump_message": null,
+   "skip_livecheck": false,
+   "bottle": {
+    "stable": {
+     "rebuild": 0,
+     "root_url": "https://ghcr.io/v2/homebrew/core",
+     "files": {
+      "all": {
+       "cellar": ":any_skip_relocation",
+       "url": "https://ghcr.io/v2/homebrew/core/cowsay/blobs/sha256:345e99255a69e9cb188a5a8e6bd8e6f50c334830c8a72877fc6b504c95e5cbd1",
+       "sha256": "345e99255a69e9cb188a5a8e6bd8e6f50c334830c8a72877fc6b504c95e5cbd1"
+      }
+     }
+    }
+   },
+   "pour_bottle_only_if": null,
+   "keg_only": false,
+   "keg_only_reason": null,
+   "options": [],
+   "build_dependencies": [],
+   "dependencies": [],
+   "test_dependencies": [],
+   "recommended_dependencies": [],
+   "optional_dependencies": [],
+   "no_linkage_dependencies": [],
+   "uses_from_macos": [],
+   "uses_from_macos_bounds": [],
+   "requirements": [],
+   "conflicts_with": [],
+   "conflicts_with_reasons": [],
+   "link_overwrite": [],
+   "caveats": null,
+   "installed": [],
+   "linked_keg": null,
+   "pinned": false,
+   "outdated": false,
+   "deprecated": false,
+   "deprecation_date": null,
+   "deprecation_reason": null,
+   "deprecation_replacement_formula": null,
+   "deprecation_replacement_cask": null,
+   "deprecate_args": null,
+   "disabled": false,
+   "disable_date": null,
+   "disable_reason": null,
+   "disable_replacement_formula": null,
+   "disable_replacement_cask": null,
+   "disable_args": null,
+   "post_install_steps": [],
+   "post_install_defined": false,
+   "service": null,
+   "tap_git_head": "aa2355fbd7243b45c1e156f76b1148370e5e47b5",
+   "ruby_source_path": "Formula/c/cowsay.rb",
+   "ruby_source_checksum": {
+    "sha256": "8097abdb1d260292fba40f70dc2676d30d4fbd46ab30c4a7c9ef501f1fe568d2"
+   }
+  }
+ ],
+ "casks": []
+}

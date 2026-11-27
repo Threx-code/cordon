@@ -40,6 +40,7 @@ class Shims:
         "composer": "composer", "mvn": "maven", "terraform": "terraform", "tofu": "terraform",
         "helm": "helm", "ansible-galaxy": "ansible", "mix": "hex",
         "docker": "image", "podman": "image",
+        "code": "vscode", "codium": "vscode", "cursor": "vscode", "brew": "homebrew",
     }  # fmt: skip
 
     #: An ecosystem with no install tool, and why. Only where the thing itself does not exist.

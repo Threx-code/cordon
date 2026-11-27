@@ -1,6 +1,6 @@
 """docker and podman through Cordon (`sources/install/managers/image.py`, `cli/commands/install/image.py`).
 
-The registry answers are the real ones for Docker Hub's `hello-world` (`images/hello-world/CAPTURES.md`): its index,
+The registry answers are the real ones for Docker Hub's `hello-world` (`image_captures/CAPTURES.md`): its index,
 the linux/amd64 manifest, config and layer. The registry client is the real one with only its HTTP replaced, so
 digest checks, size limits and the layout are the product's own.
 """
@@ -23,7 +23,7 @@ from cordon_scanner.sources.install.managers.image import ImagePlanner
 from cordon_scanner.sources.install.plan import InstallPlan, InstallRefused
 from support import ROOT
 
-CAPTURES = ROOT / "tests" / "unit" / "sources" / "install" / "images" / "hello-world"
+CAPTURES = ROOT / "tests" / "unit" / "sources" / "install" / "image_captures"
 
 
 class Captured:
@@ -176,13 +176,7 @@ class TestTheName:
         pinned = ImagePlanner.parse(f"nginx@{digest}")
         assert (pinned.pinned, pinned.reference) == (True, digest)
 
-    def test_a_registry_with_a_port_is_not_taken_for_a_tag(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        from cordon_scanner.intel.registries.archive_sources.hosts import PublicHost
-
-        # A public host is one that resolves to a public address; the test has no network.
-        monkeypatch.setattr(PublicHost, "ok", classmethod(lambda cls, host: True))
+    def test_a_registry_name_is_not_taken_for_a_tag(self) -> None:
         image = ImagePlanner.parse("ghcr.io/acme/tool:2")
         assert (image.registry, image.repository, image.reference) == ("ghcr.io", "acme/tool", "2")
 
