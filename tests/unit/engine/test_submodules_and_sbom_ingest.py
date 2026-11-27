@@ -11,6 +11,7 @@ import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.detect.source.submodules import GitModules, Submodules
+from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.engine.sbom_ingest import PackageUrl, SbomDocument, SbomInventory
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
@@ -178,6 +179,14 @@ class TestSbomIngestion:
     def test_a_maven_component_belongs_to_a_gradle_project_as_well(self) -> None:
         parsed = PackageUrl.parse("pkg:maven/org.jetbrains.kotlin/kotlin-stdlib@2.0.21?type=jar")
         assert parsed is not None and parsed.ecosystems == ("maven", "gradle")
+
+    @pytest.mark.parametrize("ecosystem_id", sorted(EcosystemRegistry.BY_ID))
+    def test_every_ecosystems_own_purl_type_reads_back_as_that_ecosystem(
+        self, ecosystem_id: str
+    ) -> None:
+        adapter = EcosystemRegistry.BY_ID[ecosystem_id]
+        parsed = PackageUrl.parse(f"pkg:{adapter.purl_type}/acme/widget@1.0.0")
+        assert parsed is not None and ecosystem_id in parsed.ecosystems
 
     def test_a_type_no_ecosystem_owns_belongs_to_none(self) -> None:
         parsed = PackageUrl.parse("pkg:generic/openssl@3.0.0")

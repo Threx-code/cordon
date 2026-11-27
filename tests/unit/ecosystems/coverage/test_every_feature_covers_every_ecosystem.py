@@ -253,7 +253,6 @@ class Features:
             "registry facts client",
             "package-URL scan targets",
             "advisory-text symbols",
-            "SBOM package-URL ingest",
             "MCP package check",
             "name-signal readers",
             "private registries",

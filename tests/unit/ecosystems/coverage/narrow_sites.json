@@ -28,7 +28,6 @@
  {"ids": ["cran", "hackage", "hex", "rubygems"], "site": "src/cordon_scanner/engine/pipeline/constants.py::MAKE_AT_INSTALL#0"},
  {"ids": ["actions", "image"], "site": "src/cordon_scanner/engine/pipeline/dependency_scope.py::REPOSITORY_ONLY#0"},
  {"ids": ["cargo", "julia"], "site": "src/cordon_scanner/engine/pipeline/graph.py::BARE_VERSION_IS_A_RANGE#0"},
- {"ids": ["bazel", "cargo", "cocoapods", "composer", "conan", "conda", "cran", "gomod", "hackage", "hex", "homebrew", "image", "julia", "maven", "npm", "nuget", "opam", "pub", "pypi", "rubygems", "swift", "vcpkg"], "site": "src/cordon_scanner/engine/sbom_ingest.py::ECOSYSTEMS#0"},
  {"ids": ["image", "maven"], "site": "src/cordon_scanner/engine/sbom_ingest.py::NAME_FORMS#0"},
  {"ids": ["cargo", "cocoapods", "conan", "conda", "cran", "hackage", "hex", "homebrew", "nuget", "pub", "pypi", "rubygems"], "site": "src/cordon_scanner/engine/sbom_ingest.py::NAME_FORMS#1"},
  {"ids": ["ansible", "bazel", "gradle", "helm", "homebrew", "image", "maven", "npm", "pypi", "rubygems", "terraform"], "site": "src/cordon_scanner/foundation/dependencies.py::PROVENANCE_ECOSYSTEMS#0"},

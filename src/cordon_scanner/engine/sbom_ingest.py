@@ -20,11 +20,15 @@ import urllib.parse
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Final
 
+from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Scope
 from cordon_scanner.foundation.results import Dependency
 
 MAX_COMPONENTS: Final = 50_000
+#: Ecosystems whose components a tool writes under another ecosystem's purl type, by that type.
+ALSO_SERVES_BY_TYPE: Final = {"maven": ("gradle",)}
+SERVED_BY_ANOTHER_TYPE: Final = frozenset(e for also in ALSO_SERVES_BY_TYPE.values() for e in also)
 
 
 @dataclass(frozen=True)
@@ -73,39 +77,27 @@ class PackageUrl:
     }
     #: Ecosystems whose components a tool writes under another ecosystem's purl type: a Gradle build's artefacts are
     #: Maven coordinates, so a `pkg:maven/` component belongs to a Gradle project as well.
-    ALSO_SERVES: ClassVar[dict[str, tuple[str, ...]]] = {"maven": ("gradle",)}
-    ECOSYSTEMS: ClassVar[dict[str, str]] = {
-        "npm": "npm",
-        "pypi": "pypi",
-        "cargo": "cargo",
-        "golang": "gomod",
-        "maven": "maven",
-        "nuget": "nuget",
-        "gem": "rubygems",
-        "composer": "composer",
-        "hex": "hex",
-        "pub": "pub",
-        "swift": "swift",
-        "cocoapods": "cocoapods",
-        "conda": "conda",
-        "cran": "cran",
-        "hackage": "hackage",
-        "conan": "conan",
+    ALSO_SERVES: ClassVar[dict[str, tuple[str, ...]]] = ALSO_SERVES_BY_TYPE
+    #: Other spellings of a purl type that real tools write, and types of ecosystems that are not adapters here.
+    ALIASES: ClassVar[dict[str, str]] = {
         "github": "actions",
-        "githubactions": "actions",
-        "docker": "image",
         "oci": "image",
         "deb": "deb",
         "apk": "apk",
         "rpm": "rpm",
-        "brew": "homebrew",
-        "bazel": "bazel",
-        "julia": "julia",
-        "opam": "opam",
-        "vcpkg": "vcpkg",
-        "vscode-extension": "vscode",
         "vscode": "vscode",
         "openvsx": "vscode",
+    }
+    #: Each purl type and the ecosystem it names: every registered ecosystem under the type its own adapter writes
+    #: (so a bill of materials we export reads back), then the aliases. An ecosystem is covered the moment its adapter
+    #: exists. A type two adapters write belongs to the one that is not served by the other's.
+    ECOSYSTEMS: ClassVar[dict[str, str]] = {
+        **{
+            adapter.purl_type: ecosystem_id
+            for ecosystem_id, adapter in EcosystemRegistry.BY_ID.items()
+            if adapter.purl_type != "generic" and ecosystem_id not in SERVED_BY_ANOTHER_TYPE
+        },
+        **ALIASES,
     }
 
     @staticmethod
