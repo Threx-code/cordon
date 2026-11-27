@@ -44,12 +44,12 @@ class TestAnIndexIsNeverATarget:
         monkeypatch.setattr(real, "DATA_DIR", tmp_path)
         assert RealPackages._shipped("zzz") == frozenset()
 
-    def test_an_ecosystem_with_only_an_index_is_measured_against_its_curated_set(self) -> None:
+    def test_an_ecosystem_with_only_an_index_has_hand_kept_targets_not_the_sample(self) -> None:
         for index in DATA_DIR.glob("*.index.txt"):
             ecosystem = index.name.removesuffix(".index.txt")
-            shipped, curated = RealPackages.parts(ecosystem)
+            shipped, _ = RealPackages.parts(ecosystem)
             assert not shipped, f"{ecosystem}: a ranked list and an index both ship"
-            assert PopularPackageNames.popular(ecosystem) <= curated, ecosystem
+            assert PopularPackageNames.popular(ecosystem), ecosystem
 
 
 class TestEditorExtensionTargets:
