@@ -1304,6 +1304,7 @@
   "test_dropper_unpacker.py": "detect/code",
   "test_ecosystem_depth.py": "ecosystems",
   "test_install_specs.py": "ecosystems/specs",
+  "test_agent_install_commands.py": "ecosystems/specs",
   "test_vendored_copies.py": "ecosystems/vendored",
   "test_ecosystem_matrix.py": "ecosystems",
   "test_vscode_extensions.py": "ecosystems/editors",

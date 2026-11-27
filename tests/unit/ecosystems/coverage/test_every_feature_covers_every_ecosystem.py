@@ -267,7 +267,19 @@ class More:
 
     @classmethod
     def agent_hook(cls) -> frozenset[str]:
-        return cls.ids(More.compared("cordon_scanner.cloud.agent.agent_hook", "of"))
+        from cordon_scanner.cloud.agent.agent_hook import AgentCalls, NotInstalled
+
+        return cls.ids(
+            e for e, i in AgentCalls.INSTALLERS.items() if not isinstance(i, NotInstalled)
+        )
+
+    @staticmethod
+    def agent_hook_reasons() -> dict[str, str]:
+        from cordon_scanner.cloud.agent.agent_hook import AgentCalls, NotInstalled
+
+        return {
+            e: i.reason for e, i in AgentCalls.INSTALLERS.items() if isinstance(i, NotInstalled)
+        }
 
 
 class Features:
@@ -298,7 +310,7 @@ class Features:
         "typosquat (look-alike names)": (More.typosquat_targets, More.typosquat_reasons),
         "name-signal readers": (More.name_signals, dict),
         "private registries": (Coverage.private_registries, dict),
-        "agent hook install recognition": (More.agent_hook, dict),
+        "agent hook install recognition": (More.agent_hook, More.agent_hook_reasons),
         "fixer (lockfile fix)": (More.fixer, dict),
         "device attestation splitters": (More.device_attestation, dict),
         "subject canonicalisation": (More.subjects, dict),
@@ -313,7 +325,6 @@ class Features:
             "MCP package check",
             "name-signal readers",
             "popular package lists",
-            "agent hook install recognition",
             "fixer (lockfile fix)",
             "device attestation splitters",
             "subject canonicalisation",
