@@ -1,0 +1,27 @@
+{
+  "nodes": {
+    "root": {
+      "inputs": {
+        "site": "site"
+      }
+    },
+    "site": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1704885182,
+        "narHash": "sha256-ra7fooIWb5As4Pw9h91DKu28uqY2AhyuUt1O3b1a0E8=",
+        "owner": "pages",
+        "repo": "plain-html",
+        "rev": "87e8c32b8918a836c09475e0f668ea7c436d3758",
+        "type": "gitlab"
+      },
+      "original": {
+        "owner": "pages",
+        "repo": "plain-html",
+        "type": "gitlab"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

@@ -362,7 +362,7 @@ class TestEveryFeatureCoversEveryEcosystem:
 INSTALL_PENDING = frozenset(
     {
         "cocoapods", "conan", "cran", "gradle", "hackage", "homebrew", "image",
-        "nix", "opam", "swift", "vcpkg", "vscode",
+        "opam", "swift", "vcpkg", "vscode",
     }
 )  # fmt: skip
 
