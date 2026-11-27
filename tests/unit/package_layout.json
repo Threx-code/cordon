@@ -740,6 +740,7 @@
   "intel/malware/atr_prefilter": "intel/malware/atr_prefilter",
   "intel/malware/campaign": "intel/malware/campaign",
   "intel/malware/datadog_malware": "intel/malware/datadog_malware",
+  "intel/malware/malware_sources": "intel/malware/malware_sources",
   "intel/malware/feed": "intel/malware/feed",
   "intel/malware/feed_roles": "intel/malware/feed_roles",
   "intel/malware/feed_lock": "intel/malware/feed_lock",

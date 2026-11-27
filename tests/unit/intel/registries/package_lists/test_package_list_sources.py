@@ -88,9 +88,9 @@ class TestRankedSources(Offline):
         assert dict(names) == {"kube-prometheus-stack": 1237, "cert-manager": 999, "argo-cd": 847}
 
     def test_terraform_reads_provider_downloads(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        Network(
-            {"number%5D=1&": Pages.read("terraform.json"), "number%5D=": {"data": []}}
-        ).install(monkeypatch)
+        Network({"number%5D=1&": Pages.read("terraform.json"), "number%5D=": {"data": []}}).install(
+            monkeypatch
+        )
         names, _ = RefreshScript.module().PackageIntelRefresh.terraform_providers()
         assert names == [("aws", 8659723560), ("random", 3662037886), ("google", 2912301379)]
 
