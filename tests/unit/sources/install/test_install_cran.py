@@ -1,8 +1,9 @@
-"""R through Cordon (`sources/install/managers/cran.py`), on CRAN's real R6 record and tarball.
+"""R through Cordon (`sources/install/managers/cran.py`), on a real renv.lock and CRAN's real R6 record and tarball.
 
-`cran_captures/` holds crandb's record of R6 (with the MD5 CRAN states for each release) and the 2.5.1 tarball CRAN serves, whose MD5 is
-the stated one; and `bioconductor.lock`, a real renv.lock from renv's own tests. The renv.lock below is written to renv's schema
-(`Packages` keyed by name with `Package`, `Version`, `Source`, `Repository`) for R6 2.5.1: no public project carries one for it."""
+`cran_captures/renv.lock` was written by renv 1.3.1 in `rocker/r-ver:4.4.1` (digest in `CAPTURES.md`, run with no network): R6 2.5.1 installed from CRAN's
+tarball, then `renv::snapshot(type = "all")`: 17 packages, each `Source: Repository`, `Repository: CRAN`. crandb's record of R6 (with the MD5 CRAN
+states for each release) and the 2.5.1 tarball are CRAN's own; the tarball's MD5 is the stated one. `bioconductor.lock` is a real renv.lock from
+renv's own tests, with Bioconductor and local packages."""
 
 from __future__ import annotations
 
@@ -20,13 +21,8 @@ from support import ROOT
 
 CAPTURES = ROOT / "tests" / "unit" / "sources" / "install" / "cran_captures"
 RECORD = json.loads((CAPTURES / "crandb-R6-all.json").read_text(encoding="utf-8"))
-R6 = {
-    "Package": "R6",
-    "Version": "2.5.1",
-    "Source": "Repository",
-    "Repository": "CRAN",
-    "Hash": "470851b6d5d0ac559e9d01bb352b4021",
-}
+REAL = json.loads((CAPTURES / "renv.lock").read_text(encoding="utf-8"))
+R6 = REAL["Packages"]["R6"]
 
 
 def locate(name: str, version: str):
@@ -66,6 +62,20 @@ class TestTheLock:
             "a" * 40,
             f"https://codeload.github.com/owner/pkg/tar.gz/{'a' * 40}",
         )
+
+    def test_every_package_of_the_real_lock_is_read_as_a_cran_package(self) -> None:
+        from cordon_scanner.intel.registries.archive_sources.base import Located
+
+        def any_release(name: str, version: str) -> Located:
+            return Located(
+                f"https://cran.r-project.org/src/contrib/{name}_{version}.tar.gz",
+                f"{name}_{version}.tar.gz",
+                (("md5", "0" * 32),),
+            )
+
+        files = CranPlanner.files(json.dumps(REAL), any_release)
+        assert len(files) == len(REAL["Packages"]) == 17
+        assert {f.algorithm for f in files} == {"md5"}
 
     def test_the_real_renv_lock_of_a_bioconductor_project_is_refused(self) -> None:
         with pytest.raises(InstallRefused, match="Cordon checks R packages from CRAN"):
