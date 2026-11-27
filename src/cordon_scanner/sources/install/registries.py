@@ -50,7 +50,7 @@ class InstallRegistries:
         source = ArchiveSources.of(ecosystem)
         if source is None:
             return False
-        return host in source.HOSTS or (not source.HOSTS and source.allows(host))
+        return host in source.HOSTS or source.allows(host)
 
     @staticmethod
     def public(ecosystem: str) -> frozenset[str]:

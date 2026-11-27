@@ -33,7 +33,7 @@ class InstallGuardCommand:
     TOOLS: ClassVar[tuple[str, ...]] = (
         "npm", "pnpm", "yarn", "pip", "pip3", "uv", "poetry", "cargo", "go", "gem", "bundler",
         "dotnet", "dart", "flutter", "conda", "mamba", "composer", "mvn",
-        "terraform", "tofu", "helm", "ansible-galaxy", "mix", "bazel", "bazelisk", "julia", "nix", "swift", "Rscript", "R",
+        "terraform", "tofu", "helm", "ansible-galaxy", "mix", "bazel", "bazelisk", "julia", "nix", "swift", "Rscript", "R", "pod",
     )  # fmt: skip
     #: The executable each tool runs, where its name here differs (`bundle` is Cordon's own command).
     EXECUTABLES: ClassVar[dict[str, str]] = {"bundler": "bundle"}
@@ -85,6 +85,7 @@ class InstallGuardCommand:
     def _table(cls) -> dict[str, tuple[Callable[[list[str]], bool], Callable[..., int]]]:
         """Each tool: which of its command lines install, and what checks them."""
         from cordon_scanner.cli.commands.install.bazel import BazelTools
+        from cordon_scanner.cli.commands.install.cocoapods import CocoaPodsTools
         from cordon_scanner.cli.commands.install.composer import ComposerTools
         from cordon_scanner.cli.commands.install.cran import CranTools
         from cordon_scanner.cli.commands.install.dotnet import DotnetTools
@@ -129,6 +130,7 @@ class InstallGuardCommand:
             "swift": (SwiftTools.installs, SwiftTools.swift),
             "Rscript": (CranTools.installs, CranTools.rscript),
             "R": (CranTools.installs, CranTools.rscript),
+            "pod": (CocoaPodsTools.installs, CocoaPodsTools.pod),
         }
 
 
