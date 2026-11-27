@@ -29,6 +29,7 @@ from __future__ import annotations
 import dataclasses
 from typing import TYPE_CHECKING
 
+from cordon_scanner.ecosystems.archive_shapes import NoArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -212,6 +213,9 @@ class OpamEcosystem(BaseEcosystem):
     purl_type = "opam"
     #: https://opam.ocaml.org/doc/Manual.html (unclear on case: kept)
     name_fold = NameFold.KEPT
+    published_archive = NoArchive(
+        "an opam package's archive is the upstream project's own source tarball, named by the `url` in its opam file; no opam metadata is inside it (captured: opam cache-small)"
+    )
     manifest_globs: tuple[str, ...] = (
         "**/*.opam",
         "**/opam",

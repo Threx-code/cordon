@@ -22,6 +22,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import HexArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -781,6 +782,7 @@ class HexEcosystem(BaseEcosystem):
     purl_type = "hex"
     #: https://hex.pm/docs/publish
     name_fold = NameFold.LOWER
+    published_archive = (HexArchive(),)
     manifest_globs: tuple[str, ...] = ("**/mix.exs", "**/rebar.config")
     lockfile_globs: tuple[str, ...] = ("**/mix.lock", "**/rebar.lock")
     registry_hosts: frozenset[str] = frozenset({"hex.pm", "repo.hex.pm"})

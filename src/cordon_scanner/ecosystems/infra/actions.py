@@ -24,6 +24,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import ActionArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -432,6 +433,7 @@ class GitHubActionsEcosystem(BaseEcosystem):
     purl_type = "githubactions"
     #: https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsuses
     name_fold = NameFold.LOWER
+    published_archive = (ActionArchive(),)
     manifest_globs: tuple[str, ...] = (
         "**/.github/workflows/*.yml",
         "**/.github/workflows/*.yaml",

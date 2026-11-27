@@ -26,6 +26,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import DockerSaveArchive, OciLayoutArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -581,6 +582,7 @@ class ImageEcosystem(BaseEcosystem):
     purl_type = "docker"
     #: https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pull (repository names are lower case)
     name_fold = NameFold.LOWER
+    published_archive = (OciLayoutArchive(), DockerSaveArchive())
     manifest_globs: tuple[str, ...] = (
         "**/Dockerfile",
         "**/Dockerfile.*",

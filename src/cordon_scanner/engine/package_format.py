@@ -6,18 +6,14 @@ now delegates here.
 
 from __future__ import annotations
 
-import re
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING
 
-from cordon_scanner.ecosystems.registry import RegistryFacts
-from cordon_scanner.foundation.formats.served_json import ServedJson
+from cordon_scanner.ecosystems.archive_shapes import GO_MODULE_ROOT, ArchiveLevels
+from cordon_scanner.ecosystems.registry import EcosystemRegistry, RegistryFacts
 
 if TYPE_CHECKING:
     from cordon_scanner.detect.base import FileUnit
     from cordon_scanner.foundation.models import Finding
-
-GO_MODULE_ROOT: Final = re.compile(r"[^@!]{1,1024}@v\d[^/@!]{0,128}/")
-"""A module proxy zip's first level: every file sits under `<module path>@<version>/`."""
 
 
 class PackageFormat:
@@ -25,69 +21,22 @@ class PackageFormat:
     def of(units: list[FileUnit]) -> str:
         """Which published-package format the archive is, or "" when it is not one.
 
-        Recognised by the metadata file each format's own packaging tool writes, at the
-        archive's first level only. That level matters: a repository snapshot that vendors a
-        package tarball is still a repository, and its own lockfiles are still the project's.
-        Formats whose archives have the same shape as a repository snapshot (pub, Packagist,
-        Helm, Terraform modules) are not recognised, because nothing tells them apart.
+        Recognised by the shape each ecosystem declares for its own packages (`published_archive`, asked in
+        `precedence` order), at the archive's first level only. That level matters: a repository snapshot that
+        vendors a package tarball is still a repository, and its own lockfiles are still the project's. An
+        ecosystem whose archives have the same shape as a repository snapshot declares why it has none.
         """
-
-        top, roots = PackageFormat._levels(units)
-        for directory, leaves in roots.items():
-            if "PKG-INFO" in leaves or (directory.endswith(".dist-info") and "METADATA" in leaves):
-                return "pypi"
-            if directory == "package" and "package.json" in leaves:
-                return "npm"
-            if "Cargo.toml.orig" in leaves:
-                return "cargo"
-            if "DESCRIPTION" in leaves and "MD5" in leaves:
-                return "cran"
-            if any(
-                leaf.endswith(".cabal")
-                and re.fullmatch(rf"{re.escape(leaf[:-6])}-\d[\d.]*", directory)
-                for leaf in leaves
-            ):
-                return "hackage"
-        if "metadata.gz" in top:
-            return "rubygems"
-        if "[Content_Types].xml" in top and any(
-            m.endswith(".nuspec") and "/" not in m for m in top
-        ):
-            return "nuget"
-        if "metadata.config" in top and "CHECKSUM" in top:
-            return "hex"
-        if "META-INF/MANIFEST.MF" in top:
-            return "maven"
-        if "info/index.json" in top:
-            return "conda"
-        # A `.conda` package: a zip of `metadata.json` and two zstd tarballs, its `info/` inside
-        # `info-*.tar.zst` -- the same package as the `.tar.bz2`, one level further down.
-        if "metadata.json" in top and any(
-            re.search(r"![^!/]*info-[^!/]*\.tar\.zst!info/index\.json$", unit.path)
-            for unit in units
-        ):
-            return "conda"
-        if "MANIFEST.json" in top and "FILES.json" in top:
-            return "galaxy"
-        if any(GO_MODULE_ROOT.match(m) for m in top):
-            return "gomod"
-        return "npm" if PackageFormat.npm_under_another_root(units, top, roots) else ""
-
-    @staticmethod
-    def _levels(units: list[FileUnit]) -> tuple[set[str], dict[str, set[str]]]:
-        """The archive's first-level members, and the files directly inside each first-level
-        directory."""
-        top: set[str] = set()
-        for unit in units:
-            _, sep, member = unit.path.partition("!")
-            if sep and "!" not in member:
-                top.add(member)
-        roots: dict[str, set[str]] = {}
-        for member in top:
-            directory, sep, leaf = member.partition("/")
-            if sep and "/" not in leaf:
-                roots.setdefault(directory, set()).add(leaf)
-        return top, roots
+        levels = ArchiveLevels.of(units)
+        found = sorted(
+            (shape.precedence, shape.format or ecosystem.id, shape)
+            for ecosystem in EcosystemRegistry.all_ecosystems()
+            if isinstance(ecosystem.published_archive, tuple)
+            for shape in ecosystem.published_archive
+        )
+        for _, name, shape in found:
+            if shape.matches(levels):
+                return name
+        return ""
 
     @staticmethod
     def renamed_npm(units: list[FileUnit]) -> bool:
@@ -96,7 +45,7 @@ class PackageFormat:
         23 gradle, nix, opam and swift repositories in the #18 A/B), so it is read both ways
         (`union`)."""
         manifest = RegistryFacts.archive_manifest(PackageFormat.of(units))
-        return manifest is not None and manifest not in (PackageFormat._levels(units)[0])
+        return manifest is not None and manifest not in (ArchiveLevels.of(units).top)
 
     @staticmethod
     def union(package: list[Finding], repository: list[Finding]) -> list[Finding]:
@@ -119,36 +68,6 @@ class PackageFormat:
             )
         out.extend(f for rest in graded.values() for f in rest)
         return out
-
-    @staticmethod
-    def npm_under_another_root(
-        units: list[FileUnit], top: set[str], roots: dict[str, set[str]]
-    ) -> bool:
-        """An npm tarball packed under a directory other than `package/` (`pkg/`, the package's own
-        name): npm installs one by stripping the first path component, whatever it is, so renaming
-        it must not switch npm's install-time reading off (review 98 #18). Only a gzipped tar whose
-        every member sits under that one directory, beside a package.json with a name and a
-        version: a snapshot with files next to its directory is not one."""
-        if len(roots) != 1 or any("/" not in m for m in top):
-            return False
-        (directory,) = roots
-        if "package.json" not in roots[directory]:
-            return False
-        for unit in units:
-            archive, sep, member = unit.path.partition("!")
-            if sep and member == f"{directory}/package.json":
-                if not archive.endswith((".tgz", ".tar.gz")):
-                    return False
-                try:
-                    manifest = ServedJson.loads(unit.content.text, unit.path)
-                except (ValueError, RecursionError):
-                    return False
-                return (
-                    isinstance(manifest, dict)
-                    and isinstance(manifest.get("name"), str)
-                    and isinstance(manifest.get("version"), str)
-                )
-        return False
 
 
 __all__ = ["GO_MODULE_ROOT", "PackageFormat"]

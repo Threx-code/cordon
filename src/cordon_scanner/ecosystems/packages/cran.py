@@ -22,6 +22,7 @@ import re
 from collections.abc import Collection, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import CranArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -507,6 +508,7 @@ class CranEcosystem(BaseEcosystem):
     purl_type = "cran"
     #: https://cran.r-project.org/doc/manuals/r-release/R-exts.html#The-DESCRIPTION-file
     name_fold = NameFold.KEPT
+    published_archive = (CranArchive(),)
     manifest_globs: tuple[str, ...] = ("**/DESCRIPTION", "**/renv/settings.json", "**/PACKAGES")
     lockfile_globs: tuple[str, ...] = ("**/renv.lock",)
     registry_hosts: frozenset[str] = frozenset(

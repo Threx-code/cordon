@@ -6,6 +6,7 @@ import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import GoModuleArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -191,6 +192,7 @@ class GoEcosystem(BaseEcosystem):
     purl_type = "golang"
     #: https://go.dev/ref/mod#module-path (the stored id has always been lower case; kept)
     name_fold = NameFold.LOWER
+    published_archive = (GoModuleArchive(),)
     manifest_globs: tuple[str, ...] = ("**/go.mod", "**/go.work")
     lockfile_globs: tuple[str, ...] = (
         "**/go.mod",

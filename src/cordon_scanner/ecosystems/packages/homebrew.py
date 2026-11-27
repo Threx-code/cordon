@@ -29,6 +29,7 @@ import json
 import re
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import BottleArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -840,6 +841,7 @@ class HomebrewEcosystem(BaseEcosystem):
     purl_type = "brew"
     #: https://docs.brew.sh/Formula-Cookbook#grab-the-url
     name_fold = NameFold.LOWER
+    published_archive = (BottleArchive(),)
     manifest_globs: tuple[str, ...] = (
         "**/Brewfile",
         # The names Brewfiles go by in real dotfiles: `brew bundle --global` reads ~/.Brewfile, and

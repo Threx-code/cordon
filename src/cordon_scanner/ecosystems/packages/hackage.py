@@ -33,6 +33,7 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import HackageArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -588,6 +589,7 @@ class HackageEcosystem(BaseEcosystem):
     purl_type = "hackage"
     #: https://cabal.readthedocs.io/en/stable/cabal-package-description-file.html#pkg-field-name
     name_fold = NameFold.KEPT
+    published_archive = (HackageArchive(),)
     manifest_globs: tuple[str, ...] = (
         "**/*.cabal",
         "**/cabal.project",

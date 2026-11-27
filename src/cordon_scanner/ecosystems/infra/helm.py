@@ -27,6 +27,7 @@ import io
 import tarfile
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import HelmArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -297,6 +298,7 @@ class HelmEcosystem(BaseEcosystem):
     purl_type = "helm"
     #: https://helm.sh/docs/topics/charts/#the-chartyaml-file (unclear on case: kept)
     name_fold = NameFold.KEPT
+    published_archive = (HelmArchive(),)
     # requirements.yaml is Ansible's name too: an apiVersion v1 chart's is read through the
     # Chart.yaml beside it, not claimed by name.
     manifest_globs: tuple[str, ...] = ("**/Chart.yaml", "**/Chart.lock", "**/requirements.lock")

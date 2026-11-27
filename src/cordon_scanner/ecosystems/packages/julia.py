@@ -26,6 +26,7 @@ import re
 import tomllib
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import JuliaArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -479,6 +480,7 @@ class JuliaEcosystem(BaseEcosystem):
     purl_type = "julia"
     #: https://pkgdocs.julialang.org/v1/toml-files/
     name_fold = NameFold.KEPT
+    published_archive = (JuliaArchive(),)
     manifest_globs: tuple[str, ...] = ("**/Project.toml", "**/JuliaProject.toml")
     lockfile_globs: tuple[str, ...] = (
         "**/Manifest.toml",

@@ -198,7 +198,23 @@ class More:
 
     @classmethod
     def package_format(cls) -> frozenset[str]:
-        return cls.ids(More.compared("cordon_scanner.engine.package_format", "of"))
+        from cordon_scanner.ecosystems.archive_shapes import NoArchive
+
+        return frozenset(
+            ecosystem.id
+            for ecosystem in EcosystemRegistry.all_ecosystems()
+            if not isinstance(ecosystem.published_archive, NoArchive)
+        )
+
+    @classmethod
+    def package_format_reasons(cls) -> dict[str, str]:
+        from cordon_scanner.ecosystems.archive_shapes import NoArchive
+
+        return {
+            ecosystem.id: ecosystem.published_archive.reason
+            for ecosystem in EcosystemRegistry.all_ecosystems()
+            if isinstance(ecosystem.published_archive, NoArchive)
+        }
 
     @classmethod
     def private_registries(cls) -> frozenset[str]:
@@ -240,7 +256,7 @@ class Features:
         "device attestation splitters": (More.device_attestation, dict),
         "subject canonicalisation": (More.subjects, dict),
         "manifest findings (own name)": (More.own_name_findings, dict),
-        "package format sniffing": (More.package_format, dict),
+        "package format sniffing": (More.package_format, More.package_format_reasons),
     }
     #: Features being built now: expected to fail until they cover every ecosystem; the entry comes off when they do.
     BUILDING: ClassVar[frozenset[str]] = frozenset(
@@ -258,7 +274,6 @@ class Features:
             "fixer (lockfile fix)",
             "device attestation splitters",
             "manifest findings (own name)",
-            "package format sniffing",
         }
     )
 

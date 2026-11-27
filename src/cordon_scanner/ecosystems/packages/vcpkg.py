@@ -26,6 +26,7 @@ import posixpath
 import re
 from typing import TYPE_CHECKING, Any
 
+from cordon_scanner.ecosystems.archive_shapes import NoArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -355,6 +356,9 @@ class VcpkgEcosystem(BaseEcosystem):
     purl_type = "vcpkg"
     #: https://learn.microsoft.com/en-us/vcpkg/reference/vcpkg-json#name
     name_fold = NameFold.LOWER
+    published_archive = NoArchive(
+        "the vcpkg registry is a git repository of ports (a portfile.cmake and a vcpkg.json each) whose sources are the upstream project's own archive, named by the REF and SHA512 in the portfile (captured: vcpkg/portfile.cmake)"
+    )
     manifest_globs: tuple[str, ...] = (
         "**/vcpkg.json",
         "**/vcpkg-configuration.json",

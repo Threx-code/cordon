@@ -27,6 +27,7 @@ import re
 import tomllib
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import SameArchiveAs
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -255,6 +256,7 @@ class GradleEcosystem(BaseEcosystem):
     purl_type = "maven"
     #: https://maven.apache.org/guidelines.html#create-a-pom (served by Maven: case kept)
     name_fold = NameFold.KEPT
+    published_archive = SameArchiveAs("maven")
     manifest_globs: tuple[str, ...] = (
         "**/build.gradle",
         "**/build.gradle.kts",

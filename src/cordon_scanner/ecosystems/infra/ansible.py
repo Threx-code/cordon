@@ -30,6 +30,7 @@ import json
 import re
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import GalaxyArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -468,6 +469,7 @@ class AnsibleGalaxyEcosystem(BaseEcosystem):
     purl_type = "ansible"
     #: https://docs.ansible.com/ansible/latest/dev_guide/collections_galaxy_meta.html
     name_fold = NameFold.LOWER
+    published_archive = (GalaxyArchive(),)
     manifest_globs: tuple[str, ...] = (
         "**/requirements.yml",
         "**/requirements.yaml",

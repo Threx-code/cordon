@@ -22,6 +22,7 @@ import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import PubArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -328,6 +329,7 @@ class PubEcosystem(BaseEcosystem):
     purl_type = "pub"
     #: https://dart.dev/tools/pub/pubspec#name
     name_fold = NameFold.LOWER
+    published_archive = (PubArchive(),)
     manifest_globs: tuple[str, ...] = ("**/pubspec.yaml",)
     lockfile_globs: tuple[str, ...] = ("**/pubspec.lock", "**/.dart_tool/package_config.json")
     registry_hosts: frozenset[str] = frozenset({"pub.dev", "pub.dartlang.org"})

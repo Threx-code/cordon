@@ -30,6 +30,7 @@ import re
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
+from cordon_scanner.ecosystems.archive_shapes import ConanArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -729,6 +730,7 @@ class ConanEcosystem(BaseEcosystem):
     purl_type = "conan"
     #: https://docs.conan.io/2/reference/conanfile/attributes.html#name (unclear on case: kept)
     name_fold = NameFold.KEPT
+    published_archive = (ConanArchive(),)
     manifest_globs: tuple[str, ...] = (
         "**/conanfile.txt",
         "**/conanfile.py",

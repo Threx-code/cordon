@@ -29,6 +29,7 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import ProviderArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -707,6 +708,7 @@ class TerraformEcosystem(BaseEcosystem):
     purl_type = "terraform"
     #: https://developer.hashicorp.com/terraform/language/providers/requirements#source-addresses
     name_fold = NameFold.LOWER
+    published_archive = (ProviderArchive(),)
     manifest_globs: tuple[str, ...] = ("**/*.tf", "**/*.tf.json")
     lockfile_globs: tuple[str, ...] = ("**/.terraform.lock.hcl",)
     registry_hosts: frozenset[str] = frozenset({"registry.terraform.io", "registry.opentofu.org"})

@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.analysis.python.statements import PythonTwo
+from cordon_scanner.ecosystems.archive_shapes import PypiArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -133,6 +134,7 @@ class PypiEcosystem(PypiLockfiles, BaseEcosystem):
     purl_type = "pypi"
     #: https://packaging.python.org/en/latest/specifications/name-normalization/
     name_fold = NameFold.PEP_503
+    published_archive = (PypiArchive(),)
     manifest_globs: tuple[str, ...] = (
         "**/pyproject.toml",
         "**/setup.py",

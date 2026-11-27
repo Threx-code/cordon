@@ -15,6 +15,7 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
+from cordon_scanner.ecosystems.archive_shapes import NpmPackageArchive, NpmRenamedArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -211,6 +212,7 @@ class NpmEcosystem(NpmProjects, NpmPackageCode, BaseEcosystem):
     purl_type = "npm"
     #: https://docs.npmjs.com/cli/v10/configuring-npm/package-json#name
     name_fold = NameFold.LOWER
+    published_archive = (NpmPackageArchive(), NpmRenamedArchive())
     manifest_globs: tuple[str, ...] = ("**/package.json", "**/deno.json", "**/deno.jsonc")
     #: bundledDependencies: npm installs a tarball's own `node_modules` with it as shipped, and
     #: `require()` loads them -- where a payload can hide in a dependency. Theirs too, recursively.

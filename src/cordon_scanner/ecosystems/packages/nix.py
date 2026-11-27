@@ -24,6 +24,7 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import NarArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -809,6 +810,7 @@ class NixEcosystem(BaseEcosystem):
     purl_type = "nix"
     #: https://nix.dev/manual/nix/stable/language/derivations.html
     name_fold = NameFold.KEPT
+    published_archive = (NarArchive(),)
     manifest_globs: tuple[str, ...] = ("**/flake.nix", "**/default.nix", "**/shell.nix")
     lockfile_globs: tuple[str, ...] = ("**/flake.lock",)
     registry_hosts: frozenset[str] = frozenset()

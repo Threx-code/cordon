@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import VsixArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -60,6 +61,7 @@ class VsCodeEcosystem(BaseEcosystem):
     purl_type = "vscode-extension"
     #: https://code.visualstudio.com/api/references/extension-manifest
     name_fold = NameFold.LOWER
+    published_archive = (VsixArchive(),)
     manifest_globs: tuple[str, ...] = (
         "**/.vscode/extensions.json",
         "**/.devcontainer/devcontainer.json",

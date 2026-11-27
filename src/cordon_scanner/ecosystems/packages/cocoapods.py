@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import NoArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -507,6 +508,9 @@ class CocoaPodsEcosystem(BaseEcosystem):
     purl_type = "cocoapods"
     #: https://guides.cocoapods.org/syntax/podspec.html#name (the stored id has always been lower case; kept)
     name_fold = NameFold.LOWER
+    published_archive = NoArchive(
+        "a pod is a podspec whose `source` names a git repository or an upstream archive; the spec repository publishes no archive of the pod (captured: cocoapods/podspec)"
+    )
     manifest_globs: tuple[str, ...] = ("**/Podfile", "**/*.podspec")
     lockfile_globs: tuple[str, ...] = ("**/Podfile.lock",)
     registry_hosts: frozenset[str] = frozenset(

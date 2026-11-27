@@ -20,6 +20,7 @@ import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import CondaArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -516,6 +517,7 @@ class CondaEcosystem(BaseEcosystem):
     purl_type = "conda"
     #: https://docs.conda.io/projects/conda-build/en/stable/resources/package-spec.html
     name_fold = NameFold.LOWER
+    published_archive = (CondaArchive(),)
     manifest_globs: tuple[str, ...] = (
         "**/environment.yml",
         "**/environment.yaml",

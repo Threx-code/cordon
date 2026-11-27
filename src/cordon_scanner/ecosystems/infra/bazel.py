@@ -29,6 +29,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import NoArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -716,6 +717,9 @@ class BazelEcosystem(BaseEcosystem):
     purl_type = "bazel"
     #: https://bazel.build/external/module#module_name
     name_fold = NameFold.KEPT
+    published_archive = NoArchive(
+        "the Bazel Central Registry holds only MODULE.bazel and a source.json naming the upstream project's own archive; the archive is whatever that project publishes (captured: bazel/source)"
+    )
     manifest_globs: tuple[str, ...] = (
         "**/MODULE.bazel",
         "**/WORKSPACE",

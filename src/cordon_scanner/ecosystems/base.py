@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from cordon_scanner.ecosystems.archive_shapes import ArchiveShape, NoArchive, SameArchiveAs
 from cordon_scanner.foundation.dependencies import InstallTool
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Hook, Scope
@@ -153,6 +154,10 @@ PUBLIC_REGISTRY_NAMES = frozenset(
 A sentinel rather than an empty string, so the rules that read a spec can tell
 "inherited from somewhere this file does not name" from "no constraint at
 all" -- the first is pinned and the second is not."""
+
+
+PublishedArchive = tuple[ArchiveShape, ...] | NoArchive | SameArchiveAs
+"""What an ecosystem declares of its published archives (`ecosystems/archive_shapes.py`)."""
 
 
 class NameFold(Enum):
@@ -490,6 +495,10 @@ class Ecosystem(Protocol):
     id: str
     purl_type: str
     name_fold: NameFold
+
+    @property
+    def published_archive(self) -> PublishedArchive: ...
+
     manifest_globs: tuple[str, ...]
     lockfile_globs: tuple[str, ...]
     registry_hosts: frozenset[str]
@@ -775,6 +784,8 @@ class BaseEcosystem(
 
     id: str = "base"
     purl_type: str = "generic"
+    published_archive: PublishedArchive
+    """The archive shape(s) of this ecosystem's published packages, or why there is none (no default: each ecosystem states it)."""
     name_fold: NameFold
     """How this registry folds a package name (no default: each ecosystem states it, with the registry's own page)."""
     manifest_globs: tuple[str, ...] = ()
