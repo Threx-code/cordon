@@ -1,0 +1,564 @@
+[
+ {
+  "meta": {
+   "links": {
+    "GitHub": "https://github.com/michalmuskala/jason"
+   },
+   "description": "A blazing fast JSON parser and generator in pure Elixir.",
+   "licenses": [
+    "Apache-2.0"
+   ],
+   "maintainers": []
+  },
+  "name": "jason",
+  "url": "https://hex.pm/api/packages/jason",
+  "inserted_at": "2017-12-22T09:32:40.615828Z",
+  "updated_at": "2026-05-05T14:34:54.953586Z",
+  "repository": "hexpm",
+  "releases": [
+   {
+    "version": "1.5.0-alpha.2",
+    "url": "https://hex.pm/api/packages/jason/releases/1.5.0-alpha.2",
+    "has_docs": true,
+    "inserted_at": "2023-07-07T10:11:17.931295Z"
+   },
+   {
+    "version": "1.5.0-alpha.1",
+    "url": "https://hex.pm/api/packages/jason/releases/1.5.0-alpha.1",
+    "has_docs": true,
+    "inserted_at": "2022-10-16T20:11:41.386180Z"
+   },
+   {
+    "version": "1.4.5",
+    "url": "https://hex.pm/api/packages/jason/releases/1.4.5",
+    "has_docs": true,
+    "inserted_at": "2026-05-05T14:34:53.909653Z"
+   },
+   {
+    "version": "1.4.4",
+    "url": "https://hex.pm/api/packages/jason/releases/1.4.4",
+    "has_docs": true,
+    "inserted_at": "2024-07-26T17:51:45.963093Z"
+   },
+   {
+    "version": "1.4.3",
+    "url": "https://hex.pm/api/packages/jason/releases/1.4.3",
+    "has_docs": true,
+    "inserted_at": "2024-06-29T16:10:22.568556Z"
+   },
+   {
+    "version": "1.4.2",
+    "url": "https://hex.pm/api/packages/jason/releases/1.4.2",
+    "has_docs": true,
+    "inserted_at": "2024-06-29T15:43:57.230584Z"
+   },
+   {
+    "version": "1.4.1",
+    "url": "https://hex.pm/api/packages/jason/releases/1.4.1",
+    "has_docs": true,
+    "inserted_at": "2023-07-07T09:28:26.799873Z"
+   },
+   {
+    "version": "1.4.0",
+    "url": "https://hex.pm/api/packages/jason/releases/1.4.0",
+    "has_docs": true,
+    "inserted_at": "2022-09-12T19:53:18.454292Z"
+   },
+   {
+    "version": "1.3.0",
+    "url": "https://hex.pm/api/packages/jason/releases/1.3.0",
+    "has_docs": true,
+    "inserted_at": "2021-12-21T14:22:24.054695Z"
+   },
+   {
+    "version": "1.2.2",
+    "url": "https://hex.pm/api/packages/jason/releases/1.2.2",
+    "has_docs": true,
+    "inserted_at": "2020-09-08T20:01:45.068107Z"
+   },
+   {
+    "version": "1.2.1",
+    "url": "https://hex.pm/api/packages/jason/releases/1.2.1",
+    "has_docs": true,
+    "inserted_at": "2020-05-04T19:46:36.963001Z"
+   },
+   {
+    "version": "1.2.0",
+    "url": "https://hex.pm/api/packages/jason/releases/1.2.0",
+    "has_docs": true,
+    "inserted_at": "2020-03-17T21:22:55.521084Z"
+   },
+   {
+    "version": "1.1.2",
+    "url": "https://hex.pm/api/packages/jason/releases/1.1.2",
+    "has_docs": true,
+    "inserted_at": "2018-10-19T18:01:19.398712Z"
+   },
+   {
+    "version": "1.1.1",
+    "url": "https://hex.pm/api/packages/jason/releases/1.1.1",
+    "has_docs": true,
+    "inserted_at": "2018-07-10T20:14:17.639964Z"
+   },
+   {
+    "version": "1.1.0",
+    "url": "https://hex.pm/api/packages/jason/releases/1.1.0",
+    "has_docs": true,
+    "inserted_at": "2018-07-02T18:18:58.092694Z"
+   },
+   {
+    "version": "1.0.1",
+    "url": "https://hex.pm/api/packages/jason/releases/1.0.1",
+    "has_docs": true,
+    "inserted_at": "2018-07-02T10:08:56.261354Z"
+   },
+   {
+    "version": "1.0.0",
+    "url": "https://hex.pm/api/packages/jason/releases/1.0.0",
+    "has_docs": true,
+    "inserted_at": "2018-01-26T09:58:27.849565Z"
+   },
+   {
+    "version": "1.0.0-rc.3",
+    "url": "https://hex.pm/api/packages/jason/releases/1.0.0-rc.3",
+    "has_docs": true,
+    "inserted_at": "2018-01-26T09:40:44.792652Z"
+   },
+   {
+    "version": "1.0.0-rc.2",
+    "url": "https://hex.pm/api/packages/jason/releases/1.0.0-rc.2",
+    "has_docs": true,
+    "inserted_at": "2018-01-07T10:14:28.167788Z"
+   },
+   {
+    "version": "1.0.0-rc.1",
+    "url": "https://hex.pm/api/packages/jason/releases/1.0.0-rc.1",
+    "has_docs": true,
+    "inserted_at": "2017-12-22T09:32:40.629452Z"
+   }
+  ],
+  "html_url": "https://hex.pm/packages/jason",
+  "latest_version": "1.5.0-alpha.2",
+  "downloads": {
+   "all": 219403885,
+   "day": 124912,
+   "recent": 11475256,
+   "week": 835996
+  },
+  "docs_html_url": "https://jason.hexdocs.pm/",
+  "configs": {
+   "erlang.mk": "dep_jason = hex 1.4.5",
+   "mix.exs": "{:jason, \"~> 1.4\"}",
+   "rebar.config": "{jason, \"1.4.5\"}"
+  },
+  "retirements": {},
+  "latest_stable_version": "1.4.5"
+ },
+ {
+  "meta": {
+   "links": {
+    "Github": "https://github.com/certifi/erlang-certifi"
+   },
+   "description": "CA bundle adapted from Mozilla by https://certifi.io",
+   "licenses": [
+    "BSD-3-Clause"
+   ],
+   "maintainers": []
+  },
+  "name": "certifi",
+  "url": "https://hex.pm/api/packages/certifi",
+  "inserted_at": "2015-09-10T13:58:43.376194Z",
+  "updated_at": "2026-11-10T17:10:31.508257Z",
+  "repository": "hexpm",
+  "releases": [
+   {
+    "version": "2.19.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/2.19.0",
+    "has_docs": true,
+    "inserted_at": "2026-11-10T17:10:30.005218Z"
+   },
+   {
+    "version": "2.18.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/2.18.0",
+    "has_docs": true,
+    "inserted_at": "2026-10-23T07:44:11.334399Z"
+   },
+   {
+    "version": "2.17.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/2.17.0",
+    "has_docs": true,
+    "inserted_at": "2026-06-05T09:24:53.151712Z"
+   },
+   {
+    "version": "2.16.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/2.16.0",
+    "has_docs": true,
+    "inserted_at": "2025-12-29T20:03:03.351697Z"
+   },
+   {
+    "version": "2.15.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/2.15.0",
+    "has_docs": true,
+    "inserted_at": "2025-05-25T20:54:00.207590Z"
+   },
+   {
+    "version": "2.14.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/2.14.0",
+    "has_docs": true,
+    "inserted_at": "2025-02-20T14:23:28.566665Z"
+   },
+   {
+    "version": "2.13.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/2.13.0",
+    "has_docs": true,
+    "inserted_at": "2024-02-15T21:39:45.420368Z"
+   },
+   {
+    "version": "2.12.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/2.12.0",
+    "has_docs": true,
+    "inserted_at": "2023-08-29T08:20:00.224020Z"
+   },
+   {
+    "version": "2.11.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/2.11.0",
+    "has_docs": true,
+    "inserted_at": "2023-03-24T10:37:07.778318Z"
+   },
+   {
+    "version": "2.10.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/2.10.0",
+    "has_docs": true,
+    "inserted_at": "2022-10-25T00:08:15.041694Z"
+   },
+   {
+    "version": "2.9.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/2.9.0",
+    "has_docs": false,
+    "inserted_at": "2022-02-03T15:12:29.793828Z"
+   },
+   {
+    "version": "2.8.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/2.8.0",
+    "has_docs": false,
+    "inserted_at": "2021-09-28T15:40:30.276815Z"
+   },
+   {
+    "version": "2.7.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/2.7.0",
+    "has_docs": false,
+    "inserted_at": "2021-06-01T22:50:11.537701Z"
+   },
+   {
+    "version": "2.6.1",
+    "url": "https://hex.pm/api/packages/certifi/releases/2.6.1",
+    "has_docs": false,
+    "inserted_at": "2021-03-17T02:00:24.284516Z"
+   },
+   {
+    "version": "2.6.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/2.6.0",
+    "has_docs": false,
+    "inserted_at": "2021-03-17T01:24:32.551852Z"
+   },
+   {
+    "version": "2.5.3",
+    "url": "https://hex.pm/api/packages/certifi/releases/2.5.3",
+    "has_docs": false,
+    "inserted_at": "2020-12-04T11:17:14.723181Z"
+   },
+   {
+    "version": "2.5.2",
+    "url": "https://hex.pm/api/packages/certifi/releases/2.5.2",
+    "has_docs": false,
+    "inserted_at": "2020-03-04T14:54:16.283323Z"
+   },
+   {
+    "version": "2.5.1",
+    "url": "https://hex.pm/api/packages/certifi/releases/2.5.1",
+    "has_docs": false,
+    "inserted_at": "2019-01-24T15:14:25.991190Z"
+   },
+   {
+    "version": "2.4.2",
+    "url": "https://hex.pm/api/packages/certifi/releases/2.4.2",
+    "has_docs": false,
+    "inserted_at": "2018-08-30T08:21:29.349366Z"
+   },
+   {
+    "version": "2.4.1",
+    "url": "https://hex.pm/api/packages/certifi/releases/2.4.1",
+    "has_docs": false,
+    "inserted_at": "2018-08-23T08:18:39.658169Z"
+   },
+   {
+    "version": "2.3.1",
+    "url": "https://hex.pm/api/packages/certifi/releases/2.3.1",
+    "has_docs": false,
+    "inserted_at": "2018-03-01T12:09:47.479620Z"
+   },
+   {
+    "version": "2.3.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/2.3.0",
+    "has_docs": false,
+    "inserted_at": "2018-02-27T21:20:24.804583Z"
+   },
+   {
+    "version": "2.2.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/2.2.0",
+    "has_docs": false,
+    "inserted_at": "2018-02-15T14:40:54.249660Z"
+   },
+   {
+    "version": "2.1.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/2.1.0",
+    "has_docs": false,
+    "inserted_at": "2018-02-15T14:24:33.990296Z"
+   },
+   {
+    "version": "2.0.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/2.0.0",
+    "has_docs": false,
+    "inserted_at": "2017-07-29T10:26:25.887395Z"
+   },
+   {
+    "version": "1.2.1",
+    "url": "https://hex.pm/api/packages/certifi/releases/1.2.1",
+    "has_docs": false,
+    "inserted_at": "2017-05-22T10:05:04.091548Z"
+   },
+   {
+    "version": "1.2.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/1.2.0",
+    "has_docs": false,
+    "inserted_at": "2017-05-20T17:36:20.704236Z"
+   },
+   {
+    "version": "1.1.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/1.1.0",
+    "has_docs": false,
+    "inserted_at": "2017-04-20T03:47:25.151946Z"
+   },
+   {
+    "version": "1.0.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/1.0.0",
+    "has_docs": false,
+    "inserted_at": "2017-01-24T11:14:00.415180Z"
+   },
+   {
+    "version": "0.7.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/0.7.0",
+    "has_docs": false,
+    "inserted_at": "2016-10-02T23:16:44.504184Z"
+   },
+   {
+    "version": "0.6.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/0.6.0",
+    "has_docs": false,
+    "inserted_at": "2016-09-12T10:05:24.327928Z"
+   },
+   {
+    "version": "0.5.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/0.5.0",
+    "has_docs": false,
+    "inserted_at": "2016-08-25T14:22:42.043018Z"
+   },
+   {
+    "version": "0.4.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/0.4.0",
+    "has_docs": false,
+    "inserted_at": "2016-03-02T20:37:38.856702Z"
+   },
+   {
+    "version": "0.3.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/0.3.0",
+    "has_docs": false,
+    "inserted_at": "2015-11-20T14:41:07.485022Z"
+   },
+   {
+    "version": "0.2.0",
+    "url": "https://hex.pm/api/packages/certifi/releases/0.2.0",
+    "has_docs": false,
+    "inserted_at": "2015-11-19T11:25:06.024607Z"
+   },
+   {
+    "version": "0.1.1",
+    "url": "https://hex.pm/api/packages/certifi/releases/0.1.1",
+    "has_docs": false,
+    "inserted_at": "2015-09-10T13:58:55.620634Z"
+   }
+  ],
+  "html_url": "https://hex.pm/packages/certifi",
+  "latest_version": "2.19.0",
+  "downloads": {
+   "all": 180698584,
+   "day": 47297,
+   "recent": 4231632,
+   "week": 318194
+  },
+  "docs_html_url": "https://certifi.hexdocs.pm/",
+  "configs": {
+   "erlang.mk": "dep_certifi = hex 2.19.0",
+   "mix.exs": "{:certifi, \"~> 2.19\"}",
+   "rebar.config": "{certifi, \"2.19.0\"}"
+  },
+  "retirements": {},
+  "latest_stable_version": "2.19.0"
+ },
+ {
+  "meta": {
+   "links": {
+    "Changelog": "https://github.com/benoitc/erlang-idna/blob/master/CHANGELOG",
+    "GitHub": "https://github.com/benoitc/erlang-idna"
+   },
+   "description": "A pure Erlang IDNA implementation",
+   "licenses": [
+    "MIT"
+   ],
+   "maintainers": []
+  },
+  "name": "idna",
+  "url": "https://hex.pm/api/packages/idna",
+  "inserted_at": "2014-08-14T21:49:30.000000Z",
+  "updated_at": "2026-11-12T14:23:02.056344Z",
+  "repository": "hexpm",
+  "releases": [
+   {
+    "version": "8.0.0",
+    "url": "https://hex.pm/api/packages/idna/releases/8.0.0",
+    "has_docs": true,
+    "inserted_at": "2026-11-12T14:23:00.032480Z"
+   },
+   {
+    "version": "7.1.0",
+    "url": "https://hex.pm/api/packages/idna/releases/7.1.0",
+    "has_docs": true,
+    "inserted_at": "2026-01-21T01:58:14.007333Z"
+   },
+   {
+    "version": "6.1.1",
+    "url": "https://hex.pm/api/packages/idna/releases/6.1.1",
+    "has_docs": false,
+    "inserted_at": "2020-12-05T10:33:35.642179Z"
+   },
+   {
+    "version": "6.1.0",
+    "url": "https://hex.pm/api/packages/idna/releases/6.1.0",
+    "has_docs": false,
+    "inserted_at": "2020-12-04T23:29:37.051951Z"
+   },
+   {
+    "version": "6.0.1",
+    "url": "https://hex.pm/api/packages/idna/releases/6.0.1",
+    "has_docs": false,
+    "inserted_at": "2020-05-14T20:29:55.992576Z"
+   },
+   {
+    "version": "6.0.0",
+    "url": "https://hex.pm/api/packages/idna/releases/6.0.0",
+    "has_docs": true,
+    "inserted_at": "2018-08-30T07:37:13.716503Z"
+   },
+   {
+    "version": "5.1.2",
+    "url": "https://hex.pm/api/packages/idna/releases/5.1.2",
+    "has_docs": false,
+    "inserted_at": "2018-06-09T08:30:35.417836Z"
+   },
+   {
+    "version": "5.1.1",
+    "url": "https://hex.pm/api/packages/idna/releases/5.1.1",
+    "has_docs": false,
+    "inserted_at": "2018-02-10T13:39:33.955519Z"
+   },
+   {
+    "version": "5.1.0",
+    "url": "https://hex.pm/api/packages/idna/releases/5.1.0",
+    "has_docs": false,
+    "inserted_at": "2017-07-29T09:19:53.958322Z"
+   },
+   {
+    "version": "5.0.2",
+    "url": "https://hex.pm/api/packages/idna/releases/5.0.2",
+    "has_docs": false,
+    "inserted_at": "2017-05-28T07:42:17.509339Z"
+   },
+   {
+    "version": "5.0.1",
+    "url": "https://hex.pm/api/packages/idna/releases/5.0.1",
+    "has_docs": false,
+    "inserted_at": "2017-05-22T09:53:57.932106Z"
+   },
+   {
+    "version": "5.0.0",
+    "url": "https://hex.pm/api/packages/idna/releases/5.0.0",
+    "has_docs": false,
+    "inserted_at": "2017-05-20T12:39:41.847318Z"
+   },
+   {
+    "version": "4.0.0",
+    "url": "https://hex.pm/api/packages/idna/releases/4.0.0",
+    "has_docs": false,
+    "inserted_at": "2016-12-22T17:06:19.127681Z"
+   },
+   {
+    "version": "3.0.0",
+    "url": "https://hex.pm/api/packages/idna/releases/3.0.0",
+    "has_docs": false,
+    "inserted_at": "2016-07-10T16:50:08.517174Z"
+   },
+   {
+    "version": "2.0.0",
+    "url": "https://hex.pm/api/packages/idna/releases/2.0.0",
+    "has_docs": false,
+    "inserted_at": "2016-03-17T04:49:33.230518Z"
+   },
+   {
+    "version": "1.2.0",
+    "url": "https://hex.pm/api/packages/idna/releases/1.2.0",
+    "has_docs": false,
+    "inserted_at": "2016-03-17T04:30:13.388064Z"
+   },
+   {
+    "version": "1.1.0",
+    "url": "https://hex.pm/api/packages/idna/releases/1.1.0",
+    "has_docs": false,
+    "inserted_at": "2016-02-27T13:18:04.140988Z"
+   },
+   {
+    "version": "1.0.3",
+    "url": "https://hex.pm/api/packages/idna/releases/1.0.3",
+    "has_docs": false,
+    "inserted_at": "2016-01-02T13:48:21.067650Z"
+   },
+   {
+    "version": "1.0.2",
+    "url": "https://hex.pm/api/packages/idna/releases/1.0.2",
+    "has_docs": false,
+    "inserted_at": "2015-01-22T12:48:58.000000Z"
+   },
+   {
+    "version": "1.0.1",
+    "url": "https://hex.pm/api/packages/idna/releases/1.0.1",
+    "has_docs": false,
+    "inserted_at": "2014-08-14T21:49:31.000000Z"
+   }
+  ],
+  "html_url": "https://hex.pm/packages/idna",
+  "latest_version": "8.0.0",
+  "downloads": {
+   "all": 179263639,
+   "day": 69154,
+   "recent": 5518840,
+   "week": 469038
+  },
+  "docs_html_url": "https://idna.hexdocs.pm/",
+  "configs": {
+   "erlang.mk": "dep_idna = hex 8.0.0",
+   "mix.exs": "{:idna, \"~> 8.0\"}",
+   "rebar.config": "{idna, \"8.0.0\"}"
+  },
+  "retirements": {},
+  "latest_stable_version": "8.0.0"
+ }
+]
