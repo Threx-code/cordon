@@ -6,6 +6,7 @@ inside a minute."""
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import time
 
@@ -59,11 +60,11 @@ class Gate:
         return root
 
     @staticmethod
-    def run(root, capsys) -> tuple[int, str]:
+    def run(root, capsys, form: str = "github") -> tuple[int, str]:
         args = argparse.Namespace(
             target=str(root),
             base="HEAD",
-            format="github",
+            format=form,
             online=False,
             quiet=True,
             annotations=None,
@@ -227,3 +228,54 @@ class TestTheCodesAndVersionsDecideReads:
             assert PackageChange("upgraded", "npm", "x", "1", "2").code_of(rule) == decide_gives(
                 rule, "suspicious"
             )
+
+
+class TestGitLabAndBitbucket:
+    """The same gate on a GitLab merge request and a Bitbucket pull request: GitLab's Code Quality report and a
+    Bitbucket Code Insights report carry one entry per blocking reason, titled with its reason code and placed at
+    the lockfile that declares the package."""
+
+    @staticmethod
+    def flagged(tmp_path):
+        probe = PackageChange("added", "npm", "flatmap-stream", None, "0.1.1")
+        ChangeReview.advisories([probe])
+        if not probe.malicious:
+            pytest.skip("the bundled intel no longer lists flatmap-stream 0.1.1")
+        return Gate.repository(
+            tmp_path / "repo", {"ms": "2.1.3"}, {"ms": "2.1.3", "flatmap-stream": "0.1.1"}
+        )
+
+    def test_gitlab_code_quality_names_the_reason_at_the_lockfile(self, tmp_path, capsys) -> None:
+        code, out = Gate.run(self.flagged(tmp_path), capsys, "codeclimate")
+        entries = [e for e in json.loads(out) if e["check_name"] == "R100"]
+        assert entries, "no R100 entry"
+        entry = entries[0]
+        assert code == 1
+        assert entry["description"].startswith("R100 Known malware: added npm:flatmap-stream 0.1.1")
+        assert entry["severity"] == "blocker" and entry["categories"] == ["Security"]
+        assert entry["location"]["path"] == "package-lock.json"
+        assert entry["location"]["lines"]["begin"] >= 1 and len(entry["fingerprint"]) == 64
+
+    def test_bitbucket_code_insights_fail_with_the_reason(self, tmp_path, capsys) -> None:
+        code, out = Gate.run(self.flagged(tmp_path), capsys, "bitbucket")
+        document = json.loads(out)
+        assert code == 1 and document["report"]["result"] == "FAILED"
+        assert document["report"]["report_type"] == "SECURITY"
+        found = [a for a in document["annotations"] if a["summary"].startswith("R100 ")]
+        assert found, "no R100 annotation"
+        annotation = found[0]
+        assert annotation["severity"] == "CRITICAL" and annotation["annotation_type"] == "VULNERABILITY"
+        assert annotation["path"] == "package-lock.json" and len(annotation["summary"]) <= 450
+
+    @pytest.mark.parametrize(("form", "empty"), [("codeclimate", []), ("bitbucket", "PASSED")])
+    def test_a_clean_change_passes_on_both(self, tmp_path, capsys, form: str, empty) -> None:
+        root = Gate.repository(tmp_path / "repo", {"ms": "2.0.0"}, {"ms": "2.1.3"})
+        code, out = Gate.run(root, capsys, form)
+        document = json.loads(out)
+        assert code == 0
+        assert (document if form == "codeclimate" else document["report"]["result"]) == empty
+
+    def test_every_format_the_command_offers_renders(self) -> None:
+        change = PackageChange("added", "npm", "x", None, "1.0.0", path="package-lock.json")
+        for render in ReviewCommand.FORMATS.values():
+            assert isinstance(render([change], "main"), str)
