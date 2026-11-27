@@ -196,6 +196,24 @@ class TestEveryEcosystemsOwnShape:
     def test_a_real_package_archive_is_recognised(self, key: str, expected: str) -> None:
         assert PackageFormat.of(RealArchives.units(key)) == expected
 
+    @pytest.mark.parametrize(
+        "key", ["composer", "actions", "helm", "pub", "julia", "ansible", "conan"]
+    )
+    def test_a_checked_out_directory_is_never_a_package(self, key: str) -> None:
+        """The same files, scanned as a folder on disk (no archive around them), are a user's own project."""
+        files = [
+            SimpleNamespace(path=member, content=SimpleNamespace(text="", raw=b""))
+            for member in RealArchives.members(key)
+        ]
+        assert PackageFormat.of(files) == ""
+
+    def test_a_project_folder_beside_its_composer_and_action_files_is_not_a_package(self) -> None:
+        folder = [
+            SimpleNamespace(path=path, content=SimpleNamespace(text="", raw=b""))
+            for path in ("composer.json", "action.yml", "src/App.php", "README.md")
+        ]
+        assert PackageFormat.of(folder) == ""
+
     def test_a_real_nix_archive_is_recognised_by_its_magic(self) -> None:
         assert PackageFormat.of(RealArchives.nar()) == "nix"
 
