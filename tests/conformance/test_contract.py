@@ -138,8 +138,7 @@ class Coverage:
 #: expected failure, so it fails the suite the moment it is complete until its entry comes off. Never a
 #: place to park a clause: what is missing here is a row of the feature guard's BUILDING list too.
 BUILDING: dict[str, str] = {
-    "vscode": "UNI-13, UNI-16, UNI-17 and UNI-22: look-alike names, the registry facts client and "
-    "provenance are being built for editor extensions",
+    "vscode": "UNI-13: look-alike names are being built for editor extensions",
 }
 
 

@@ -165,7 +165,8 @@ class OpenVsxSignature:
     def compare(cls, name: str, version: str, files: Mapping[str, str]) -> ModuleCheck:
         """Whether the files of an extension in hand (name in the package -> SHA-256) are the files Open VSX signed for
         `name` `version`: the registry's package is verified first, then every file in hand is looked up in it.
-        Only what is in hand is judged: a file the signed package has and the copy lacks is not reported."""
+        Only what is in hand is judged: a file the signed package has and the copy lacks is not reported, because a missing file adds no code to run
+        (and a partial copy is a limit of what was read, not a change); pinned by `test_a_copy_with_files_left_out_is_not_a_finding`."""
         fetched = cls._fetched(name, version)
         if isinstance(fetched, ModuleCheck):
             return fetched

@@ -39,6 +39,7 @@ class Sigzip:
 
 
 class TestARealExtension:
+    @pytest.mark.conformance("vscode", "UNI-17")
     def test_the_package_open_vsx_signed_verifies(self) -> None:
         found = OpenVsxSignature.verify(PACKAGE, SIGZIP, KEY)
         assert found.outcome == "verified", found.detail
