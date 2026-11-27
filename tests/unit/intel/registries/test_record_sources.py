@@ -126,6 +126,18 @@ class TestTheFetch:
         }
         assert "https://api.example.invalid/pkg/commits" not in asked  # no token: never asked
 
+    def test_a_document_that_is_an_array_reaches_the_record_as_the_list(self, monkeypatch) -> None:
+        # RubyGems answers its version list with a JSON array; the client wraps it, the record is given the list.
+        def fetch(url: str, *, array: bool = False) -> Any:
+            assert array
+            return {"items": [{"number": "1.0.0", "created_at": "2020-01-01T00:00:00Z"}]}
+
+        monkeypatch.setattr(registry_client.RegistryClient, "_fetch", staticmethod(fetch))
+        url = "https://registry.example.invalid/versions.json"
+        found: dict[str, Any] = {}
+        assert RecordFetch._fetch_into((Document(url, array=True),), found, None)
+        assert found == {url: [{"number": "1.0.0", "created_at": "2020-01-01T00:00:00Z"}]}
+
     def test_a_document_that_needs_a_token_is_asked_only_with_one(self, monkeypatch) -> None:
         asked = self.patch(
             monkeypatch,

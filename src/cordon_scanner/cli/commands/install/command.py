@@ -33,7 +33,8 @@ class InstallGuardCommand:
     TOOLS: ClassVar[tuple[str, ...]] = (
         "npm", "pnpm", "yarn", "pip", "pip3", "uv", "poetry", "cargo", "go", "gem", "bundler",
         "dotnet", "dart", "flutter", "conda", "mamba", "composer", "mvn",
-        "terraform", "tofu", "helm", "ansible-galaxy", "mix",
+        "terraform", "tofu", "helm", "ansible-galaxy", "mix", "docker", "podman",
+        "code", "codium", "cursor", "brew",
     )  # fmt: skip
     #: The executable each tool runs, where its name here differs (`bundle` is Cordon's own command).
     EXECUTABLES: ClassVar[dict[str, str]] = {"bundler": "bundle"}
@@ -88,10 +89,13 @@ class InstallGuardCommand:
         from cordon_scanner.cli.commands.install.dotnet import DotnetTools
         from cordon_scanner.cli.commands.install.fetched import FetchedTools
         from cordon_scanner.cli.commands.install.hex import HexTools
+        from cordon_scanner.cli.commands.install.homebrew import HomebrewTools
+        from cordon_scanner.cli.commands.install.image import ImageTools
         from cordon_scanner.cli.commands.install.maven import MavenTools
         from cordon_scanner.cli.commands.install.native import NativeTools
         from cordon_scanner.cli.commands.install.node import NodeTools
         from cordon_scanner.cli.commands.install.python import PythonTools
+        from cordon_scanner.cli.commands.install.vscode import VscodeTools
 
         return {
             "npm": (NodeTools.npm_installs, NodeTools.npm),
@@ -117,6 +121,12 @@ class InstallGuardCommand:
             "helm": (FetchedTools.helm_installs, FetchedTools.run),
             "ansible-galaxy": (FetchedTools.galaxy_installs, FetchedTools.run),
             "mix": (HexTools.installs, HexTools.mix),
+            "docker": (ImageTools.installs, ImageTools.docker),
+            "podman": (ImageTools.installs, ImageTools.docker),
+            "code": (VscodeTools.installs, VscodeTools.code),
+            "codium": (VscodeTools.installs, VscodeTools.code),
+            "cursor": (VscodeTools.installs, VscodeTools.code),
+            "brew": (HomebrewTools.installs, HomebrewTools.brew),
         }
 
 

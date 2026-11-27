@@ -281,6 +281,25 @@ class More:
             e: i.reason for e, i in AgentCalls.INSTALLERS.items() if isinstance(i, NotInstalled)
         }
 
+    @classmethod
+    def install_guard(cls) -> frozenset[str]:
+        """Ecosystems with a shim whose every tool has a handler in the install command's table."""
+        from cordon_scanner.cli.commands.install.command import InstallGuardCommand
+        from cordon_scanner.sources.install.shims import Shims
+
+        handled = set(InstallGuardCommand._table())
+        by_ecosystem: dict[str, set[bool]] = {}
+        for tool, ecosystem in Shims.ECOSYSTEM.items():
+            command = Shims.COMMANDS.get(tool, tool)
+            by_ecosystem.setdefault(ecosystem, set()).add(command in handled)
+        return cls.ids(e for e, flags in by_ecosystem.items() if flags == {True})
+
+    @classmethod
+    def install_guard_reasons(cls) -> Mapping[str, str]:
+        from cordon_scanner.sources.install.shims import Shims
+
+        return Shims.NO_TOOL
+
 
 class Features:
     #: feature -> (its coverage, the ecosystems it cannot apply to with the reason why).
@@ -311,6 +330,7 @@ class Features:
         "name-signal readers": (More.name_signals, dict),
         "private registries": (Coverage.private_registries, dict),
         "agent hook install recognition": (More.agent_hook, More.agent_hook_reasons),
+        "install shims and planners": (More.install_guard, More.install_guard_reasons),
         "fixer (lockfile fix)": (More.fixer, dict),
         "device attestation splitters": (More.device_attestation, dict),
         "subject canonicalisation": (More.subjects, dict),
@@ -325,6 +345,7 @@ class Features:
             "MCP package check",
             "name-signal readers",
             "popular package lists",
+            "install shims and planners",
             "fixer (lockfile fix)",
             "device attestation splitters",
             "subject canonicalisation",
@@ -373,3 +394,40 @@ class TestEveryFeatureCoversEveryEcosystem:
             len(ALL) == 29
             and {"npm", "pypi", "cargo", "maven", "actions", "image", "vscode"} <= ALL
         )
+
+
+#: Ecosystems whose install shim and planner are still being built. A builder takes its cell off this
+#: list when its shim and planner land; a listed cell must still fail (strict), so none stays listed.
+INSTALL_PENDING = frozenset(
+    {
+        "bazel", "cocoapods", "conan", "cran", "gradle", "hackage",
+        "julia", "nix", "opam", "swift", "vcpkg",
+    }
+)  # fmt: skip
+
+
+class InstallCells:
+    @staticmethod
+    def params() -> list[object]:
+        return [
+            pytest.param(e, marks=[pytest.mark.xfail(strict=True, reason="being built")])
+            if e in INSTALL_PENDING
+            else pytest.param(e)
+            for e in sorted(ALL)
+        ]
+
+
+class TestInstallGuardCoversEachEcosystem:
+    """One cell per ecosystem for "install shims and planners", so an ecosystem finished early is
+    not hidden behind one still being built."""
+
+    @pytest.mark.parametrize("ecosystem", InstallCells.params())
+    def test_it_has_a_shim_with_a_planner_or_a_true_reason(self, ecosystem: str) -> None:
+        assert ecosystem in More.install_guard() or ecosystem in More.install_guard_reasons()
+
+    def test_a_pending_ecosystem_is_a_real_one(self) -> None:
+        assert INSTALL_PENDING <= ALL
+
+    def test_the_cells_are_exactly_what_the_feature_row_lacks(self) -> None:
+        lacking = ALL - More.install_guard() - set(More.install_guard_reasons())
+        assert lacking == INSTALL_PENDING

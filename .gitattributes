@@ -17,5 +17,7 @@ corpus/** binary
 # byte counts in their timing files: rewriting a line ending would shift every count after it.
 docs/assets/terminal/** binary
 
-# Real-file captures are kept byte for byte (CRLF and all): the provenance table holds their hash.
+# Captured fixtures are real files kept byte for byte, each recorded with its sha256 in its folder's CAPTURES.md
+# (tests/unit/repository/release/test_fixture_provenance.py): a checkout must never rewrite a line ending in one,
+# or the recorded hash stops being the file's (a real action.yml is served with CRLF line endings).
 tests/**/*_captures/** binary

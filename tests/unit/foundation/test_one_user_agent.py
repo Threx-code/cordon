@@ -88,9 +88,9 @@ class Sites:
         """Only the bare name: `x.USER_AGENT` would be a second home, even if it points at the first."""
         return isinstance(value, ast.Name) and value.id == "USER_AGENT"
 
-
-def label(path: Path) -> str:
-    return str(path.relative_to(ROOT))
+    @staticmethod
+    def label(path: Path) -> str:
+        return path.relative_to(ROOT).as_posix()
 
 
 class TestTheAgent:
@@ -105,19 +105,19 @@ class TestEveryRequestTakesIt:
     def test_the_sources_are_found(self) -> None:
         assert any(p.name == "registry_request.py" for p in SOURCES)
 
-    @pytest.mark.parametrize("path", SOURCES, ids=label)
+    @pytest.mark.parametrize("path", SOURCES, ids=Sites.label)
     def test_every_agent_header_is_the_constant(self, path: Path) -> None:
         for value in Sites.headers(path):
             assert Sites.is_the_constant(value), (
-                f"{label(path)}:{value.lineno}: {ast.unparse(value)}"
+                f"{Sites.label(path)}:{value.lineno}: {ast.unparse(value)}"
             )
 
-    @pytest.mark.parametrize("path", SOURCES, ids=label)
+    @pytest.mark.parametrize("path", SOURCES, ids=Sites.label)
     def test_no_module_keeps_an_agent_of_its_own(self, path: Path) -> None:
         if path == VERSION_FILE:
             pytest.skip("the home")
-        assert Sites.defined(path) == [], label(path)
+        assert Sites.defined(path) == [], Sites.label(path)
 
-    @pytest.mark.parametrize("path", SOURCES, ids=label)
+    @pytest.mark.parametrize("path", SOURCES, ids=Sites.label)
     def test_the_constant_is_imported_from_its_home(self, path: Path) -> None:
-        assert set(Sites.imported_from(path)) <= {HOME}, label(path)
+        assert set(Sites.imported_from(path)) <= {HOME}, Sites.label(path)
