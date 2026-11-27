@@ -367,20 +367,22 @@ INSTALL_PENDING = frozenset(
 )  # fmt: skip
 
 
-def install_cells() -> list[object]:
-    return [
-        pytest.param(e, marks=[pytest.mark.xfail(strict=True, reason="being built")])
-        if e in INSTALL_PENDING
-        else pytest.param(e)
-        for e in sorted(ALL)
-    ]
+class InstallCells:
+    @staticmethod
+    def params() -> list[object]:
+        return [
+            pytest.param(e, marks=[pytest.mark.xfail(strict=True, reason="being built")])
+            if e in INSTALL_PENDING
+            else pytest.param(e)
+            for e in sorted(ALL)
+        ]
 
 
 class TestInstallGuardCoversEachEcosystem:
     """One cell per ecosystem for "install shims and planners", so an ecosystem finished early is
     not hidden behind one still being built."""
 
-    @pytest.mark.parametrize("ecosystem", install_cells())
+    @pytest.mark.parametrize("ecosystem", InstallCells.params())
     def test_it_has_a_shim_with_a_planner_or_a_true_reason(self, ecosystem: str) -> None:
         assert ecosystem in More.install_guard() or ecosystem in More.install_guard_reasons()
 

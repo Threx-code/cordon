@@ -13,26 +13,30 @@ import io
 import json
 import math
 import tomllib
-from pathlib import Path
 from typing import Any
 
 import pytest
-from refresh_script import refresh_module
+from refresh_script import RefreshScript
 
 from support import ROOT
 
-PAGES = Path(__file__).parent / "pages"
+
+class Pages:
+    DIRECTORY = ROOT / "tests" / "unit" / "intel" / "registries" / "package_lists" / "pages"
+
+    @classmethod
+    def read(cls, name: str) -> Any:
+        return json.loads((cls.DIRECTORY / name).read_text(encoding="utf-8"))
 
 
-def page(name: str) -> Any:
-    return json.loads((PAGES / name).read_text(encoding="utf-8"))
+class Offline:
+    """The refresh script with its waits removed, run from the repository."""
 
-
-@pytest.fixture(autouse=True)
-def _offline(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(ROOT)
-    script = refresh_module()
-    monkeypatch.setattr(script.time, "sleep", lambda _s: None)
+    @pytest.fixture(autouse=True)
+    def _offline(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.chdir(ROOT)
+        script = RefreshScript.module()
+        monkeypatch.setattr(script.time, "sleep", lambda _s: None)
 
 
 class Network:
@@ -50,7 +54,7 @@ class Network:
         raise AssertionError(f"unexpected request: {url}")
 
     def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        refresh = refresh_module().PackageIntelRefresh
+        refresh = RefreshScript.module().PackageIntelRefresh
         monkeypatch.setattr(
             refresh, "fetch_json_retrying", staticmethod(lambda url, **_: self.answer(url))
         )
@@ -61,40 +65,40 @@ class Network:
         )
 
 
-class TestRankedSources:
+class TestRankedSources(Offline):
     def test_hex_reads_all_time_downloads(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        Network({"page=1": page("hex.json"), "page=": []}).install(monkeypatch)
-        names, source = refresh_module().PackageIntelRefresh.hex_pm()
+        Network({"page=1": Pages.read("hex.json"), "page=": []}).install(monkeypatch)
+        names, source = RefreshScript.module().PackageIntelRefresh.hex_pm()
         assert names == [("jason", 219403885), ("certifi", 180698584), ("idna", 179263639)]
         assert source == "https://hex.pm/api/packages"
 
     def test_hackage_reads_its_download_table(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        Network({"packages/top": page("hackage.json")}).install(monkeypatch)
-        names, _ = refresh_module().PackageIntelRefresh.hackage()
+        Network({"packages/top": Pages.read("hackage.json")}).install(monkeypatch)
+        names, _ = RefreshScript.module().PackageIntelRefresh.hackage()
         assert names[:2] == [("git-annex", 1982), ("pandoc", 1602)]
         assert len(names) == 5
 
     def test_artifact_hub_reads_stars_and_keeps_the_best_of_a_repeated_name(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        repeated = page("artifacthub.json")
+        repeated = Pages.read("artifacthub.json")
         repeated["packages"].append({**repeated["packages"][0], "stars": 5})
         Network({"search": repeated}).install(monkeypatch)
-        names, _ = refresh_module().PackageIntelRefresh.artifact_hub()
+        names, _ = RefreshScript.module().PackageIntelRefresh.artifact_hub()
         assert dict(names) == {"kube-prometheus-stack": 1237, "cert-manager": 999, "argo-cd": 847}
 
     def test_terraform_reads_provider_downloads(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        Network({"number%5D=1&": page("terraform.json"), "number%5D=": {"data": []}}).install(
+        Network({"number%5D=1&": Pages.read("terraform.json"), "number%5D=": {"data": []}}).install(
             monkeypatch
         )
-        names, _ = refresh_module().PackageIntelRefresh.terraform_providers()
+        names, _ = RefreshScript.module().PackageIntelRefresh.terraform_providers()
         assert names == [("aws", 8659723560), ("random", 3662037886), ("google", 2912301379)]
 
     def test_galaxy_reads_download_counts_and_sorts_them(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        Network({"index/": page("galaxy.json")}).install(monkeypatch)
-        names, _ = refresh_module().PackageIntelRefresh.galaxy()
+        Network({"index/": Pages.read("galaxy.json")}).install(monkeypatch)
+        names, _ = RefreshScript.module().PackageIntelRefresh.galaxy()
         assert names == [
             ("consensus.matomo", 16),
             ("koichirok.postconf", 15),
@@ -104,10 +108,10 @@ class TestRankedSources:
     def test_julia_sums_the_requests_for_each_named_package(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        registry = (PAGES / "julia_registry.toml").read_bytes()
-        logs = (PAGES / "julia_requests.csv.gz").read_bytes()
+        registry = (Pages.DIRECTORY / "julia_registry.toml").read_bytes()
+        logs = (Pages.DIRECTORY / "julia_requests.csv.gz").read_bytes()
         Network({"Registry.toml": registry, "package_requests": logs}).install(monkeypatch)
-        names, _ = refresh_module().PackageIntelRefresh.julia()
+        names, _ = RefreshScript.module().PackageIntelRefresh.julia()
         expected: dict[str, int] = {}
         uuids = tomllib.loads(registry.decode())["packages"]
         for row in csv.DictReader(io.StringIO(gzip.decompress(logs).decode())):
@@ -122,22 +126,22 @@ class TestRankedSources:
     ) -> None:
         Network(
             {
-                "repositories/library": page("hub_library.json"),
-                "page=1": page("hub_search.json"),
+                "repositories/library": Pages.read("hub_library.json"),
+                "page=1": Pages.read("hub_search.json"),
                 "page=2": {"results": []},
             }
         ).install(monkeypatch)
-        names, _ = refresh_module().PackageIntelRefresh.docker_hub()
+        names, _ = RefreshScript.module().PackageIntelRefresh.docker_hub()
         found = dict(names)
         assert found["nginx"] == 13643022660
         assert found["nginx/nginx-ingress"] == 1089031337
         assert found["espocrm"] == 256211
 
     def test_github_actions_reads_stars(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        Network({"&page=1": page("github_actions.json"), "&page=": {"items": []}}).install(
+        Network({"&page=1": Pages.read("github_actions.json"), "&page=": {"items": []}}).install(
             monkeypatch
         )
-        names, _ = refresh_module().PackageIntelRefresh.github_actions()
+        names, _ = RefreshScript.module().PackageIntelRefresh.github_actions()
         assert names == [
             ("lowlighter/metrics", 17492),
             ("kucherenko/jscpd", 6631),
@@ -145,20 +149,20 @@ class TestRankedSources:
         ]
 
 
-class TestIndexSources:
+class TestIndexSources(Offline):
     def test_conda_lists_the_channel_in_its_own_order(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        body = (PAGES / "conda_channeldata.json").read_bytes()
+        body = (Pages.DIRECTORY / "conda_channeldata.json").read_bytes()
         Network({"channeldata": body}).install(monkeypatch)
-        names, _, size, step = refresh_module().PackageIntelRefresh.conda()
+        names, _, size, step = RefreshScript.module().PackageIntelRefresh.conda()
         assert names == list(json.loads(body)["packages"])
         assert (size, step) == (4, 1)
 
     def test_swift_names_each_repository(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        urls = page("swift_packages.json")
+        urls = Pages.read("swift_packages.json")
         Network({"packages.json": urls}).install(monkeypatch)
-        names, _, size, _ = refresh_module().PackageIntelRefresh.swift()
+        names, _, size, _ = RefreshScript.module().PackageIntelRefresh.swift()
         assert size == len(urls)
         assert names == [
             u.rstrip("/").removesuffix(".git").rsplit("/", 1)[-1].lower() for u in urls
@@ -167,24 +171,26 @@ class TestIndexSources:
     def test_cocoapods_names_every_pod_of_every_shard(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        shard = (PAGES / "cocoapods_shard.txt").read_text(encoding="utf-8")
+        shard = (Pages.DIRECTORY / "cocoapods_shard.txt").read_text(encoding="utf-8")
         network = Network({"all_pods_versions_": shard})
         network.install(monkeypatch)
-        names, _, size, step = refresh_module().PackageIntelRefresh.cocoapods()
+        names, _, size, step = RefreshScript.module().PackageIntelRefresh.cocoapods()
         assert len(network.asked) == 16**3
         assert size == len({ln.split("/", 1)[0] for ln in shard.splitlines()})
         assert "Alamofire" in names
         assert step == 1
 
 
-class TestTheStride:
+class TestTheStride(Offline):
     @pytest.mark.parametrize(
         ("size", "step"),
         [(1, 1), (999, 1), (1000, 1), (1001, 2), (2500, 3), (22538, 23), (35256, 36)],
     )
     def test_n_is_the_size_over_a_thousand_rounded_up(self, size: int, step: int) -> None:
         names = [f"name-{i}" for i in range(size)]
-        sample, _, whole, found = refresh_module().PackageIntelRefresh.sampled(names, "source")
+        sample, _, whole, found = RefreshScript.module().PackageIntelRefresh.sampled(
+            names, "source"
+        )
         assert (whole, found) == (size, step)
         assert found == math.ceil(size / 1000)
         assert sample == names[::step]
@@ -192,5 +198,5 @@ class TestTheStride:
 
     def test_it_reaches_the_end_of_the_alphabet(self) -> None:
         names = sorted(f"{a}{b}" for a in "abcdefghijklmnopqrstuvwxyz" for b in "abcdefghij" * 20)
-        sample, _, _, _ = refresh_module().PackageIntelRefresh.sampled(names, "source")
+        sample, _, _, _ = RefreshScript.module().PackageIntelRefresh.sampled(names, "source")
         assert {n[0] for n in sample} == set("abcdefghijklmnopqrstuvwxyz")
