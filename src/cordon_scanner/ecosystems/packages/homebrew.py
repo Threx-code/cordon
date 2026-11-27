@@ -833,6 +833,7 @@ class HomebrewEcosystem(BaseEcosystem):
     own_name = OwnName(
         ("Formula/*.rb", "Formula/*/*.rb", ".brew/*.rb"),
         readers=(("*.rb", "formula_stem"),),
+        parsers=(("*.rb", "formula_manifest"),),
     )
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:

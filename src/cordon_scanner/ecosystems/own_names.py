@@ -32,6 +32,27 @@ class OwnName:
     blocks: bool = False
     #: A file's pattern -> the `OwnNameReaders` function that reads it; a file not named here is read as the manifest it is.
     readers: tuple[tuple[str, str], ...] = ()
+    #: A file's pattern -> the `OwnNameReaders` function that reads the file as a `Manifest` (its name, dependencies and hooks)
+    #: when the ecosystem's own manifest parser does not read it: what the campaign fingerprint reads of a published package.
+    parsers: tuple[tuple[str, str], ...] = ()
+    #: The suffixes of the archives these files are a package's identity in, when another ecosystem's package has a file of the
+    #: same name (a .vsix's `extension/package.json` and an npm package's): empty means any archive.
+    archives: tuple[str, ...] = ()
+
+    def parser(self, path: str) -> str | None:
+        """The parser for the most specific pattern of `parsers` that `path` matches, or None."""
+        tail = PurePosixPath(path.rpartition("!")[2])
+        found = [(len(PurePosixPath(p).parts), name) for p, name in self.parsers if tail.match(p)]
+        return max(found)[1] if found else None
+
+    def at_root(self, member: str) -> bool:
+        """Whether `member` (a path inside an archive) is one of the declared files as it sits at the root of a package: the
+        whole path matches a pattern with as many parts as it has."""
+        path = PurePosixPath(member)
+        return any(
+            len(path.parts) == len(PurePosixPath(pattern).parts) and path.match(pattern)
+            for pattern in self.files
+        )
 
     def reader(self, path: str) -> str | None:
         """The reader for the most specific pattern of `readers` that `path` matches, or None."""

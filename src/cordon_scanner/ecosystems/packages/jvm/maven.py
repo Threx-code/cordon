@@ -543,7 +543,7 @@ class MavenWrapper:
 
 class MavenEcosystem(BaseEcosystem):
     id = "maven"
-    own_name = OwnName(("pom.xml",))
+    own_name = OwnName(("pom.xml", "META-INF/maven/*/*/pom.xml"))
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         return name.split(":", 1)[0] if ":" in name else None

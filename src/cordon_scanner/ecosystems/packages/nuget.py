@@ -549,7 +549,11 @@ class NuGetAssets:
 
 class NuGetEcosystem(BaseEcosystem):
     id = "nuget"
-    own_name = OwnName(("*.nuspec",), readers=(("*.nuspec", "nuspec_id"),))
+    own_name = OwnName(
+        ("*.nuspec",),
+        readers=(("*.nuspec", "nuspec_id"),),
+        parsers=(("*.nuspec", "nuspec_manifest"),),
+    )
 
     def admits_lowest(self, declared_spec: str) -> bool:
         # `Version="1.2.3"` means at least 1.2.3, and NuGet restores the lowest version a direct

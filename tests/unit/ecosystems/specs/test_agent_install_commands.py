@@ -54,8 +54,10 @@ COMMANDS = [
 ]  # fmt: skip
 
 
-def hook(command: str) -> dict:
-    return {"tool_name": "Bash", "tool_input": {"command": command}}
+class Hook:
+    @staticmethod
+    def of(command: str) -> dict:
+        return {"tool_name": "Bash", "tool_input": {"command": command}}
 
 
 class TestEveryEcosystemIsRecognisedOrSaysWhy:
@@ -86,7 +88,7 @@ class TestTheCommandsOfEachManager:
     def test_the_install_is_gated_with_its_package(
         self, ecosystem: str, command: str, reference: str, name: str, version: str | None
     ) -> None:
-        call = AgentCalls.of(hook(command))
+        call = AgentCalls.of(Hook.of(command))
         assert call is not None and (call.what, call.resolver) == ("install", "package")
         assert call.reference == reference
         eco, _, spec = call.reference.partition(":")
@@ -112,5 +114,5 @@ class TestTheCommandsOfEachManager:
     def test_a_command_that_installs_no_named_package_is_an_ordinary_command(
         self, command: str
     ) -> None:
-        call = AgentCalls.of(hook(command))
+        call = AgentCalls.of(Hook.of(command))
         assert call is not None and call.what == "run_command"

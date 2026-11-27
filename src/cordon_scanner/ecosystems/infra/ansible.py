@@ -461,7 +461,11 @@ class AnsibleGalaxyEcosystem(BaseEcosystem):
     """Galaxy roles and collections, declared and installed."""
 
     id = "ansible"
-    own_name = OwnName(("MANIFEST.json",), readers=(("MANIFEST.json", "collection_manifest"),))
+    own_name = OwnName(
+        ("MANIFEST.json",),
+        readers=(("MANIFEST.json", "collection_manifest"),),
+        parsers=(("MANIFEST.json", "collection_manifest_full"),),
+    )
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         return name.split(".", 1)[0] if "." in name else None

@@ -274,6 +274,22 @@ class EcosystemRegistry:
                 found.append((ecosystem.id != preferred, -depth, ecosystem.id, ecosystem))
         return [ecosystem for *_, ecosystem in sorted(found, key=lambda f: f[:3])]
 
+    @classmethod
+    def published_identity_ecosystem(cls, member: str, archive: str = "") -> str | None:
+        """The ecosystem whose published package has this archive member as the file that names it, at the package's root. An
+        ecosystem whose packages share their identity file with another's (a .vsix's `extension/package.json`) is asked only of
+        its own archives (`OwnName.archives`)."""
+        for ecosystem in cls.ECOSYSTEMS:
+            if isinstance(ecosystem, BaseEcosystem):
+                declared = ecosystem.own_name
+                if (
+                    isinstance(declared, OwnName)
+                    and declared.at_root(member)
+                    and (not declared.archives or archive.endswith(declared.archives))
+                ):
+                    return ecosystem.id
+        return None
+
     @staticmethod
     def manifest_ecosystem(path: str) -> str | None:
         """Which ecosystem's manifest this path is, if any."""

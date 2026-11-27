@@ -775,7 +775,9 @@ class HexEcosystem(BaseEcosystem):
 
     id = "hex"
     own_name = OwnName(
-        ("mix.exs", "metadata.config"), readers=(("metadata.config", "hex_metadata"),)
+        ("mix.exs", "metadata.config"),
+        readers=(("metadata.config", "hex_metadata"),),
+        parsers=(("metadata.config", "hex_manifest"),),
     )
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:

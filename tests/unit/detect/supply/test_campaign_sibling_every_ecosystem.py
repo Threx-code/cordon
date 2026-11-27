@@ -19,36 +19,58 @@ from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.intel.malware.campaign import CampaignFingerprint, CampaignIndex
 from cordon_scanner.rules.loader import RuleSet
 
-ARCHIVE = "pkg.tgz!"
-
 
 class Package:
     @staticmethod
+    def archive_of(case: Real) -> str:
+        """The archive a package of the ecosystem is published as, as far as the fingerprint tells them apart."""
+        return "pkg.vsix!" if case.ecosystem == "vscode" else "pkg.tgz!"
+
+    @staticmethod
     def member(case: Real) -> str:
         """Where the manifest sits in a published archive: npm packs under `package/`."""
-        return f"package/{case.path}" if case.ecosystem == "npm" else case.path
+        if case.ecosystem == "npm":
+            return f"package/{case.path}"
+        return case.root or case.path
+
+    @staticmethod
+    def renamed(raw: bytes, cut: str) -> bytes:
+        """The manifest republished under another name: the declaration of the name (its first quoted spelling, else its
+        first spelling) loses a letter; nothing else changes, as a campaign renames only the package."""
+        quoted = f'"{cut}"'.encode()
+        if quoted in raw:
+            return raw.replace(quoted, f'"{cut[:-1]}"'.encode(), 1)
+        return raw.replace(cut.encode(), cut[:-1].encode(), 1)
 
     @classmethod
     def reads(cls, case: Real) -> bool:
-        return CampaignFingerprint.root_manifest(f"{ARCHIVE}{cls.member(case)}") == case.ecosystem
+        return (
+            CampaignFingerprint.root_manifest(f"{Package.archive_of(case)}{cls.member(case)}")
+            == case.ecosystem
+        )
 
     @classmethod
     def unit(cls, case: Real, raw: bytes) -> tuple[FileUnit, ScanContext]:
-        path = f"{ARCHIVE}{cls.member(case)}"
+        path = f"{Package.archive_of(case)}{cls.member(case)}"
         unit = FileUnit(content=FileContent.from_bytes(path, raw))
         ctx = ScanContext(
             config=Config.default(),
             rules=RuleSet(()),
-            tree_paths=frozenset({path, f"{ARCHIVE}lib/a.txt", f"{ARCHIVE}lib/b.txt"}),
+            tree_paths=frozenset(
+                {
+                    path,
+                    f"{Package.archive_of(case)}lib/a.txt",
+                    f"{Package.archive_of(case)}lib/b.txt",
+                }
+            ),
         )
         return unit, ctx
 
 
-#: Real manifests too bare to fingerprint: google/uuid's go.mod requires nothing, so it has one informative facet (its layout)
-#: and no campaign can be two facets of it.
-UNINFORMATIVE = {"gomod"}
-READ = [c for c in CASES if Package.reads(c) and c.ecosystem not in UNINFORMATIVE]
-NOT_READ = [c for c in CASES if not Package.reads(c) and c.ecosystem not in UNINFORMATIVE]
+#: Real files too bare to fingerprint: google/uuid's go.mod requires nothing, and a Terraform provider's release is one binary
+#: named for it, so each has one informative facet (its layout) and no campaign can be two facets of it.
+UNINFORMATIVE = {"gomod", "terraform"}
+READ = [c for c in CASES if c.ecosystem not in UNINFORMATIVE]
 
 
 class TestAVariantIsFoundInEveryEcosystemWhoseManifestIsRead:
@@ -70,29 +92,14 @@ class TestAVariantIsFoundInEveryEcosystemWhoseManifestIsRead:
         }
         index = CampaignIndex.of_document(CampaignIndex.build([(facets, record)], [], "2026-10-21"))
         monkeypatch.setattr(CampaignIndex, "shipped", staticmethod(lambda: index))
-        slip = case.cut[:-1]
-        variant, _ = Package.unit(case, case.raw().replace(case.cut.encode(), slip.encode(), 1))
+        variant, _ = Package.unit(case, Package.renamed(case.raw(), case.cut))
         found = CampaignSiblingDetector.siblings_of(variant, ctx)
         assert found is not None and [r["id"] for r in found[1]] == ["MAL-2026-1"], case.ecosystem
 
 
-class TestWhatTheFingerprintDoesNotYetRead:
-    @pytest.mark.parametrize(
-        "case",
-        [
-            pytest.param(
-                c,
-                marks=pytest.mark.xfail(
-                    strict=True,
-                    reason=(
-                        f"{c.ecosystem}: the file that names a published package is not a manifest the "
-                        "fingerprint reads at the package's root"
-                    ),
-                ),
-            )
-            for c in NOT_READ
-        ],
-        ids=[c.ecosystem for c in NOT_READ],
-    )
-    def test_the_published_manifest_is_read(self, case: Real) -> None:
-        assert Package.reads(case)
+class TestEveryPublishedIdentityFileIsRead:
+    @pytest.mark.parametrize("case", CASES, ids=[c.ecosystem for c in CASES])
+    def test_the_file_that_names_a_published_package_is_a_manifest_the_fingerprint_reads(
+        self, case: Real
+    ) -> None:
+        assert Package.reads(case), case.ecosystem

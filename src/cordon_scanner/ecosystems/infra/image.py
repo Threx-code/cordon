@@ -574,6 +574,7 @@ class ImageEcosystem(BaseEcosystem):
     own_name = OwnName(
         ("blobs/sha256/*", "?" * 64 + ".json"),
         readers=(("blobs/sha256/*", "image_config"), ("?" * 64 + ".json", "image_config")),
+        parsers=(("blobs/sha256/*", "image_manifest"), ("?" * 64 + ".json", "image_manifest")),
     )
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:

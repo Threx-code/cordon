@@ -52,6 +52,8 @@ class Real:
     #: The part of the name that is cut to make a slip of it (the slip is that part with its last letter gone).
     cut: str
     capture: str = ""
+    #: Where the file sits at the root of a published archive, when that is not where the repository keeps it.
+    root: str = ""
 
     def raw(self) -> bytes:
         if self.capture == "nupkg":
@@ -112,12 +114,19 @@ CASES = [
         "gson",
         "gson-2.11.0.pom",
     ),
-    Real("nix", "pkgs/by-name/he/hello/package.nix", "hello", "hello", "hello-package.nix"),
+    Real(
+        "nix",
+        "pkgs/by-name/he/hello/package.nix",
+        "hello",
+        "hello",
+        "hello-package.nix",
+        "package.nix",
+    ),
     Real("npm", "package.json", "@cdxgen/cdxgen", "cdxgen", "cdxgen-package.json"),
     Real(
         "nuget", "Microsoft.NETCore.Targets.nuspec", "Microsoft.NETCore.Targets", "Targets", "nupkg"
     ),
-    Real("opam", "packages/dune/dune.3.15.3/opam", "dune", "dune", "opam-dune.3.15.3-opam"),
+    Real("opam", "packages/dune/dune.3.15.3/opam", "dune", "dune", "opam-dune.3.15.3-opam", "opam"),
     Real("pub", "pubspec.yaml", "http", "http", "http-1.2.2-pubspec.yaml"),
     Real("pypi", "pyproject.toml", "cdxgen", "cdxgen", "cdxgen-pyproject.toml"),
     Real(
@@ -135,7 +144,7 @@ CASES = [
         "swift-argument-parser-Package.swift",
     ),
     Real("terraform", "terraform-provider-null_v3.2.2_x5", "null", "null", "member-name"),
-    Real("vcpkg", "ports/zlib/vcpkg.json", "zlib", "zlib", "zlib-vcpkg.json"),
+    Real("vcpkg", "ports/zlib/vcpkg.json", "zlib", "zlib", "zlib-vcpkg.json", "vcpkg.json"),
     Real(
         "vscode",
         "extension/package.json",

@@ -529,6 +529,7 @@
   "ecosystems/base": "ecosystems/base",
   "ecosystems/contract": "ecosystems/contract",
   "ecosystems/own_names": "ecosystems/own_names",
+  "ecosystems/published_manifests": "ecosystems/published_manifests",
   "intel/malware/malware_sources": "intel/malware/malware_sources",
   "ecosystems/specs/install_specs": "ecosystems/specs/install_specs",
   "ecosystems/vendored/vendored_copies": "ecosystems/vendored/vendored_copies",

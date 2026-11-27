@@ -802,7 +802,11 @@ class NixEcosystem(BaseEcosystem):
     """Flake inputs and hand-pinned sources."""
 
     id = "nix"
-    own_name = OwnName(("package.nix",), readers=(("package.nix", "nix_pname"),))
+    own_name = OwnName(
+        ("package.nix",),
+        readers=(("package.nix", "nix_pname"),),
+        parsers=(("package.nix", "nix_manifest"),),
+    )
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         return name.rsplit("/", 1)[0] if "/" in name else None

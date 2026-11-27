@@ -82,6 +82,8 @@ class VsCodeEcosystem(BaseEcosystem):
     own_name = OwnName(
         ("extension/package.json",),
         readers=(("extension/package.json", "extension_manifest"),),
+        parsers=(("extension/package.json", "extension_package"),),
+        archives=(".vsix",),
     )
     purl_type = "vscode-extension"
     manifest_globs: tuple[str, ...] = (

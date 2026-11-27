@@ -505,7 +505,9 @@ class PodfileLock:
 class CocoaPodsEcosystem(BaseEcosystem):
     id = "cocoapods"
     own_name = OwnName(
-        ("*.podspec", "*.podspec.json"), readers=(("*.podspec.json", "podspec_json"),)
+        ("*.podspec", "*.podspec.json"),
+        readers=(("*.podspec.json", "podspec_json"),),
+        parsers=(("*.podspec.json", "podspec_json_manifest"),),
     )
     purl_type = "cocoapods"
     manifest_globs: tuple[str, ...] = ("**/Podfile", "**/*.podspec")
