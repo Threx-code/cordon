@@ -137,6 +137,8 @@ class ProvenanceDetector(BaseDetector):
             "nuget": lambda d: bool(d.version) and not (d.local or d.resolved_from),
             # A package of hackage.haskell.org at a version, not a path or another repository's.
             "hackage": lambda d: bool(d.version) and not (d.local or d.resolved_from),
+            # An extension pinned at a version (a devcontainer `publisher.name@version`): Open VSX signs each release.
+            "vscode": lambda d: bool(d.version) and not (d.local or d.resolved_from),
         }
     )
     #: The ecosystems whose provenance is not the registry's attestation, by their verifier.
@@ -151,6 +153,7 @@ class ProvenanceDetector(BaseDetector):
             "actions": "_verify_actions",
             "nuget": "_verify_nuget",
             "hackage": "_verify_hackage",
+            "vscode": "_verify_vscode",
         }
     )
     #: Where a publisher signs every artefact or none, so an unsigned one the project runs is the
@@ -675,6 +678,16 @@ class ProvenanceDetector(BaseDetector):
 
         check = HackageTuf.check(dependency.name, dependency.version or "", dependency.integrity)
         return self._report(check, dependency, ctx, "TUF target")
+
+    def _verify_vscode(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
+        """An extension release's package signature, checked against the pinned Open VSX key
+        (`intel/provenance/releases/openvsx_signature`)."""
+        from cordon_scanner.intel.registry import OpenVsxSignature
+
+        check = OpenVsxSignature.check(
+            dependency.name, dependency.version or "", dependency.integrity
+        )
+        return self._report(check, dependency, ctx, "package signature")
 
     def _report(
         self, check: ModuleCheck, dependency: Dependency, ctx: ScanContext, what: str

@@ -249,7 +249,6 @@ class Features:
     BUILDING: ClassVar[frozenset[str]] = frozenset(
         {
             # Not yet built for every ecosystem:
-            "provenance (signed build attestations)",
             "look-alike names",
             "registry facts client",
             "package-URL scan targets",

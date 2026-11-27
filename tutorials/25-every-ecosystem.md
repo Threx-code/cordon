@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-Every package ecosystem Cordon reads, 28 of them, and how to scan each one. The files,
+Every package ecosystem Cordon reads, 29 of them, and how to scan each one. The files,
 the checks and the commands below are rendered from the shipped code, so this page names
 exactly what a scan reads. The same facts as one table:
 [docs/07-ECOSYSTEMS.md](../docs/07-ECOSYSTEMS.md).
@@ -266,6 +266,29 @@ R packages, through renv. Ecosystem id `cran`.
 │                 names                                                      │
 │ WITH --online   registry: withdrawn releases, version distance, hash       │
 │                 agreement                                                  │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+```
+cordon-scanner scan .                      # every file above, in the project
+cordon-scanner deps .                      # every package found, with its findings
+```
+
+## Editor extensions
+
+The VS Code extensions a workspace recommends or pins, from Open VSX. Ecosystem id `vscode`.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ MANIFESTS       .vscode/extensions.json, .devcontainer/devcontainer.json,  │
+│                 .devcontainer.json, extension.vsixmanifest                 │
+│ LOCKFILES       none                                                       │
+│                                                                            │
+│ OFFLINE         the dependency graph, lockfile integrity, licences,        │
+│                 install hooks                                              │
+│                 known-malicious and known-vulnerable releases, offline     │
+│ WITH --online   provenance: whether a build attestation exists, and        │
+│                 verifies                                                   │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 

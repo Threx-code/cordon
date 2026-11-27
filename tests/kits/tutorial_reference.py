@@ -69,6 +69,7 @@ NAMES: dict[str, tuple[str, str]] = {
     "swift": ("Swift", "Swift Package Manager dependencies"),
     "terraform": ("Terraform", "providers and their pinned hashes"),
     "vcpkg": ("vcpkg", "C and C++ ports"),
+    "vscode": ("Editor extensions", "the VS Code extensions a workspace recommends or pins, from Open VSX"),
 }
 
 

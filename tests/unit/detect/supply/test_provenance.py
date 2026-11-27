@@ -522,6 +522,55 @@ class TestHackagePackagesReachTheirMetadata:
         assert TestTheEcosystemsVerifiedOutsideTheRegistryClient.run((self.dependency(),)) == rules
 
 
+class TestEditorExtensionsReachTheirSignature:
+    """An extension pinned at a version is asked for its Open VSX package signature; an id with no version is not."""
+
+    @staticmethod
+    def dependency(version: str | None = "2.8.0", **more) -> Dependency:
+        return Dependency(
+            purl=f"pkg:vscode-extension/a.b@{version}",
+            ecosystem="vscode",
+            name="a.b",
+            version=version,
+            direct=True,
+            declared_in=".devcontainer/devcontainer.json",
+            **more,
+        )
+
+    @staticmethod
+    def stand_in(monkeypatch, outcome: str = "verified") -> list[tuple[str, str]]:
+        from cordon_scanner.intel.provenance.bazel_provenance import ModuleCheck
+        from cordon_scanner.intel.provenance.releases.openvsx_signature import OpenVsxSignature
+
+        asked: list[tuple[str, str]] = []
+
+        def check(name, version, integrity):
+            asked.append((name, version))
+            return ModuleCheck(outcome, "stood in")
+
+        monkeypatch.setattr(OpenVsxSignature, "check", staticmethod(check))
+        return asked
+
+    def test_only_a_pinned_version_is_asked(self, monkeypatch) -> None:
+        asked = self.stand_in(monkeypatch)
+        deps = (self.dependency(), self.dependency(None), self.dependency(local=True))
+        assert TestTheEcosystemsVerifiedOutsideTheRegistryClient.run(deps) == []
+        assert asked == [("a.b", "2.8.0")]
+
+    @pytest.mark.parametrize(
+        ("outcome", "rules"),
+        [
+            ("verified", []),
+            ("absent", []),
+            ("invalid", [INVALID_RULE]),
+            ("unverifiable", [UNVERIFIED_RULE]),
+        ],
+    )
+    def test_each_answer_becomes_its_rule(self, monkeypatch, outcome, rules) -> None:
+        self.stand_in(monkeypatch, outcome)
+        assert TestTheEcosystemsVerifiedOutsideTheRegistryClient.run((self.dependency(),)) == rules
+
+
 class TestAnsibleCollectionsReachTheirVerifier:
     """Which Ansible dependencies are checked, and how: the signatures an install recorded, over
     the MANIFEST.json in the tree; else galaxy.ansible.com's, for one exact version from there."""
