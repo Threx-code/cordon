@@ -84,11 +84,6 @@
  "src/cordon_scanner/intel/registries/openvsx.py::timeline": [
   "npm"
  ],
- "src/cordon_scanner/intel/registries/private_registries.py::facts": [
-  "image",
-  "npm",
-  "pypi"
- ],
  "src/cordon_scanner/intel/registries/private_registries.py::matching": [
   "image"
  ],

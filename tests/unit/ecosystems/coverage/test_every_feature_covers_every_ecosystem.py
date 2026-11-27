@@ -70,6 +70,12 @@ class Coverage:
         return frozenset(CONFUSABLE_ECOSYSTEMS)
 
     @staticmethod
+    def private_registries() -> frozenset[str]:
+        from cordon_scanner.intel.registries.private_registries import PrivateRegistries
+
+        return PrivateRegistries.supported()
+
+    @staticmethod
     def release_compare() -> frozenset[str]:
         from cordon_scanner.cli.commands.review import COMPARABLE
 
@@ -202,10 +208,6 @@ class More:
         return cls.ids(More.compared("cordon_scanner.engine.package_format", "of"))
 
     @classmethod
-    def private_registries(cls) -> frozenset[str]:
-        return cls.ids(More.compared("cordon_scanner.intel.registries.private_registries", "facts"))
-
-    @classmethod
     def agent_hook(cls) -> frozenset[str]:
         return cls.ids(More.compared("cordon_scanner.cloud.agent.agent_hook", "of"))
 
@@ -235,7 +237,7 @@ class Features:
         "SBOM package-URL ingest": (More.sbom_ingest, dict),
         "MCP package check": (More.mcp_packages, dict),
         "name-signal readers": (More.name_signals, dict),
-        "private registries": (More.private_registries, dict),
+        "private registries": (Coverage.private_registries, dict),
         "agent hook install recognition": (More.agent_hook, dict),
         "fixer (lockfile fix)": (More.fixer, dict),
         "device attestation splitters": (More.device_attestation, dict),
@@ -258,7 +260,6 @@ class Features:
             "SBOM package-URL ingest",
             "MCP package check",
             "name-signal readers",
-            "private registries",
             "agent hook install recognition",
             "fixer (lockfile fix)",
             "device attestation splitters",

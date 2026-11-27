@@ -134,7 +134,7 @@ class OpenVsxSignature:
                 return ModuleCheck(
                     "absent", f"Open VSX publishes no signature for {name} {version}"
                 )
-            link = OpenVsx._on_file_host(files["signature"])
+            link = OpenVsx.on_file_host(files["signature"])
             sigzip = RegistryRequest.fetch_bytes(link, lambda host: host in FILE_HOSTS)
         except (RegistryError, OSError, ValueError) as exc:
             return ModuleCheck("unverifiable", f"Open VSX could not be asked: {exc}")

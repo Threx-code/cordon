@@ -235,6 +235,9 @@ class EcosystemRegistry:
     )
 
     BY_ID: ClassVar[dict[str, Ecosystem]] = {eco.id: eco for eco in ECOSYSTEMS}
+    #: The editor extensions (VS Code Marketplace and Open VSX): published to registries of their own like a package,
+    #: yet not a package ecosystem the manifests and lockfiles registered above belong to.
+    EXTENSIONS: ClassVar[str] = "vscode"
 
     _MANIFEST_INDEX: ClassVar[_GlobIndex | None] = None
     _LOCKFILE_INDEX: ClassVar[_GlobIndex | None] = None

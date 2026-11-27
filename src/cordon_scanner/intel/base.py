@@ -724,6 +724,8 @@ class PrivateRegistry(NamedTuple):
     """`https://host[:port]/path`, without a trailing slash."""
     variable: str
     """The environment variable holding the token: `token` (bearer) or `user:token` (basic)."""
+    scheme: str = ""
+    """`basic` or `bearer` when the operator stated it; empty: a secret with a colon is `user:token` (basic)."""
 
     @property
     def host(self) -> str:

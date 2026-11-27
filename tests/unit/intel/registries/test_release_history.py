@@ -409,8 +409,8 @@ class TestOpenVsx:
         from cordon_scanner.intel.registries.registry_client import RegistryError
 
         link = "https://open-vsx.org/api/BroadcomMFD/jcl/3.0.3/file/BroadcomMFD.jcl-3.0.3.vsix"
-        assert OpenVsx._on_file_host(link) == (
+        assert OpenVsx.on_file_host(link) == (
             "https://openvsx.eclipsecontent.org/BroadcomMFD/jcl/3.0.3/BroadcomMFD.jcl-3.0.3.vsix"
         )
         with pytest.raises(RegistryError):
-            OpenVsx._on_file_host("https://elsewhere.example/api/x/y/1/file/z.vsix")
+            OpenVsx.on_file_host("https://elsewhere.example/api/x/y/1/file/z.vsix")

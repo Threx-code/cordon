@@ -139,8 +139,8 @@ class Config:
     """A local clamd to hand file bytes to (`--clamav`): a Unix socket path, or `tcp://` on a
     loopback address. Set only by the operator: never read from a repository's configuration,
     because the scan target must not choose where its own bytes are sent. See `detect/clamav`."""
-    private_registries: tuple[tuple[str, str], ...] = ()
-    """`(registry URL, environment variable)` for each registry the organisation runs: under
+    private_registries: tuple[tuple[str, ...], ...] = ()
+    """`(registry URL, environment variable[, scheme])` for each registry the organisation runs: under
     `--online`, a dependency resolved from one is asked about there, with the token in that
     variable (`--registry-token URL=VAR`, `CORDON_REGISTRY_TOKENS`). Set only by the operator,
     never from any configuration file: a repository naming one could send a credential to a host

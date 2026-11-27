@@ -324,6 +324,7 @@ class RegistryDetector(BaseDetector):
                         dependency.ecosystem,
                         dependency.name,
                         dependency.version or (dependency.integrity if by_digest else None),
+                        source=dependency.resolved_from,
                     )
                     if private is not None
                     else RegistryClient.facts(
