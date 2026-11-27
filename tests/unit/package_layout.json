@@ -1293,6 +1293,7 @@
   "test_ecosystem_matrix.py": "ecosystems",
   "test_vscode_extensions.py": "ecosystems/editors",
   "test_ecosystem_literals_cover_all.py": "ecosystems/coverage",
+  "test_reader_parity.py": "ecosystems/coverage",
   "test_every_feature_covers_every_ecosystem.py": "ecosystems/coverage",
   "test_no_ecosystem_branch_chains.py": "ecosystems/coverage",
   "test_ecosystems.py": "ecosystems",
