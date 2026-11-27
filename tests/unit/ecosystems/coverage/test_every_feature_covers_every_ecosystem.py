@@ -137,21 +137,9 @@ class More:
 
     @classmethod
     def malware_dataset(cls) -> frozenset[str]:
-        from cordon_scanner.intel.malware.datadog_malware import DIRECTORIES
+        from cordon_scanner.intel.malware.malware_sources import MalwareSources
 
-        return cls.ids(DIRECTORIES)
-
-    @staticmethod
-    def malware_dataset_reasons() -> dict[str, str]:
-        """DataDog's dataset publishes samples for npm, PyPI and editor extensions only: for every other ecosystem
-        the dataset itself does not exist (its known malware comes from OSV's MAL- records, the advisory sources)."""
-        from cordon_scanner.intel.malware.datadog_malware import DIRECTORIES
-
-        return dict.fromkeys(
-            ALL - More.ids(DIRECTORIES),
-            "DataDog's malicious-packages dataset publishes no samples for this ecosystem; its known malware "
-            "comes from OSV's MAL- records through the advisory sources",
-        )
+        return cls.ids(MalwareSources.covered())
 
     @classmethod
     def sbom_ingest(cls) -> frozenset[str]:
@@ -231,7 +219,7 @@ class Features:
         "registry facts client": (More.registry_facts, dict),
         "package-URL scan targets": (More.package_url_targets, dict),
         "advisory-text symbols": (More.advisory_text, dict),
-        "malware dataset": (More.malware_dataset, More.malware_dataset_reasons),
+        "malware dataset": (More.malware_dataset, dict),
         "SBOM package-URL ingest": (More.sbom_ingest, dict),
         "MCP package check": (More.mcp_packages, dict),
         "name-signal readers": (More.name_signals, dict),
