@@ -1,0 +1,7 @@
+{
+	"folders": [{ "path": "a" }, { "path": "b" }],
+	"extensions": {
+		// recommended for the whole workspace
+		"recommendations": ["Rust-Lang.rust-analyzer", "acme.shared"],
+	},
+}

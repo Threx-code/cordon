@@ -1,0 +1,5 @@
+{
+	"recommendations": ["acme.shared"],
+	// asked NOT to be installed: never a dependency
+	"unwantedRecommendations": ["ms-vscode.cpptools"],
+}

@@ -1,0 +1,12 @@
+# Two misreadings fixed together: a configuration in a named folder under .devcontainer/ was never
+# found, and `-publisher.name` (do not install) was read as a dependency on a publisher named
+# `-publisher`.
+kinds: [regression, valid]
+covers:
+  - vscode.exclusions
+  - vscode.devcontainer
+dependencies:
+  - {name: streetsidesoftware.code-spell-checker, ecosystem: vscode, manifest_location: {path: .devcontainer/node/devcontainer.json}}
+absent:
+  - dbaeumer.vscode-eslint
+  - -dbaeumer.vscode-eslint

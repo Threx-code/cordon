@@ -61,7 +61,7 @@ result that was never checked.
 | `swift` | `Package.swift` | `Package.resolved` | yes | yes | -- | -- | 62 |
 | `terraform` | `*.tf`, `*.tf.json` | `.terraform.lock.hcl` | upstream | yes | yes | yes | 58 |
 | `vcpkg` | `vcpkg.json`, `vcpkg-configuration.json`, `vcpkg-lock.json` | `vcpkg-lock.json` | NVD, upstream | yes | yes | -- | 39 |
-| `vscode` | `.vscode/extensions.json`, `.devcontainer/devcontainer.json`, `.devcontainer.json`, `extension.vsixmanifest` | -- | yes | -- | -- | -- | 20 |
+| `vscode` | `.vscode/extensions.json`, `*.code-workspace`, `.devcontainer/devcontainer.json`, `.devcontainer/*/devcontainer.json`, `.devcontainer.json`, `.gitpod.yml`, `extension.vsixmanifest` | -- | yes | -- | -- | -- | 20 |
 
 ## What is not here
 
