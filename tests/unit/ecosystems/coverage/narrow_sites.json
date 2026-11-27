@@ -183,18 +183,6 @@
  },
  {
   "ids": [
-   "cargo",
-   "hex",
-   "npm",
-   "nuget",
-   "pub",
-   "pypi",
-   "rubygems"
-  ],
-  "site": "src/cordon_scanner/detect/supply/registries/detector.py::CONFUSABLE_ECOSYSTEMS#0"
- },
- {
-  "ids": [
    "actions",
    "ansible",
    "bazel",
