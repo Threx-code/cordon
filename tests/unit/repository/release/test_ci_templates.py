@@ -173,3 +173,103 @@ class TestCiTemplates:
             ("ci/buildkite/pipeline.yml", "--audience sigstore"),
         ):
             assert needle in (ROOT / path).read_text(encoding="utf-8"), path
+
+
+class TestTheMergeRequestReview:
+    """GitLab and Bitbucket run the same pre-merge dependency review the GitHub Action does: on a merge or pull
+    request only, against its base, each blocking change titled with its reason code where the host shows it."""
+
+    def test_gitlab_reviews_merge_requests_into_code_quality(self) -> None:
+        text = (ROOT / "ci/gitlab/cordon.gitlab-ci.yml").read_text(encoding="utf-8")
+        job = text[text.index("cordon:dependency-review:") :]
+        job = job[: job.index("\n\n#")]
+        assert '--base "$CI_MERGE_REQUEST_DIFF_BASE_SHA" --format codeclimate' in job
+        assert "codequality: gl-code-quality-review.json" in job
+        assert (
+            'if: $CI_PIPELINE_SOURCE == "merge_request_event"' in job
+            and "CI_DEFAULT_BRANCH" not in job
+        )
+
+    def test_bitbucket_reviews_pull_requests_into_code_insights(self) -> None:
+        pipe = (ROOT / "ci/bitbucket/pipe.sh").read_text(encoding="utf-8")
+        assert '[ -n "${BITBUCKET_PR_ID:-}" ]' in pipe and "--format bitbucket" in pipe
+        assert "python /insights.py cordon-review.json" in pipe
+        docker = (ROOT / "ci/bitbucket/Dockerfile").read_text(encoding="utf-8")
+        assert (
+            "COPY ci/bitbucket/insights.py /insights.py" in docker
+            and "install" in docker
+            and " git" in docker
+        )
+
+
+class TestBitbucketCodeInsights:
+    """`ci/bitbucket/insights.py`: the report is put first, then its annotations in batches of at most 100, all
+    through Pipelines' proxy and never with a credential of its own."""
+
+    @staticmethod
+    def module():
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("insights", ROOT / "ci/bitbucket/insights.py")
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    class Opener:
+        def __init__(self) -> None:
+            self.sent: list[tuple[str, str, object, dict[str, str]]] = []
+
+        def open(self, request, timeout: int = 0):
+            import json
+
+            self.sent.append(
+                (
+                    request.get_method(),
+                    request.full_url,
+                    json.loads(request.data),
+                    dict(request.header_items()),
+                )
+            )
+
+            class Response:
+                status = 200
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *a: object) -> None:
+                    return None
+
+            return Response()
+
+    def test_the_report_then_annotations_in_batches(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        insights = self.module()
+        opener = self.Opener()
+        monkeypatch.setattr(insights.CodeInsights, "opener", staticmethod(lambda: opener))
+        for key, value in (
+            ("BITBUCKET_REPO_OWNER", "acme"),
+            ("BITBUCKET_REPO_SLUG", "app"),
+            ("BITBUCKET_COMMIT", "a" * 40),
+        ):
+            monkeypatch.setenv(key, value)
+        review = {
+            "report": {"result": "FAILED"},
+            "annotations": [{"external_id": f"c{i}"} for i in range(230)],
+        }
+        assert insights.CodeInsights.post(review) == 230
+        methods = [m for m, _, _, _ in opener.sent]
+        assert methods == ["PUT", "POST", "POST", "POST"]
+        assert [len(b) for _, _, b, _ in opener.sent[1:]] == [100, 100, 30]
+        base = (
+            "http://api.bitbucket.org/2.0/repositories/acme/app/commit/"
+            + "a" * 40
+            + "/reports/cordon-dependency-review"
+        )
+        assert opener.sent[0][1] == base and opener.sent[1][1] == base + "/annotations"
+        assert not any("Authorization" in h for _, _, _, h in opener.sent)
+
+    @pytest.mark.parametrize("value", ["", "..", "a/b", "."])
+    def test_a_path_segment_cannot_leave_its_place(self, value: str) -> None:
+        with pytest.raises(ValueError):
+            self.module().CodeInsights.segment(value)
