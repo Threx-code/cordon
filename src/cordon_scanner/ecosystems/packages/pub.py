@@ -28,6 +28,7 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
+    NameFold,
 )
 from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Hook, Scope
@@ -325,6 +326,8 @@ class PackageConfig:
 class PubEcosystem(BaseEcosystem):
     id = "pub"
     purl_type = "pub"
+    #: https://dart.dev/tools/pub/pubspec#name
+    name_fold = NameFold.LOWER
     manifest_globs: tuple[str, ...] = ("**/pubspec.yaml",)
     lockfile_globs: tuple[str, ...] = ("**/pubspec.lock", "**/.dart_tool/package_config.json")
     registry_hosts: frozenset[str] = frozenset({"pub.dev", "pub.dartlang.org"})

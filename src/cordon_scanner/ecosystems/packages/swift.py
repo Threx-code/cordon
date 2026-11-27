@@ -28,6 +28,7 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
+    NameFold,
 )
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -342,6 +343,8 @@ class SwiftEcosystem(BaseEcosystem):
         return name.rsplit("/", 1)[0] if "/" in name else None
 
     purl_type = "swift"
+    #: https://docs.swift.org/swiftpm/documentation/packagemanagerdocs/ (the stored id has always been lower case; kept)
+    name_fold = NameFold.LOWER
     manifest_globs: tuple[str, ...] = ("**/Package.swift",)
     lockfile_globs: tuple[str, ...] = ("**/Package.resolved",)
     registry_hosts: frozenset[str] = frozenset({"github.com", "gitlab.com", "bitbucket.org"})

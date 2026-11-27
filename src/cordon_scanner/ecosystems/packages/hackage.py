@@ -38,6 +38,7 @@ from cordon_scanner.ecosystems.base import (
     DeclaredDependency,
     LockGraph,
     Manifest,
+    NameFold,
 )
 from cordon_scanner.ecosystems.packages.haskell.cabal import (
     GHC_PACKAGES,
@@ -585,6 +586,8 @@ class HackageEcosystem(BaseEcosystem):
 
     id = "hackage"
     purl_type = "hackage"
+    #: https://cabal.readthedocs.io/en/stable/cabal-package-description-file.html#pkg-field-name
+    name_fold = NameFold.KEPT
     manifest_globs: tuple[str, ...] = (
         "**/*.cabal",
         "**/cabal.project",

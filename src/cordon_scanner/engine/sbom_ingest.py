@@ -27,7 +27,7 @@ from cordon_scanner.foundation.results import Dependency
 
 MAX_COMPONENTS: Final = 50_000
 #: Ecosystems whose components a tool writes under another ecosystem's purl type, by that type.
-ALSO_SERVES_BY_TYPE: Final = {"maven": ("gradle",)}
+ALSO_SERVES_BY_TYPE: Final[dict[str, tuple[str, ...]]] = {"maven": ("gradle",)}
 SERVED_BY_ANOTHER_TYPE: Final = frozenset(e for also in ALSO_SERVES_BY_TYPE.values() for e in also)
 
 

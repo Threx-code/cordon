@@ -28,6 +28,7 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
+    NameFold,
 )
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -504,6 +505,8 @@ class CranEcosystem(BaseEcosystem):
 
     id = "cran"
     purl_type = "cran"
+    #: https://cran.r-project.org/doc/manuals/r-release/R-exts.html#The-DESCRIPTION-file
+    name_fold = NameFold.KEPT
     manifest_globs: tuple[str, ...] = ("**/DESCRIPTION", "**/renv/settings.json", "**/PACKAGES")
     lockfile_globs: tuple[str, ...] = ("**/renv.lock",)
     registry_hosts: frozenset[str] = frozenset(

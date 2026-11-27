@@ -23,6 +23,7 @@ from cordon_scanner.ecosystems.base import (
     DeclaredDependency,
     InstallTool,
     Manifest,
+    NameFold,
     ReleaseFile,
 )
 from cordon_scanner.ecosystems.packages.python.lockfiles import PypiLockfiles
@@ -130,6 +131,8 @@ class PypiEcosystem(PypiLockfiles, BaseEcosystem):
         return frozenset()
 
     purl_type = "pypi"
+    #: https://packaging.python.org/en/latest/specifications/name-normalization/
+    name_fold = NameFold.PEP_503
     manifest_globs: tuple[str, ...] = (
         "**/pyproject.toml",
         "**/setup.py",

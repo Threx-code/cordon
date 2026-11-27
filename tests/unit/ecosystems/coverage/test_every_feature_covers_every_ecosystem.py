@@ -188,9 +188,7 @@ class More:
     def subjects(cls) -> frozenset[str]:
         from cordon_scanner.contracts.subjects import SubjectParts
 
-        return cls.ids([*SubjectParts.PURL_TYPES, *SubjectParts.PURL_TYPES.values()]) & (
-            ALL | {"vscode"}
-        )
+        return cls.ids(SubjectParts.folds_by_id()) & (ALL | {"vscode"})
 
     @classmethod
     def own_name_findings(cls) -> frozenset[str]:
@@ -259,7 +257,6 @@ class Features:
             "agent hook install recognition",
             "fixer (lockfile fix)",
             "device attestation splitters",
-            "subject canonicalisation",
             "manifest findings (own name)",
             "package format sniffing",
         }

@@ -33,6 +33,7 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
+    NameFold,
 )
 from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Scope
@@ -294,6 +295,8 @@ class HelmEcosystem(BaseEcosystem):
 
     id = "helm"
     purl_type = "helm"
+    #: https://helm.sh/docs/topics/charts/#the-chartyaml-file (unclear on case: kept)
+    name_fold = NameFold.KEPT
     # requirements.yaml is Ansible's name too: an apiVersion v1 chart's is read through the
     # Chart.yaml beside it, not claimed by name.
     manifest_globs: tuple[str, ...] = ("**/Chart.yaml", "**/Chart.lock", "**/requirements.lock")

@@ -29,6 +29,7 @@ from cordon_scanner.ecosystems.base import (
     DeclaredDependency,
     LockGraph,
     Manifest,
+    NameFold,
 )
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -429,6 +430,8 @@ class GitHubActionsEcosystem(BaseEcosystem):
         return name.startswith("steps-")
 
     purl_type = "githubactions"
+    #: https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsuses
+    name_fold = NameFold.LOWER
     manifest_globs: tuple[str, ...] = (
         "**/.github/workflows/*.yml",
         "**/.github/workflows/*.yaml",

@@ -28,6 +28,7 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
+    NameFold,
 )
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -327,6 +328,8 @@ class ComposerEcosystem(BaseEcosystem):
         return name.split("/", 1)[0] if "/" in name else None
 
     purl_type = "composer"
+    #: https://getcomposer.org/doc/04-schema.md#name
+    name_fold = NameFold.LOWER
     manifest_globs: tuple[str, ...] = ("**/composer.json", "**/composer.lock", "**/auth.json")
     lockfile_globs: tuple[str, ...] = ("**/composer.lock",)
     registry_hosts: frozenset[str] = frozenset(

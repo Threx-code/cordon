@@ -35,6 +35,7 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
+    NameFold,
 )
 from cordon_scanner.ecosystems.packages.ocaml.opam_syntax import (
     COMPILER_PACKAGES,
@@ -209,6 +210,8 @@ class OpamEcosystem(BaseEcosystem):
 
     id = "opam"
     purl_type = "opam"
+    #: https://opam.ocaml.org/doc/Manual.html (unclear on case: kept)
+    name_fold = NameFold.KEPT
     manifest_globs: tuple[str, ...] = (
         "**/*.opam",
         "**/opam",

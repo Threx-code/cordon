@@ -14,6 +14,7 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
+    NameFold,
 )
 
 # Each `*Ecosystem` imported below from its own module (GitHub Actions, Bazel, CocoaPods, Composer,
@@ -553,6 +554,8 @@ class MavenEcosystem(BaseEcosystem):
         return version.upper().endswith("-SNAPSHOT")
 
     purl_type = "maven"
+    #: https://maven.apache.org/guides/mini/guide-naming-conventions.html
+    name_fold = NameFold.KEPT
     manifest_globs: tuple[str, ...] = ("**/pom.xml", "**/.mvn/wrapper/maven-wrapper.properties")
     lockfile_globs: tuple[str, ...] = (
         "**/dependency-tree.txt",

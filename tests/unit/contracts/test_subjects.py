@@ -7,7 +7,14 @@ from __future__ import annotations
 
 import pytest
 
-from cordon_scanner.contracts.subjects import CanonicalIds, InvalidSubject, SubjectKind
+from cordon_scanner.contracts.subjects import (
+    CanonicalIds,
+    InvalidSubject,
+    SubjectKind,
+    SubjectParts,
+)
+from cordon_scanner.ecosystems.base import BaseEcosystem, NameFold
+from cordon_scanner.ecosystems.registry import EcosystemRegistry
 
 ID = CanonicalIds.canonical_id
 
@@ -54,6 +61,81 @@ class TestPackages:
     def test_a_name_that_is_not_a_name_is_refused(self, name: str) -> None:
         with pytest.raises(InvalidSubject):
             ID(SubjectKind.PACKAGE, {"ecosystem": "npm", "name": name, "namespace": "x/../y"})
+
+
+#: Every ecosystem, with a name written in mixed case with every separator, and the id it has always had (or, for
+#: the ecosystems that did not fold before, the id its own registry's rule gives).
+MIXED = "Ab_C.d-E"
+STORED_IDS: dict[str, str] = {
+    "npm": "pkg:npm/ab_c.d-e",
+    "pypi": "pkg:pypi/ab-c-d-e",
+    "nuget": "pkg:nuget/ab_c.d-e",
+    "composer": "pkg:composer/ab_c.d-e",
+    "gomod": "pkg:golang/ab_c.d-e",
+    "hex": "pkg:hex/ab_c.d-e",
+    "swift": "pkg:swift/ab_c.d-e",
+    "cocoapods": "pkg:cocoapods/ab_c.d-e",
+    "cargo": f"pkg:cargo/{MIXED}",
+    "rubygems": f"pkg:gem/{MIXED}",
+    "maven": f"pkg:maven/{MIXED}",
+    "gradle": f"pkg:gradle/{MIXED}",
+    "actions": "pkg:actions/ab_c.d-e",
+    "image": "pkg:image/ab_c.d-e",
+    "conda": "pkg:conda/ab_c.d-e",
+    "homebrew": "pkg:homebrew/ab_c.d-e",
+    "terraform": "pkg:terraform/ab_c.d-e",
+    "vcpkg": "pkg:vcpkg/ab_c.d-e",
+    "vscode": "pkg:vscode/ab_c.d-e",
+    "ansible": "pkg:ansible/ab_c.d-e",
+    "pub": "pkg:pub/ab_c.d-e",
+    "bazel": f"pkg:bazel/{MIXED}",
+    "cran": f"pkg:cran/{MIXED}",
+    "hackage": f"pkg:hackage/{MIXED}",
+    "julia": f"pkg:julia/{MIXED}",
+    "opam": f"pkg:opam/{MIXED}",
+    "conan": f"pkg:conan/{MIXED}",
+    "nix": f"pkg:nix/{MIXED}",
+    "helm": f"pkg:helm/{MIXED}",
+}
+
+
+class TestEveryEcosystemFoldsItsOwnWay:
+    def test_the_table_names_every_registered_ecosystem(self) -> None:
+        assert set(STORED_IDS) == set(EcosystemRegistry.BY_ID)
+
+    @pytest.mark.parametrize("ecosystem", sorted(EcosystemRegistry.BY_ID))
+    def test_a_name_gets_the_id_its_registry_gives(self, ecosystem: str) -> None:
+        got = ID(SubjectKind.PACKAGE, {"ecosystem": ecosystem, "name": MIXED})
+        assert got == STORED_IDS[ecosystem]
+
+    @pytest.mark.parametrize("ecosystem", sorted(EcosystemRegistry.BY_ID))
+    def test_the_id_follows_the_fold_the_adapter_declares(self, ecosystem: str) -> None:
+        fold = EcosystemRegistry.BY_ID[ecosystem].name_fold
+        name = ID(SubjectKind.PACKAGE, {"ecosystem": ecosystem, "name": MIXED}).rsplit("/", 1)[-1]
+        assert name == SubjectParts.fold(MIXED, fold.lower, fold.one_separator)
+
+    @pytest.mark.parametrize("ecosystem", sorted(EcosystemRegistry.BY_ID))
+    def test_every_ecosystem_declares_its_fold_itself(self, ecosystem: str) -> None:
+        adapter = type(EcosystemRegistry.BY_ID[ecosystem])
+        assert isinstance(vars(adapter).get("name_fold"), NameFold)
+
+    def test_the_base_adapter_has_no_default_fold(self) -> None:
+        assert not hasattr(BaseEcosystem, "name_fold")
+
+    @pytest.mark.parametrize(
+        ("ecosystem", "name", "expected"),
+        [
+            ("docker", "Library/Nginx", "pkg:oci/Library/Nginx"),
+            ("golang", "Gin", "pkg:golang/gin"),
+            ("go", "Gin", "pkg:golang/gin"),
+            ("gem", "Rails", "pkg:gem/Rails"),
+            ("github", "Foo", "pkg:github/foo"),
+            ("bitbucket", "Foo", "pkg:bitbucket/foo"),
+            ("unheard-of", "Foo", "pkg:unheard-of/Foo"),
+        ],
+    )
+    def test_a_name_an_ecosystem_goes_by_keeps_its_id(self, ecosystem, name, expected) -> None:
+        assert ID(SubjectKind.PACKAGE, {"ecosystem": ecosystem, "name": name}) == expected
 
 
 class TestTheOtherKinds:

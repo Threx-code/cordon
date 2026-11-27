@@ -31,6 +31,7 @@ from cordon_scanner.ecosystems.base import (
     DeclaredDependency,
     LockGraph,
     Manifest,
+    NameFold,
 )
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -352,6 +353,8 @@ class VcpkgEcosystem(BaseEcosystem):
 
     id = "vcpkg"
     purl_type = "vcpkg"
+    #: https://learn.microsoft.com/en-us/vcpkg/reference/vcpkg-json#name
+    name_fold = NameFold.LOWER
     manifest_globs: tuple[str, ...] = (
         "**/vcpkg.json",
         "**/vcpkg-configuration.json",

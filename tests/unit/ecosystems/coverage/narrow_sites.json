@@ -9,7 +9,6 @@
  {"ids": ["npm", "pypi"], "site": "src/cordon_scanner/cloud/device_attestation.py::SPLITTERS#0"},
  {"ids": ["npm", "pypi"], "site": "src/cordon_scanner/cloud/fixer.py::FIXABLE#0"},
  {"ids": ["npm", "pypi"], "site": "src/cordon_scanner/cloud/fixer.py::WRITERS#0"},
- {"ids": ["cocoapods", "composer", "gomod", "hex", "npm", "nuget", "pypi", "swift"], "site": "src/cordon_scanner/contracts/subjects.py::LOWER_CASE#0"},
  {"ids": ["image", "npm", "pypi"], "site": "src/cordon_scanner/contracts/subjects.py::MCP_TRANSPORTS#0"},
  {"ids": ["image", "npm", "pypi"], "site": "src/cordon_scanner/contracts/subjects.py::build#0"},
  {"ids": ["npm", "pypi"], "site": "src/cordon_scanner/decide/verdict.py::LIFT_AREAS_ALLOWED#0"},

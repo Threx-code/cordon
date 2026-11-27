@@ -36,6 +36,7 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
+    NameFold,
 )
 from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Scope
@@ -465,6 +466,8 @@ class AnsibleGalaxyEcosystem(BaseEcosystem):
         return name.split(".", 1)[0] if "." in name else None
 
     purl_type = "ansible"
+    #: https://docs.ansible.com/ansible/latest/dev_guide/collections_galaxy_meta.html
+    name_fold = NameFold.LOWER
     manifest_globs: tuple[str, ...] = (
         "**/requirements.yml",
         "**/requirements.yaml",

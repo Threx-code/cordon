@@ -35,6 +35,7 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
+    NameFold,
 )
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -713,6 +714,8 @@ class BazelEcosystem(BaseEcosystem):
 
     id = "bazel"
     purl_type = "bazel"
+    #: https://bazel.build/external/module#module_name
+    name_fold = NameFold.KEPT
     manifest_globs: tuple[str, ...] = (
         "**/MODULE.bazel",
         "**/WORKSPACE",

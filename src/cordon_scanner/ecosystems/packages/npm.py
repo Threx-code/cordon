@@ -22,6 +22,7 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
+    NameFold,
     ReleaseFile,
 )
 from cordon_scanner.ecosystems.packages.javascript.conditions import NpmConditions
@@ -208,6 +209,8 @@ class NpmEcosystem(NpmProjects, NpmPackageCode, BaseEcosystem):
         return ("pypi", "rubygems", "cargo")
 
     purl_type = "npm"
+    #: https://docs.npmjs.com/cli/v10/configuring-npm/package-json#name
+    name_fold = NameFold.LOWER
     manifest_globs: tuple[str, ...] = ("**/package.json", "**/deno.json", "**/deno.jsonc")
     #: bundledDependencies: npm installs a tarball's own `node_modules` with it as shipped, and
     #: `require()` loads them -- where a payload can hide in a dependency. Theirs too, recursively.

@@ -30,6 +30,7 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
+    NameFold,
 )
 from cordon_scanner.foundation.models import Scope
 
@@ -806,6 +807,8 @@ class NixEcosystem(BaseEcosystem):
         return name.rsplit("/", 1)[0] if "/" in name else None
 
     purl_type = "nix"
+    #: https://nix.dev/manual/nix/stable/language/derivations.html
+    name_fold = NameFold.KEPT
     manifest_globs: tuple[str, ...] = ("**/flake.nix", "**/default.nix", "**/shell.nix")
     lockfile_globs: tuple[str, ...] = ("**/flake.lock",)
     registry_hosts: frozenset[str] = frozenset()

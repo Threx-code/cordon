@@ -24,6 +24,7 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from cordon_scanner.foundation.dependencies import InstallTool
@@ -152,6 +153,21 @@ PUBLIC_REGISTRY_NAMES = frozenset(
 A sentinel rather than an empty string, so the rules that read a spec can tell
 "inherited from somewhere this file does not name" from "no constraint at
 all" -- the first is pinned and the second is not."""
+
+
+class NameFold(Enum):
+    """How a registry treats the case and the separators of a package name, so two spellings of one package get one id.
+
+    Keeping the case can never merge two packages wrongly; folding it can, so an ecosystem folds only where its own
+    registry documents that the spellings are one name."""
+
+    KEPT = (False, False)
+    LOWER = (True, False)
+    PEP_503 = (True, True)
+
+    def __init__(self, lower: bool, one_separator: bool) -> None:
+        self.lower = lower
+        self.one_separator = one_separator
 
 
 @dataclass(frozen=True, slots=True)
@@ -473,6 +489,7 @@ class Ecosystem(Protocol):
 
     id: str
     purl_type: str
+    name_fold: NameFold
     manifest_globs: tuple[str, ...]
     lockfile_globs: tuple[str, ...]
     registry_hosts: frozenset[str]
@@ -758,6 +775,8 @@ class BaseEcosystem(
 
     id: str = "base"
     purl_type: str = "generic"
+    name_fold: NameFold
+    """How this registry folds a package name (no default: each ecosystem states it, with the registry's own page)."""
     manifest_globs: tuple[str, ...] = ()
     lockfile_globs: tuple[str, ...] = ()
     installed_with_package: tuple[str, ...] = ()
@@ -994,6 +1013,7 @@ __all__ = [
     "LockEntry",
     "LockGraph",
     "Manifest",
+    "NameFold",
     "NamingDefaults",
     "TraitDefaults",
     "VersionDefaults",

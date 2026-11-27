@@ -13,6 +13,7 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
+    NameFold,
 )
 
 # Each `*Ecosystem` imported below from its own module (GitHub Actions, Bazel, CocoaPods, Composer,
@@ -188,6 +189,8 @@ class GoEcosystem(BaseEcosystem):
         return name == "stdlib"
 
     purl_type = "golang"
+    #: https://go.dev/ref/mod#module-path (the stored id has always been lower case; kept)
+    name_fold = NameFold.LOWER
     manifest_globs: tuple[str, ...] = ("**/go.mod", "**/go.work")
     lockfile_globs: tuple[str, ...] = (
         "**/go.mod",

@@ -23,6 +23,7 @@ from cordon_scanner.ecosystems.base import (
     LockEntry,
     LockGraph,
     Manifest,
+    NameFold,
 )
 from cordon_scanner.ecosystems.packages.rubygems import RubySource
 from cordon_scanner.foundation.models import Hook, Scope
@@ -504,6 +505,8 @@ class PodfileLock:
 class CocoaPodsEcosystem(BaseEcosystem):
     id = "cocoapods"
     purl_type = "cocoapods"
+    #: https://guides.cocoapods.org/syntax/podspec.html#name (the stored id has always been lower case; kept)
+    name_fold = NameFold.LOWER
     manifest_globs: tuple[str, ...] = ("**/Podfile", "**/*.podspec")
     lockfile_globs: tuple[str, ...] = ("**/Podfile.lock",)
     registry_hosts: frozenset[str] = frozenset(

@@ -23,6 +23,7 @@ from cordon_scanner.ecosystems.base import (
     DeclaredDependency,
     LockGraph,
     Manifest,
+    NameFold,
 )
 from cordon_scanner.foundation.models import Scope
 
@@ -57,6 +58,8 @@ class VsCodeEcosystem(BaseEcosystem):
 
     id = "vscode"
     purl_type = "vscode-extension"
+    #: https://code.visualstudio.com/api/references/extension-manifest
+    name_fold = NameFold.LOWER
     manifest_globs: tuple[str, ...] = (
         "**/.vscode/extensions.json",
         "**/.devcontainer/devcontainer.json",
