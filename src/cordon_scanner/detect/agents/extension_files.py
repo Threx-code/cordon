@@ -186,7 +186,10 @@ class ExtensionFileFindings:
             return
         intel = IntelDataFile.newest("vscode-extensions.json")
         how = "recommends" if recommended else "vendors the package of"
-        verdict = ExtensionVerdicts.osv(lowered, version) if osv else None
+        verdict = ExtensionVerdicts.osv(lowered, version)
+        if verdict is not None and not osv and verdict[0] == "MALWARE.EXTENSION.KNOWN.001":
+            # A known-malicious release is the dependency or package rule's, which reports it once.
+            return
         if verdict is not None:
             rule_id, detail = verdict
             yield AgentFinding.at_text(
