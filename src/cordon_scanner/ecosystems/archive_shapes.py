@@ -298,6 +298,15 @@ class ComposerArchive(SingleFolderArchive):
     NAMES = ("composer.json",)
 
 
+class SwiftArchive(SingleFolderArchive):
+    """A Swift package registry's source archive (SE-0292, https://github.com/swiftlang/swift-evolution/blob/main/proposals/0292-package-registry-service.md):
+    a zip that `swift package archive-source` writes, whose one folder holds `Package.swift`. A repository snapshot looks
+    the same, so it is asked after every marker shape."""
+
+    precedence = 805
+    NAMES = ("Package.swift",)
+
+
 class ActionArchive(SingleFolderArchive):
     """What the runner downloads for `uses: owner/repo@ref`: the host's tarball of the repository, with
     `action.yml` or `action.yaml` in its one folder."""

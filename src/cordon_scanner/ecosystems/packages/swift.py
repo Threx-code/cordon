@@ -22,7 +22,7 @@ import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from cordon_scanner.ecosystems.archive_shapes import NoArchive
+from cordon_scanner.ecosystems.archive_shapes import SwiftArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -343,9 +343,7 @@ class SwiftEcosystem(BaseEcosystem):
         return name.rsplit("/", 1)[0] if "/" in name else None
 
     purl_type = "swift"
-    published_archive = NoArchive(
-        "SwiftPM resolves a package from its git repository at a tag; the archive of it is the git host's snapshot of the repository, with no packaging step of its own (no Swift registry archive exists in the captures: SwiftPM's own docs, https://docs.swift.org/swiftpm/documentation/packagemanagerdocs/)"
-    )
+    published_archive = (SwiftArchive(),)
     manifest_globs: tuple[str, ...] = ("**/Package.swift",)
     lockfile_globs: tuple[str, ...] = ("**/Package.resolved",)
     registry_hosts: frozenset[str] = frozenset({"github.com", "gitlab.com", "bitbucket.org"})

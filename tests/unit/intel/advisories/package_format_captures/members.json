@@ -528,6 +528,16 @@
   "sha256": "759d1a329847dd0f39226c688d3e06a6b8679668e350e2891a6474f8b4bb8525",
   "source": "pub.dev archive of http"
  },
+ "swift": {
+  "members": [
+   "LinkedList/.gitignore",
+   "LinkedList/Package.swift",
+   "LinkedList/Sources/LinkedList/LinkedList.swift",
+   "LinkedList/Tests/LinkedListTests/LinkedListTests.swift"
+  ],
+  "sha256": "695b1a20f0600f59f9058cd3b1ac3fede642e87875fb45b488ed4f8902e4b443",
+  "source": "swift package archive-source, run with the real toolchain in swift:6.0 (swift@sha256:e6aab687b7ec16a68abcf485c6bca8afd481e33fb9c8bd9e74e7abffded12bc4) on `swift package init --type library --name LinkedList`, no network"
+ },
  "terraform_provider": {
   "members": [
    "terraform-provider-null_v3.2.1_x5"

@@ -31,6 +31,7 @@ from cordon_scanner.ecosystems.archive_shapes import (
     OciLayoutArchive,
     SameArchiveAs,
     SingleFolderArchive,
+    SwiftArchive,
 )
 from cordon_scanner.ecosystems.base import BaseEcosystem
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
@@ -188,6 +189,7 @@ class TestEveryEcosystemsOwnShape:
             ("terraform_provider", "terraform"),
             ("composer", "composer"),
             ("actions", "actions"),
+            ("swift", "swift"),
             ("ansible", "galaxy"),
             ("julia", "julia"),
             ("image", "image"),
@@ -198,7 +200,7 @@ class TestEveryEcosystemsOwnShape:
         assert PackageFormat.of(RealArchives.units(key)) == expected
 
     @pytest.mark.parametrize(
-        "key", ["composer", "actions", "helm", "pub", "julia", "ansible", "conan"]
+        "key", ["composer", "actions", "swift", "helm", "pub", "julia", "ansible", "conan"]
     )
     def test_a_checked_out_directory_is_never_a_package(self, key: str) -> None:
         """The same files, scanned as a folder on disk (no archive around them), are a user's own project."""
@@ -227,7 +229,7 @@ class TestEveryEcosystemsOwnShape:
         assert DockerSaveArchive().matches(levels)
 
     def test_a_shape_that_only_a_repository_folder_proves_is_asked_last(self) -> None:
-        weak = {ComposerArchive.precedence, ActionArchive.precedence}
+        weak = {ComposerArchive.precedence, SwiftArchive.precedence, ActionArchive.precedence}
         strong = {
             shape.precedence
             for ecosystem in EcosystemRegistry.all_ecosystems()
