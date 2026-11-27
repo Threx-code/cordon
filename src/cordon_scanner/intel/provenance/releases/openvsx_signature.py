@@ -162,13 +162,8 @@ class OpenVsxSignature:
         return cls.verify(*fetched)
 
     @classmethod
-    def compare(
-        cls, name: str, version: str, files: Mapping[str, str], *, added: bool = True
-    ) -> ModuleCheck:
-        """Whether the files of an extension in hand (name in the package -> SHA-256) are the files Open VSX signed for
-        `name` `version`: the registry's package is verified first, then every file in hand is looked up in it.
-        Only what is in hand is judged: a file the signed package has and the copy lacks is not reported, because a missing file adds no code to run
-        (and a partial copy is a limit of what was read, not a change); pinned by `test_a_copy_with_files_left_out_is_not_a_finding`."""
+    def signed_package(cls, name: str, version: str) -> tuple[bytes, dict[str, str]] | ModuleCheck:
+        """The package Open VSX signed for `name` `version`, once its signature verifies, with its files' SHA-256s; or the answer when it cannot be had or does not verify."""
         fetched = cls._fetched(name, version)
         if isinstance(fetched, ModuleCheck):
             return fetched
@@ -177,9 +172,22 @@ class OpenVsxSignature:
         if signed.outcome != "verified":
             return signed
         try:
-            known = cls.signed_members(package)
+            return package, cls.signed_members(package)
         except (zipfile.BadZipFile, ValueError, OSError) as exc:
             return ModuleCheck("unverifiable", f"the signed package could not be read: {exc}")
+
+    @classmethod
+    def compare(
+        cls, name: str, version: str, files: Mapping[str, str], *, added: bool = True
+    ) -> ModuleCheck:
+        """Whether the files of an extension in hand (name in the package -> SHA-256) are the files Open VSX signed for
+        `name` `version`: the registry's package is verified first, then every file in hand is looked up in it.
+        Only what is in hand is judged: a file the signed package has and the copy lacks is not reported, because a missing file adds no code to run
+        (and a partial copy is a limit of what was read, not a change); pinned by `test_a_copy_with_files_left_out_is_not_a_finding`."""
+        signed = cls.signed_package(name, version)
+        if isinstance(signed, ModuleCheck):
+            return signed
+        known = signed[1]
         changed = sorted(n for n, digest in files.items() if n in known and known[n] != digest)
         added_files = sorted(n for n in files if n not in known) if added else []
         if not changed and not added_files:

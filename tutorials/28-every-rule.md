@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,843 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,844 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -762,12 +762,13 @@ rule's own samples.
 
 ## Extension
 
-6 rules.
+7 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
 | `MALWARE.EXTENSION.KNOWN.001` | critical | An editor extension is a recorded malicious release |
 | `MALWARE.EXTENSION.REMOVED.001` | critical | A recommended or vendored editor extension was removed from the Marketplace as malware |
+| `SUSPECT.EXTENSION.ADDED_CODE.001` | high | An installed editor extension holds code its signed package does not have |
 | `SUSPECT.EXTENSION.HIDDEN_NAME.001` | medium | An editor extension's display name carries invisible characters |
 | `SUSPECT.EXTENSION.LOOKALIKE.001` | medium | A recommended editor extension imitates a popular one |
 | `SUSPECT.EXTENSION.MALICIOUS_VERSIONS.001` | low | A named editor extension has had malicious releases |

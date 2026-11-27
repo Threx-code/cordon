@@ -412,11 +412,13 @@ class DeviceInventory:
 
         findings = DeviceInventory._agent_findings(files)
         findings.extend(DeviceInventory.extension_findings(installed))
+        not_verified: list[dict[str, str]] | None = None
         if verify_extensions:
             from cordon_scanner.cloud.extension_integrity import InstalledExtensions
 
             findings.extend(InstalledExtensions.findings(DeviceInventory.installed_folders(home)))
-        report = {
+            not_verified = InstalledExtensions.not_verified(installed)
+        report: dict[str, Any] = {
             "schema": SCHEMA,
             "agent_version": __version__,
             "device": DeviceInventory._device(),
@@ -431,6 +433,8 @@ class DeviceInventory:
             },
             "findings": findings,
         }
+        if not_verified is not None:
+            report["inventory"]["extensions_not_verified"] = not_verified
         if collection is not None:
             report["collection"] = dict(collection)
         return report

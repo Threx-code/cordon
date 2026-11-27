@@ -264,6 +264,7 @@ class TestNoRuleIsLoweredUnseenByAccident:
             "SUSPECT.DOCUMENT.RTF_OBJECT.001",
             "SUSPECT.DROPPER.REMOTE_COMMAND.001",
             "SUSPECT.EXFIL.BROWSER_SECRETS.001",  # measured 2 Nov (MCP): 0 malware, 1 benign: stays
+            "SUSPECT.EXTENSION.ADDED_CODE.001",
             "SUSPECT.EXTENSION.HIDDEN_NAME.001",
             "SUSPECT.EXTENSION.LOOKALIKE.001",
             "SUSPECT.HELM.UNTRUSTED_REPOSITORY.BUNDLED.001",

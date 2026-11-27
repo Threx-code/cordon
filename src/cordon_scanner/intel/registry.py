@@ -137,6 +137,7 @@ if TYPE_CHECKING:
         EstablishedNames,
         Exploitations,
         ExploitLikelihoods,
+        ExtensionSignatures,
         FeedOverlays,
         FeedStatus,
         HallucinationLookup,
@@ -260,7 +261,7 @@ if TYPE_CHECKING:
         _intel_provenance_releases_github_attestations.GitHubAttestations
     )
     HackageTuf: ModuleProvenance = _intel_provenance_releases_hackage_tuf.HackageTuf
-    OpenVsxSignature: ModuleProvenance = (
+    OpenVsxSignature: ExtensionSignatures = (
         _intel_provenance_releases_openvsx_signature.OpenVsxSignature
     )
     NuGetSignature: ModuleProvenance = _intel_provenance_releases_nuget_signature.NuGetSignature

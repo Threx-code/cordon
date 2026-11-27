@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner.cloud.device import DeviceInventory
+from cordon_scanner.cloud.extension_integrity import InstalledExtensions
 from cordon_scanner.intel.provenance.releases.openvsx_signature import OpenVsxSignature
 from support import ROOT
 
@@ -79,14 +80,96 @@ class TestInstalledExtensions:
         assert "extension/package.json (changed)" in found[0]["message"]
         assert found[0]["path"] == "extensions/vscodium:vscjava.vscode-java-pack@0.31.2"
 
-    def test_a_file_the_package_never_had_is_not_evidence(
+    def added(self, home: Path) -> list[dict]:
+        report = DeviceInventory.collect(home, verify_extensions=True)
+        return [
+            f for f in report["findings"] if f["rule_id"] == InstalledExtensions.ADDED_CODE_RULE
+        ]
+
+    def test_an_added_data_or_cache_file_is_not_evidence(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         folder = Machine.unpack(tmp_path, ".cursor/extensions")
         Machine.registry(monkeypatch)
         (folder / "jre").mkdir()
         (folder / "jre" / "downloaded-on-first-use.bin").write_bytes(b"\0" * 64)
+        (folder / "cache.json").write_bytes(b"{}")
+        (folder / "notes.txt").write_bytes(b"x")
+        assert self.findings(tmp_path) == [] and self.added(tmp_path) == []
+
+    @pytest.mark.parametrize("suffix", sorted(InstalledExtensions.CODE_KINDS))
+    def test_an_added_file_of_each_code_kind_is_suspect_at_high(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, suffix: str
+    ) -> None:
+        folder = Machine.unpack(tmp_path, ".cursor/extensions")
+        Machine.registry(monkeypatch)
+        (folder / f"zzdropped{suffix}").write_bytes(b"\0\1")
         assert self.findings(tmp_path) == []
+        found = self.added(tmp_path)
+        assert len(found) == 1 and found[0]["severity"] == "high"
+        assert f"zzdropped{suffix}" in found[0]["message"]
+        assert found[0]["path"] == "extensions/cursor:vscjava.vscode-java-pack@0.31.2"
+
+    def test_the_code_kinds_are_exactly_the_ruled_ones(self) -> None:
+        assert set(InstalledExtensions.CODE_KINDS) == {
+            ".js",
+            ".mjs",
+            ".cjs",
+            ".node",
+            ".wasm",
+            ".exe",
+            ".dll",
+            ".so",
+            ".dylib",
+            ".sh",
+            ".ps1",
+            ".py",
+        }
+
+    def test_an_added_script_a_signed_file_names_is_critical(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        signed = io.BytesIO()
+        with zipfile.ZipFile(signed, "w") as archive:
+            archive.writestr("extension/out/main.js", 'require("./helper");')
+            archive.writestr("extension/package.json", '{"main":"./out/main"}')
+        package = signed.getvalue()
+        members = OpenVsxSignature.signed_members(package)
+        monkeypatch.setattr(
+            OpenVsxSignature, "signed_package", classmethod(lambda cls, n, v: (package, members))
+        )
+        folder = tmp_path / ".vscode-oss" / "extensions" / FOLDER
+        (folder / "out").mkdir(parents=True)
+        (folder / "package.json").write_bytes(b'{"main":"./out/main"}')
+        (folder / "out" / "main.js").write_bytes(b'require("./helper");')
+        (folder / "out" / "helper.js").write_bytes(b"steal()")
+        (folder / "out" / "unrelated.js").write_bytes(b"x")
+        found = self.findings(tmp_path)
+        assert len(found) == 1 and found[0]["severity"] == "critical"
+        assert (
+            "extension/out/helper.js (script not in the signed package, named by a signed file)"
+            in found[0]["message"]
+        )
+        assert "unrelated" not in found[0]["message"]
+
+    def test_an_added_script_no_signed_file_names_is_suspect(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        signed = io.BytesIO()
+        with zipfile.ZipFile(signed, "w") as archive:
+            archive.writestr("extension/out/main.js", "1")
+        package = signed.getvalue()
+        members = OpenVsxSignature.signed_members(package)
+        monkeypatch.setattr(
+            OpenVsxSignature, "signed_package", classmethod(lambda cls, n, v: (package, members))
+        )
+        folder = tmp_path / ".cursor" / "extensions" / FOLDER
+        (folder / "out").mkdir(parents=True)
+        (folder / "package.json").write_bytes(b'{"publisher":"a","name":"b","version":"1"}')
+        (folder / "out" / "main.js").write_bytes(b"1")
+        (folder / "out" / "dropped.node").write_bytes(b"x")
+        assert self.findings(tmp_path) == []
+        assert [f["severity"] for f in self.added(tmp_path)] == ["high"]
 
     def test_an_editor_that_installs_from_the_marketplace_is_not_asked(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -115,3 +198,66 @@ class TestInstalledExtensions:
         assert str(tmp_path) not in str(
             DeviceInventory.collect(tmp_path)["inventory"]["installed_extensions"]
         )
+
+    def test_a_marketplace_folder_is_counted_and_named_not_verified(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        folder = Machine.unpack(tmp_path, ".vscode/extensions")
+        (folder / "package.json").write_bytes(
+            b'{"publisher":"vscjava","name":"vscode-java-pack","version":"0.31.2"}'
+        )
+        Machine.registry(monkeypatch)
+        left = DeviceInventory.collect(tmp_path, verify_extensions=True)["inventory"]
+        assert left["extensions_not_verified"] == [
+            {
+                "editor": "vscode",
+                "id": "vscjava.vscode-java-pack",
+                "version": "0.31.2",
+                "reason": "not verified: installed from the Visual Studio Marketplace",
+            }
+        ]
+        assert "extensions_not_verified" not in DeviceInventory.collect(tmp_path)["inventory"]
+
+    def test_an_open_vsx_editors_folder_is_not_listed_as_unverified(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        Machine.unpack(tmp_path, ".vscode-oss/extensions")
+        Machine.registry(monkeypatch)
+        report = DeviceInventory.collect(tmp_path, verify_extensions=True)
+        assert report["inventory"]["extensions_not_verified"] == []
+
+
+class TestTheFlag:
+    def test_inventory_and_report_take_the_opt_in_flag_off_by_default(self) -> None:
+        import argparse
+
+        from cordon_scanner.cli.commands.agent import AgentCommand
+
+        root = argparse.ArgumentParser()
+        AgentCommand.add_parser(root.add_subparsers())
+        for command in ("inventory", "report"):
+            assert root.parse_args(["agent", command]).verify_extensions is False
+            assert (
+                root.parse_args(["agent", command, "--verify-extensions"]).verify_extensions is True
+            )
+        assert "open-vsx.org about each installed extension" in AgentCommand.VERIFY_HELP
+
+    def test_the_flag_reaches_the_collection(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import argparse
+
+        from cordon_scanner.cli.commands.agent import AgentCommand
+
+        seen: list[bool] = []
+
+        def collect(home=None, collection=None, *, verify_extensions=False):
+            seen.append(verify_extensions)
+            return {"inventory": {}, "findings": []}
+
+        monkeypatch.setattr(DeviceInventory, "collect", staticmethod(collect))
+        for flag in (False, True):
+            AgentCommand.run(
+                argparse.Namespace(
+                    agent_command="inventory", signed=False, url=None, verify_extensions=flag
+                )
+            )
+        assert seen == [False, True]

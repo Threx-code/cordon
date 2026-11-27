@@ -450,6 +450,18 @@ class ModuleProvenance(Protocol):
     def check(self, name: str, version: str, integrity: str | None) -> ModuleCheck: ...
 
 
+class ExtensionSignatures(ModuleProvenance, Protocol):
+    """Whether an editor extension's files are the ones its registry signed for the release."""
+
+    def compare(
+        self, name: str, version: str, files: Mapping[str, str], *, added: bool = True
+    ) -> ModuleCheck: ...
+
+    def signed_package(
+        self, name: str, version: str
+    ) -> tuple[bytes, dict[str, str]] | ModuleCheck: ...
+
+
 class ChartProvenance(Protocol):
     """Whether a Helm chart is signed by a key the user trusts."""
 
@@ -822,6 +834,7 @@ __all__ = [
     "Keyrings",
     "LicenseClassification",
     "LiveServers",
+    "ExtensionSignatures",
     "ModuleProvenance",
     "PackageFactsQueries",
     "PrivateRegistryQueries",

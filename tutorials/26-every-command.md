@@ -1269,6 +1269,11 @@ This machine's AI agents and MCP servers, for an organisation's MDM (read-only, 
 │                           CORDON_DEVICE_TOKEN (one per laptop; a token     │
 │                           shared by a fleet is not supported)              │
 │ --url URL                 Cordon Cloud API base (with --signed)            │
+│ --verify-extensions       asks open-vsx.org about each installed extension │
+│                           of an editor that installs from it (VSCodium,    │
+│                           Cursor, Windsurf) and compares its files with    │
+│                           the package Open VSX signed; off by default, so  │
+│                           nothing is asked of any registry                 │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1277,6 +1282,11 @@ This machine's AI agents and MCP servers, for an organisation's MDM (read-only, 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ --url URL                 Cordon Cloud API base                            │
+│ --verify-extensions       asks open-vsx.org about each installed extension │
+│                           of an editor that installs from it (VSCodium,    │
+│                           Cursor, Windsurf) and compares its files with    │
+│                           the package Open VSX signed; off by default, so  │
+│                           nothing is asked of any registry                 │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
