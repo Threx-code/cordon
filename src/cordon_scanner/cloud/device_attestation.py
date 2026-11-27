@@ -32,6 +32,7 @@ from datetime import UTC, datetime
 from typing import Any, ClassVar
 
 from cordon_scanner.cloud import CloudEndpoint, CloudError
+from cordon_scanner.cloud.declared_packages import DeclaredPackages
 from cordon_scanner.cloud.transport import CloudTransport, Transport
 from cordon_scanner.contracts.digests import ArtifactDigests
 from cordon_scanner.intel.provenance._ed25519_signer import Ed25519Signer
@@ -47,19 +48,12 @@ class DeviceAttestation:
     #: The platform's limits on one statement.
     MAX_ENTRIES: ClassVar[int] = 500
     MAX_UNNAMED: ClassVar[int] = 5000
-    MAX_NAME: ClassVar[int] = 214
-    MAX_VERSION: ClassVar[int] = 64
 
     #: A purl name as the platform reads it: lower case, one optional `scope/` (an npm scope's `@` written `%40`).
-    NAME: ClassVar[re.Pattern[str]] = re.compile(r"[a-z0-9._~%+-]+(?:/[a-z0-9._~%+-]+)?")
-    VERSION: ClassVar[re.Pattern[str]] = re.compile(r"[A-Za-z0-9._+~-]+")
     PYPI_SPEC: ClassVar[re.Pattern[str]] = re.compile(
         r"([\w.\-]+)(?:\[[\w,.\-]*\])?(?:==|@)(\d[\w.\-+]*)"
     )
 
-    #: The package URLs the platform accepts today (`pkg:npm|pypi/...`, the closed form of its inventory statement). A pinned
-    #: package of any other ecosystem is split like the rest and counted in `unnamed` until the platform's form is widened.
-    PLATFORM_PURL: ClassVar[re.Pattern[str]] = re.compile(r"pkg:(?:npm|pypi)/.+")
     SEPARATORS: ClassVar[str] = "-_."
 
     # -- the statement -------------------------------------------------------------------------------------------
@@ -116,14 +110,12 @@ class DeviceAttestation:
         if split is None:
             return None
         name, version = split
-        if not cls.NAME.fullmatch(name) or len(name) > cls.MAX_NAME:
-            return None
-        if not cls.VERSION.fullmatch(version) or len(version) > cls.MAX_VERSION:
-            return None
         from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
 
+        # What the platform accepts for each type (`DeclaredPackages`, a mirror of its validator): a package it would refuse is
+        # counted in `unnamed`, never sent.
         purl = f"pkg:{McpConfigs.purl_type(ecosystem)}/{name}@{version}"
-        return purl if cls.PLATFORM_PURL.fullmatch(purl) else None
+        return purl if DeclaredPackages.read(purl) is not None else None
 
     @classmethod
     def _split(cls, kind: str, spec: str) -> tuple[str, str] | None:
@@ -136,8 +128,8 @@ class DeviceAttestation:
         name, version = getattr(LaunchSpecs, f"{kind}_split")(spec)
         if not version:
             return None
-        # A Maven coordinate `group:artifact` is a package URL's `group/artifact`; a version's colon is written `%3A`.
-        return name.replace(":", "/"), version.replace(":", "%3A")
+        # A Maven coordinate `group:artifact` is a package URL's `group/artifact`.
+        return name.replace(":", "/"), version
 
     @classmethod
     def _split_npm(cls, spec: str) -> tuple[str, str]:

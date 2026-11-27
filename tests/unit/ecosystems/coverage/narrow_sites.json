@@ -54,5 +54,6 @@
  {"ids": ["cargo", "gomod", "hex", "image", "maven", "npm", "nuget", "pub", "pypi", "rubygems"], "site": "src/cordon_scanner/sources/package.py::TYPES#0"},
  {"ids": ["cargo", "gomod", "hex", "maven", "npm", "nuget", "pub", "pypi", "rubygems"], "site": "src/cordon_scanner/sources/package.py::_SUFFIX#0"},
  {"ids": ["gomod", "maven", "npm"], "site": "src/cordon_scanner/sources/package.py::segments#0"},
- {"ids": ["npm", "pypi"], "site": "src/cordon_scanner/sources/previous.py::FROM_ARCHIVE#0"}
+ {"ids": ["npm", "pypi"], "site": "src/cordon_scanner/sources/previous.py::FROM_ARCHIVE#0"},
+ {"ids": ["ansible", "bazel", "cargo", "cocoapods", "composer", "conan", "conda", "cran", "hackage", "helm", "hex", "julia", "maven", "nix", "npm", "nuget", "opam", "pub", "pypi", "swift", "terraform", "vcpkg"], "reason": "A copy of the platform's closed table of the package-URL types a device may declare, which names the types of the 29 ecosystems and no others; it follows that table, not the scanner's registry.", "site": "src/cordon_scanner/cloud/declared_packages.py::TYPES#0"}
 ]

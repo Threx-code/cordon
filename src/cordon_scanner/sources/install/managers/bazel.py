@@ -43,9 +43,7 @@ class BazelPlanner:
             "mod",
         }
     )
-    MODULE_FILE: ClassVar[re.Pattern[str]] = re.compile(
-        r"(.+)/modules/([^/]+)/([^/]+)/(MODULE\.bazel|source\.json)"
-    )
+    FILES: ClassVar[tuple[str, ...]] = ("MODULE.bazel", "source.json")
     SRI: ClassVar[re.Pattern[str]] = re.compile(
         r"(sha256|sha384|sha512)-([A-Za-z0-9+/]{40,200}={0,2})"
     )
@@ -110,10 +108,11 @@ class BazelPlanner:
             )
         files: list[PackageFile] = []
         for url, pin in hashes.items():
-            found = cls.MODULE_FILE.fullmatch(str(url))
-            if found is None:
+            registry, _, rest = str(url).rpartition("/modules/")
+            pieces = rest.split("/")
+            if not registry or len(pieces) != 3 or pieces[2] not in cls.FILES:
                 continue
-            registry, name, version, kind = found.groups()
+            name, version, kind = pieces
             if not isinstance(pin, str) or not cls.HEX.fullmatch(pin):
                 raise InstallRefused(
                     f"{name} {version}: the lock's hash for {kind} is not a sha256"
