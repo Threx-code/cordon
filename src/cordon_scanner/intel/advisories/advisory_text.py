@@ -123,7 +123,7 @@ class AdvisoryTextSymbols:
 
     @staticmethod
     def _camel(text: str) -> str:
-        return "".join(part[:1].upper() + part[1:] for part in re.split(r"[-_.]+", text) if part)
+        return "".join(part[:1].upper() + part[1:] for part in re.split(r"[-_.]", text) if part)
 
     @classmethod
     def heads_of(cls, kind: str, package: str) -> tuple[str, list[str]]:

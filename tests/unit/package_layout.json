@@ -1145,6 +1145,7 @@
   "test_campaign_fingerprint.py": "intel/malware",
   "test_campaign_fingerprints_cover_every_ecosystem.py": "intel/malware",
   "test_campaign_sibling.py": "detect/supply",
+  "test_campaign_sibling_every_ecosystem.py": "detect/supply",
   "test_attack_coverage.py": "bench",
   "test_attest.py": "intel/provenance",
   "test_attestation.py": "detect/supply",
