@@ -61,6 +61,17 @@ class TestToolsThatWriteAGenericPackageUrl:
         assert ("terraform", "hashicorp/aws", "5.80.0") in found
         assert ("terraform", "terraform-aws-modules/vpc/aws", "5.1.2") in found
 
+    def test_a_helm_component_cdxgen_writes_has_no_package_url_and_is_said_so(self) -> None:
+        document = {
+            "bomFormat": "CycloneDX",
+            "specVersion": "1.6",
+            "version": 1,
+            "components": [{"type": "application", "name": "redis", "version": "17.0.0"}],
+        }
+        reading = SbomDocument.read(document)
+        assert not reading.components
+        assert any("redis" in p and "no Package URL" in p for p in reading.problems)
+
     def test_a_flake_input_is_read_as_a_nix_package(self) -> None:
         assert ("nix", "nixpkgs", "latest") in {
             (c.ecosystem, c.name, c.version) for c in self.read().components
@@ -222,21 +233,19 @@ class TestSbomIngestion:
             version,
         )
 
-    def test_a_maven_component_belongs_to_a_gradle_project_as_well(self) -> None:
-        parsed = PackageUrl.parse("pkg:maven/org.jetbrains.kotlin/kotlin-stdlib@2.0.21?type=jar")
-        assert parsed is not None and parsed.ecosystems == ("maven", "gradle")
-
     @pytest.mark.parametrize("ecosystem_id", sorted(EcosystemRegistry.BY_ID))
     def test_every_ecosystems_own_purl_type_reads_back_as_that_ecosystem(
         self, ecosystem_id: str
     ) -> None:
         adapter = EcosystemRegistry.BY_ID[ecosystem_id]
         parsed = PackageUrl.parse(f"pkg:{adapter.purl_type}/acme/widget@1.0.0")
-        assert parsed is not None and ecosystem_id in parsed.ecosystems
+        # Gradle builds Maven artefacts: its own type is `maven`, which Maven's id names.
+        expected = "maven" if ecosystem_id == "gradle" else ecosystem_id
+        assert parsed is not None and parsed.ecosystem == expected
 
     def test_a_type_no_ecosystem_owns_belongs_to_none(self) -> None:
         parsed = PackageUrl.parse("pkg:generic/openssl@3.0.0")
-        assert parsed is not None and parsed.ecosystems == ()
+        assert parsed is not None and parsed.ecosystem is None
 
     @pytest.mark.conformance("x", "x.sbom")
     def test_cyclonedx_hashes_licences_scope_and_graph(self) -> None:

@@ -2,7 +2,7 @@
  "bomFormat": "CycloneDX",
  "specVersion": "1.6",
  "version": 1,
- "//": "The components cdxgen writes, as its own tests and code assert them: terraform providers and modules (lib/ecosystems/parsers-terraform.poku.js, parsers-terraform.js:253,1197) and a flake input (parsers-misc.js:1448-1458, purl.js nixGenericPurl). Sources and sha256 in CAPTURES.md.",
+ "//": "Built from the components cdxgen's own tests assert, not a tool run: terraform providers and modules (lib/ecosystems/parsers-terraform.poku.js; proposed types at parsers-terraform.js:253 and :1197) and a flake input (parsers-misc.js:1448-1458, purl.js nixGenericPurl). The sources and their sha256 are in CAPTURES.md.",
  "components": [
   {
    "type": "library",

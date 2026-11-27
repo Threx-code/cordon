@@ -157,8 +157,13 @@ class More:
     def sbom_ingest(cls) -> frozenset[str]:
         from cordon_scanner.engine.sbom_ingest import PackageUrl
 
-        served = [e for also in PackageUrl.ALSO_SERVES.values() for e in also]
-        return cls.ids([*PackageUrl.ECOSYSTEMS.values(), *served])
+        return cls.ids(PackageUrl.ECOSYSTEMS.values())
+
+    @staticmethod
+    def sbom_ingest_reasons() -> dict[str, str]:
+        return {
+            "gradle": "Gradle builds Maven artifacts; SBOM tools write pkg:maven, ingested as maven, whose advisories gradle shares."
+        }
 
     @classmethod
     def mcp_packages(cls) -> frozenset[str]:
@@ -259,7 +264,7 @@ class Features:
         "package-URL scan targets": (More.package_url_targets, dict),
         "advisory-text symbols": (More.advisory_text, dict),
         "malware dataset": (More.malware_dataset, More.malware_dataset_reasons),
-        "SBOM package-URL ingest": (More.sbom_ingest, dict),
+        "SBOM package-URL ingest": (More.sbom_ingest, More.sbom_ingest_reasons),
         "MCP package check": (More.mcp_packages, dict),
         "name-signal readers": (More.name_signals, dict),
         "private registries": (More.private_registries, dict),

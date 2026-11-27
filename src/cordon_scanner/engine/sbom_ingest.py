@@ -7,6 +7,15 @@ document's dependency graph -- and every record says it came from that document 
 wrote it. The advisory, malware, licence, policy and (with --online) registry checks then run on
 the components as they would on a lockfile's.
 
+Which tools write which Package URL types was read from their own source, not guessed (2026-11-27): anchore/syft
+`syft/pkg/type.go` (main) writes `pkg:terraform` and `pkg:nix` and has no Helm or Ansible type; aquasecurity/trivy
+`pkg/purl/purl.go` (main) names none of Helm, Terraform, Ansible or Nix; CycloneDX/cdxgen 13.9.0 (commit 773e4040f62a,
+`lib/` searched whole) writes Terraform providers and modules and Nix flake inputs as `pkg:generic/...` with a
+`cdx:purl:proposedType` property (read here), writes Helm charts with no Package URL at all (`parseHelmYamlData` in
+`lib/ecosystems/parsers-misc.js` gives name and version only), and has no "pkg:helm" and no "ansible" anywhere. So Helm
+and Ansible components are read only under their adapters' own types, and a Helm component from cdxgen is reported as
+having no Package URL.
+
 A document is validated before it is believed: an unsupported format version, a component with no
 name, a Package URL that does not parse, a dependency edge naming a component the document does not
 hold -- each is reported, the scan marked incomplete, and nothing guessed. In a directory scan an
@@ -31,9 +40,6 @@ MAX_COMPONENTS: Final = 50_000
 PROPOSED_TYPE: Final = "cdx:purl:proposedType"
 #: Proposed types that are not an ecosystem adapter's own purl type.
 PROPOSED_ALIASES: Final = {"terraform-provider": "terraform", "terraform-module": "terraform"}
-#: Ecosystems whose components a tool writes under another ecosystem's purl type, by that type.
-ALSO_SERVES_BY_TYPE: Final[dict[str, tuple[str, ...]]] = {"maven": ("gradle",)}
-SERVED_BY_ANOTHER_TYPE: Final = frozenset(e for also in ALSO_SERVES_BY_TYPE.values() for e in also)
 
 
 @dataclass(frozen=True)
@@ -83,9 +89,6 @@ class PackageUrl:
         # is where it is served from, not part of its name.
         "terraform": "registry_path",
     }
-    #: Ecosystems whose components a tool writes under another ecosystem's purl type: a Gradle build's artefacts are
-    #: Maven coordinates, so a `pkg:maven/` component belongs to a Gradle project as well.
-    ALSO_SERVES: ClassVar[dict[str, tuple[str, ...]]] = ALSO_SERVES_BY_TYPE
     #: Other spellings of a purl type that real tools write, and types of ecosystems that are not adapters here.
     ALIASES: ClassVar[dict[str, str]] = {
         "github": "actions",
@@ -98,12 +101,17 @@ class PackageUrl:
     }
     #: Each purl type and the ecosystem it names: every registered ecosystem under the type its own adapter writes
     #: (so a bill of materials we export reads back), then the aliases. An ecosystem is covered the moment its adapter
-    #: exists. A type two adapters write belongs to the one that is not served by the other's.
+    #: exists. A type two adapters write (Maven's, which Gradle builds on) names the one whose id it is.
     ECOSYSTEMS: ClassVar[dict[str, str]] = {
         **{
             adapter.purl_type: ecosystem_id
             for ecosystem_id, adapter in EcosystemRegistry.BY_ID.items()
-            if adapter.purl_type != "generic" and ecosystem_id not in SERVED_BY_ANOTHER_TYPE
+            if adapter.purl_type != "generic"
+        },
+        **{
+            adapter.purl_type: ecosystem_id
+            for ecosystem_id, adapter in EcosystemRegistry.BY_ID.items()
+            if adapter.purl_type == ecosystem_id
         },
         **ALIASES,
     }
@@ -133,12 +141,6 @@ class PackageUrl:
     @property
     def ecosystem(self) -> str | None:
         return PackageUrl.ECOSYSTEMS.get(self.type)
-
-    @property
-    def ecosystems(self) -> tuple[str, ...]:
-        """Every ecosystem the component belongs to: its own, and those that write it under this purl type."""
-        own = PackageUrl.ECOSYSTEMS.get(self.type)
-        return (own, *PackageUrl.ALSO_SERVES.get(self.type, ())) if own else ()
 
     @property
     def package_name(self) -> str:
