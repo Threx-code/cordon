@@ -73,7 +73,8 @@ ROOT = next(
     (p for p in (Path.cwd(), *Path.cwd().parents) if (p / "src" / "cordon_scanner").is_dir()), None
 ) or sys.exit("run this from inside the Cordon repository")
 DATA = ROOT / "src" / "cordon_scanner" / "intel" / "data"
-USER_AGENT = "cordon-scanner package-intel refresh (+https://github.com/Threx-code/cordon)"
+#: A generic agent on purpose: a registry's access log must not learn who is asking, or about which repository.
+USER_AGENT = "Mozilla/5.0"
 TIMEOUT = 30
 
 #: Statuses that mean "not now" rather than "not ever", so a request carrying
