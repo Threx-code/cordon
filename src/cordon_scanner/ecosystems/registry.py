@@ -15,6 +15,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.ecosystems.base import BaseEcosystem, Ecosystem, ReleaseFile
+from cordon_scanner.ecosystems.editors.vscode import VsCodeEcosystem
 from cordon_scanner.ecosystems.infra.infra import INFRA_ECOSYSTEMS
 from cordon_scanner.ecosystems.others import (
     BazelEcosystem,
@@ -232,6 +233,7 @@ class EcosystemRegistry:
         BazelEcosystem(),
         GitHubActionsEcosystem(),
         *INFRA_ECOSYSTEMS,
+        VsCodeEcosystem(),
     )
 
     BY_ID: ClassVar[dict[str, Ecosystem]] = {eco.id: eco for eco in ECOSYSTEMS}
@@ -307,16 +309,6 @@ class EcosystemRegistry:
         if isinstance(implementation, BaseEcosystem):
             return implementation.declared_dependencies(files)
         return frozenset()
-
-
-class VsCodeExtensionNames(BaseEcosystem):
-    """What an editor extension's name declares (`publisher.name`): its facts only. Extensions are
-    not a registered package ecosystem, but their names have a namespace."""
-
-    id = "vscode"
-
-    def namespace(self, name: str, alias: str | None = None) -> str | None:
-        return name.split(".", 1)[0] if "." in name else None
 
 
 class RegistryPublishing:
@@ -413,9 +405,9 @@ class RegistryFacts(RegistryPublishing):
     (an unknown ecosystem has the defaults: `BaseEcosystem`); installed through the
     `cordon_scanner.ecosystem_facts` entry point."""
 
-    _DECLARED_ONLY: ClassVar[Mapping[str, BaseEcosystem]] = MappingProxyType(
-        {"vscode": VsCodeExtensionNames()}
-    )
+    #: Ecosystems with declarations but no adapter. Empty: editor extensions are a registered ecosystem
+    #: (`VsCodeEcosystem`), so every ecosystem's facts come from its own adapter.
+    _DECLARED_ONLY: ClassVar[Mapping[str, BaseEcosystem]] = MappingProxyType({})
     _UNKNOWN: ClassVar[BaseEcosystem] = BaseEcosystem()
 
     @staticmethod

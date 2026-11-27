@@ -465,6 +465,37 @@ class PackageIntelRefresh:
         return sorted(out.items()), ", ".join(url for url, _ in sources)
 
     @staticmethod
+    def openvsx() -> tuple[list[tuple[str, int]], str]:
+        """Open VSX, for editor extensions, in download order: `publisher.name` with its download count.
+
+        Every page is required, as for pub.dev: a throttled page is retried, and a page that cannot be read fails
+        the ecosystem rather than shortening its list. The Marketplace is not read: its terms allow only
+        Microsoft's own products to use it."""
+        source = "https://open-vsx.org/api/-/search"
+        names: list[tuple[str, int]] = []
+        size, pages = 100, 30
+        for page in range(pages):
+            url = f"{source}?sortBy=downloadCount&sortOrder=desc&size={size}&offset={page * size}"
+            payload = PackageIntelRefresh.as_object(
+                PackageIntelRefresh.fetch_json_retrying(url), url
+            )
+            entries = payload.get("extensions")
+            if not isinstance(entries, list) or not entries:
+                break
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                namespace, name, count = (
+                    entry.get("namespace"),
+                    entry.get("name"),
+                    entry.get("downloadCount"),
+                )
+                if isinstance(namespace, str) and isinstance(name, str) and isinstance(count, int):
+                    names.append((f"{namespace}.{name}".lower(), count))
+            if len(entries) < size:
+                break
+        return names, source
+
     def pub_dev() -> tuple[list[tuple[str, int]], str]:
         """pub.dev, for Dart and Flutter, in popularity order.
 
@@ -851,6 +882,8 @@ SOURCES: dict[str, tuple[Callable[[], tuple[list[tuple[str, int]], str]], int]] 
     "cran": (PackageIntelRefresh.cran, 1_000),
     # A year of installs, formulae and casks together.
     "homebrew": (PackageIntelRefresh.homebrew, 1_000),
+    # Lifetime downloads on Open VSX: the extensions an editor's users actually install.
+    "vscode": (PackageIntelRefresh.openvsx, 1_000),
 }
 
 #: Names per cranlogs request: the API takes a comma-separated list in the path.

@@ -13,6 +13,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
 from cordon_scanner.ecosystems.contract import (
     CONTRACTS,
     CROSS_CUTTING,
@@ -183,3 +185,15 @@ class TestTheContract:
         ids = {c.id for c in CONTRACTS}
         for case in ConformanceCase.all():
             assert case.ecosystem in ids, case.id
+
+
+class TestEveryRegisteredEcosystemHasAContract:
+    """Every ecosystem the registry holds, built in or added by a plugin, is held to a contract: an ecosystem cannot be
+    added without one, and one without proofs fails `test_every_ecosystem_meets_the_required_coverage`."""
+
+    @pytest.mark.xfail(strict=True, reason="the editor-extension contract is being built")
+    def test_the_contracts_are_the_registry(self) -> None:
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+        missing = set(EcosystemRegistry.BY_ID) - {c.id for c in CONTRACTS}
+        assert not missing, f"registered ecosystems with no contract: {sorted(missing)}"

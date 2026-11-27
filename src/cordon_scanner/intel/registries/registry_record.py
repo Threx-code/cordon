@@ -69,6 +69,7 @@ ECOSYSTEMS: Final = frozenset(
         "actions",
         "swift",
         "nix",
+        "vscode",
     }
 )
 #: npm's lifecycle scripts that run on the installing machine.

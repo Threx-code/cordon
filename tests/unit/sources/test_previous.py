@@ -28,7 +28,9 @@ class Registry:
             return documents[url]
 
         monkeypatch.setattr(RegistryClient, "_fetch", staticmethod(fetch))
-        monkeypatch.setattr(RegistryRequest, "fetch_bytes", staticmethod(lambda url, allow, **k: BLOB))
+        monkeypatch.setattr(
+            RegistryRequest, "fetch_bytes", staticmethod(lambda url, allow, **k: BLOB)
+        )
         return asked
 
 
@@ -48,7 +50,10 @@ class TestTheReleaseBefore:
         for v in packument["versions"]:
             documents[f"https://registry.npmjs.org/express/{v}"] = {
                 "version": v,
-                "dist": {"tarball": f"https://registry.npmjs.org/express/-/express-{v}.tgz", "integrity": SHA512},
+                "dist": {
+                    "tarball": f"https://registry.npmjs.org/express/-/express-{v}.tgz",
+                    "integrity": SHA512,
+                },
             }
         Registry.serve(monkeypatch, documents)
 
@@ -73,7 +78,9 @@ class TestTheReleaseBefore:
             "2.0.0": files("2.0.0", "2024-02-01T00:00:00Z"),
             "1.2.4": files("1.2.4", "2024-03-01T00:00:00Z"),
         }
-        documents = {"https://pypi.org/pypi/demo/json": {"info": {"name": "demo"}, "releases": releases}}
+        documents = {
+            "https://pypi.org/pypi/demo/json": {"info": {"name": "demo"}, "releases": releases}
+        }
         for v, found in releases.items():
             documents[f"https://pypi.org/pypi/demo/{v}/json"] = {"urls": found}
         Registry.serve(monkeypatch, documents)
@@ -82,7 +89,9 @@ class TestTheReleaseBefore:
 
         assert found is not None and found.label == "demo 1.2.3"
 
-    def test_an_archive_that_does_not_match_its_digest_is_an_error_not_a_comparison(self, tmp_path, monkeypatch) -> None:
+    def test_an_archive_that_does_not_match_its_digest_is_an_error_not_a_comparison(
+        self, tmp_path, monkeypatch
+    ) -> None:
         import pytest
 
         packument = {
@@ -94,7 +103,10 @@ class TestTheReleaseBefore:
         for v in ("1.0.0", "1.1.0"):
             documents[f"https://registry.npmjs.org/demo/{v}"] = {
                 "version": v,
-                "dist": {"tarball": f"https://registry.npmjs.org/demo/-/demo-{v}.tgz", "integrity": "sha512-" + base64.b64encode(b"x" * 64).decode()},
+                "dist": {
+                    "tarball": f"https://registry.npmjs.org/demo/-/demo-{v}.tgz",
+                    "integrity": "sha512-" + base64.b64encode(b"x" * 64).decode(),
+                },
             }
         Registry.serve(monkeypatch, documents)
         with pytest.raises(ValueError, match="does not match"):

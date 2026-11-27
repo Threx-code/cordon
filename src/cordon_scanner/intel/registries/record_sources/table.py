@@ -17,6 +17,7 @@ from cordon_scanner.intel.registries.record_sources.catalogs.hackage import Hack
 from cordon_scanner.intel.registries.record_sources.catalogs.helm import HelmSource
 from cordon_scanner.intel.registries.record_sources.catalogs.image import ImageSource
 from cordon_scanner.intel.registries.record_sources.catalogs.maven import GradleSource, MavenSource
+from cordon_scanner.intel.registries.record_sources.catalogs.openvsx import OpenVsxSource
 from cordon_scanner.intel.registries.record_sources.catalogs.terraform import TerraformSource
 from cordon_scanner.intel.registries.record_sources.cocoapods import CocoapodsSource
 from cordon_scanner.intel.registries.record_sources.composer import ComposerSource
@@ -47,6 +48,7 @@ class RecordSources:
         TerraformSource(),
         HelmSource(),
         ImageSource(),
+        OpenVsxSource(),
         GomodSource(),
         MavenSource(),
         GradleSource(),
