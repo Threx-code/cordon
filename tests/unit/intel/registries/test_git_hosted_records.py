@@ -205,3 +205,34 @@ class TestANameItsRegistryAllows:
         source = RecordSources.of(ecosystem)
         assert source is not None
         assert source.documents(name, "1.0.0") == ()
+
+
+class TestEditorExtensionsRecord:
+    """Open VSX's query of every version of one extension, read from its real answer."""
+
+    def test_the_record_is_what_open_vsx_says(self) -> None:
+        source = RecordSources.of("vscode")
+        assert source is not None
+        name, version = "dracula-theme.theme-dracula", "2.25.1"
+        documents = {d.url: DOCUMENTS.get(d.url) for d in source.documents(name, version)}
+        assert all(documents.values())
+        record = source.record(name, version, documents)
+        assert record is not None
+        assert record.published == "2024-09-06T03:29:53+00:00"  # the record keeps whole seconds
+        assert (record.previous_version, record.publisher, record.publisher_kind) == (
+            "2.25.0",
+            "open-vsx",
+            "account",
+        )
+        assert record.prior_versions == 12
+
+    def test_a_name_that_is_not_an_extension_id_asks_nothing(self) -> None:
+        source = RecordSources.of("vscode")
+        assert source is not None
+        for name in ("no-dot", "a.b.c", "a.b@1.0", "../x.y", "a b.c", ""):
+            assert source.documents(name, "1.0.0") == ()
+
+    def test_every_ecosystem_has_a_record_source(self) -> None:
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+        assert set(EcosystemRegistry.BY_ID) == RecordSources.ecosystems() == ECOSYSTEMS

@@ -165,6 +165,7 @@ class TestTheFetch:
 #: A valid name where an ecosystem's own rule asks for more than a word.
 NAMES = {
     "composer": "vendor/example",
+    "vscode": "publisher.example",
     "ansible": "community.example",
     "terraform": "hashicorp/example",
     "maven": "group:example",

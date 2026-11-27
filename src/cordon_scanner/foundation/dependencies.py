@@ -147,6 +147,7 @@ ECOSYSTEM_IDS: Final = frozenset(
         "julia",
         "opam",
         "image",
+        "vscode",
     }
 )
 """Every ecosystem Cordon reads, by the id `ecosystems/registry.py` gives it: what a policy may name.

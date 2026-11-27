@@ -246,9 +246,6 @@ class Features:
     #: Features being built now: expected to fail until they cover every ecosystem; the entry comes off when they do.
     BUILDING: ClassVar[frozenset[str]] = frozenset(
         {
-            # Not yet built for editor extensions:
-            "registry record (publisher, history, withdrawals)",
-            "campaign fingerprints",
             # Not yet built for every ecosystem:
             "provenance (signed build attestations)",
             "look-alike names",
