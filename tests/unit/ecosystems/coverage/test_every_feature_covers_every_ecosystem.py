@@ -282,7 +282,7 @@ class Features:
         "registry facts client": (More.registry_facts, dict),
         "package-URL scan targets": (More.package_url_targets, dict),
         "advisory-text symbols": (More.advisory_text, dict),
-        "malware dataset": (More.malware_dataset, More.malware_dataset_reasons),
+        "malware dataset": (More.malware_dataset, dict),
         "SBOM package-URL ingest": (More.sbom_ingest, More.sbom_ingest_reasons),
         "MCP package check": (More.mcp_packages, dict),
         "name-signal readers": (More.name_signals, dict),
@@ -361,7 +361,7 @@ class TestEveryFeatureCoversEveryEcosystem:
 #: list when its shim and planner land; a listed cell must still fail (strict), so none stays listed.
 INSTALL_PENDING = frozenset(
     {
-        "bazel", "cocoapods", "conan", "cran", "gradle", "hackage", "homebrew", "image",
+        "cocoapods", "conan", "cran", "gradle", "hackage", "homebrew", "image",
         "julia", "nix", "opam", "swift", "vcpkg", "vscode",
     }
 )  # fmt: skip
