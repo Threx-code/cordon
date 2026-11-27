@@ -138,6 +138,9 @@ class TestSpecs:
         assert PackageSpec.of("maven", "org.a:b", "2").purl == "pkg:maven/org.a/b@2"
         assert PackageSpec.of("cran", "x", "1").purl is None
 
+    def test_a_gradle_dependency_is_fetched_as_the_maven_artifact_it_is(self) -> None:
+        assert PackageSpec.of("gradle", "org.a:b", "2").purl == "pkg:maven/org.a/b@2"
+
 
 class Projects:
     #: A real package of each ecosystem and a release of it, as a package check names them.
@@ -256,6 +259,40 @@ class Records:
                 ):
                     return advisory.name, version, advisory.identifier
         pytest.skip(f"no exact-version {ecosystem} record in this database")
+
+
+class Scanned:
+    @staticmethod
+    def findings(tmp_path: Path, ecosystem: str, name: str, version: str) -> list[dict]:
+        for relative, body in Lockfiles.write([PackageSpec.of(ecosystem, name, version)]).items():
+            target = tmp_path / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(body, encoding="utf-8")
+        run = subprocess.run(
+            [
+                *[sys.executable, "-m", "cordon_scanner", "scan", str(tmp_path), "--offline"],
+                *["--format", "json", "--no-cache", "--severity", "info"],
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=600,
+        )
+        return json.loads(run.stdout)["findings"]
+
+
+@pytest.mark.slow
+class TestAGradleDependencyIsAMavenArtifact:
+    """Gradle resolves Maven artifacts, so Maven's advisories apply to a Gradle project's dependencies."""
+
+    @pytest.mark.parametrize("ecosystem", ["maven", "gradle"])
+    def test_log4shell_is_reported_for_log4j_core_2_14_1(
+        self, ecosystem: str, tmp_path: Path
+    ) -> None:
+        found = Scanned.findings(
+            tmp_path, ecosystem, "org.apache.logging.log4j:log4j-core", "2.14.1"
+        )
+        assert any("CVE-2021-44228" in json.dumps(f) for f in found), ecosystem
 
 
 @pytest.mark.slow

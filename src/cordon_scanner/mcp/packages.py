@@ -32,16 +32,21 @@ ECOSYSTEMS: Final[tuple[str, ...]] = RegistryFacts.package_check_ecosystems()
 
 class Fetchable:
     """The package-URL type of each ecosystem whose published archive the scanner can fetch and scan: the types a
-    package-URL scan target takes (`PackageTarget.TYPES`), the ecosystem's own type where it has several."""
+    package-URL scan target takes (`PackageTarget.TYPES`). An ecosystem is fetched by its own purl type where a scan
+    target takes it (Gradle's is `maven`: its dependencies are Maven artifacts), else by the type that names it."""
 
     @staticmethod
     def kinds() -> dict[str, str]:
         found: dict[str, str] = {}
-        for kind, ecosystem in PackageTarget.TYPES.items():
+        for ecosystem in ECOSYSTEMS:
             own = EcosystemRegistry.BY_ID[ecosystem].purl_type
-            if ecosystem not in found or kind == own:
-                found[ecosystem] = kind
-        return {e: k for e, k in found.items() if e in ECOSYSTEMS}
+            if own in PackageTarget.TYPES:
+                found[ecosystem] = own
+            else:
+                named = [k for k, e in PackageTarget.TYPES.items() if e == ecosystem]
+                if named:
+                    found[ecosystem] = named[0]
+        return found
 
 
 #: Package-URL types for the ecosystems whose published archive the scanner can fetch and scan.
