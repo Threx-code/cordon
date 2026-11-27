@@ -36,6 +36,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import NoOwnName
 from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.foundation.models import Scope
 
@@ -698,6 +699,9 @@ class TerraformEcosystem(BaseEcosystem):
     """Terraform providers and modules."""
 
     id = "terraform"
+    own_name = NoOwnName(
+        "a module is named by the address it is published at (namespace/name/provider) and its .tf files declare no name; a provider zip holds one binary whose file name states only the type, not the namespace that identifies it"
+    )
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         parts = name.split("/")

@@ -29,6 +29,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
@@ -503,6 +504,7 @@ class CranEcosystem(BaseEcosystem):
     """CRAN, Bioconductor and R remotes, through DESCRIPTION and renv."""
 
     id = "cran"
+    own_name = OwnName(("DESCRIPTION",))
     purl_type = "cran"
     manifest_globs: tuple[str, ...] = ("**/DESCRIPTION", "**/renv/settings.json", "**/PACKAGES")
     lockfile_globs: tuple[str, ...] = ("**/renv.lock",)

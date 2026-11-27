@@ -34,6 +34,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.jvm.maven import MavenEcosystem
 from cordon_scanner.foundation.formats.safexml import SafeXml, SafeXmlError
 from cordon_scanner.foundation.models import Hook, Scope
@@ -241,6 +242,10 @@ class GradleWrapper:
 
 class GradleEcosystem(BaseEcosystem):
     id = "gradle"
+    own_name = OwnName(
+        ("settings.gradle", "settings.gradle.kts"),
+        readers=(("settings.gradle", "gradle_root"), ("settings.gradle.kts", "gradle_root")),
+    )
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         return name.split(":", 1)[0] if ":" in name else None

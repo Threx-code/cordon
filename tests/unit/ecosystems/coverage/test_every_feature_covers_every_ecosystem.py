@@ -234,9 +234,21 @@ class More:
 
     @classmethod
     def own_name_findings(cls) -> frozenset[str]:
-        from cordon_scanner.detect.supply.manifests.identity_findings import IdentityFindings
+        from cordon_scanner.ecosystems.own_names import OwnName
 
-        return cls.ids(IdentityFindings.OWN_NAME_MEASURED_ON)
+        return cls.ids(
+            e.id for e in EcosystemRegistry.all_ecosystems() if isinstance(e.own_name, OwnName)
+        )
+
+    @classmethod
+    def own_name_reasons(cls) -> dict[str, str]:
+        from cordon_scanner.ecosystems.own_names import NoOwnName
+
+        return {
+            e.id: e.own_name.reason
+            for e in EcosystemRegistry.all_ecosystems()
+            if isinstance(e.own_name, NoOwnName)
+        }
 
     @classmethod
     def package_format(cls) -> frozenset[str]:
@@ -278,7 +290,7 @@ class Features:
         "fixer (lockfile fix)": (More.fixer, dict),
         "device attestation splitters": (More.device_attestation, dict),
         "subject canonicalisation": (More.subjects, dict),
-        "manifest findings (own name)": (More.own_name_findings, dict),
+        "manifest findings (own name)": (More.own_name_findings, More.own_name_reasons),
         "package format sniffing": (More.package_format, dict),
     }
     #: Features being built now: expected to fail until they cover every ecosystem; the entry comes off when they do.
@@ -294,7 +306,6 @@ class Features:
             "fixer (lockfile fix)",
             "device attestation splitters",
             "subject canonicalisation",
-            "manifest findings (own name)",
             "package format sniffing",
         }
     )

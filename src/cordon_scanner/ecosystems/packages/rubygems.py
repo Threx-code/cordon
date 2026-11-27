@@ -30,6 +30,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
@@ -639,6 +640,7 @@ class BundlerLock:
 
 class RubyGemsEcosystem(BaseEcosystem):
     id = "rubygems"
+    own_name = OwnName(("*.gemspec",))
     purl_type = "gem"
     manifest_globs: tuple[str, ...] = (
         "**/Gemfile",

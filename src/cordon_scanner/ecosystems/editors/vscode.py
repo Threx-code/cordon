@@ -29,6 +29,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Scope
 
 if TYPE_CHECKING:
@@ -78,6 +79,10 @@ class VsCodeEcosystem(BaseEcosystem):
     """Editor extensions, read from the files that name them."""
 
     id = "vscode"
+    own_name = OwnName(
+        ("extension/package.json",),
+        readers=(("extension/package.json", "extension_manifest"),),
+    )
     purl_type = "vscode-extension"
     manifest_globs: tuple[str, ...] = (
         "**/.vscode/extensions.json",

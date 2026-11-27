@@ -24,6 +24,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.rubygems import RubySource
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -503,6 +504,9 @@ class PodfileLock:
 
 class CocoaPodsEcosystem(BaseEcosystem):
     id = "cocoapods"
+    own_name = OwnName(
+        ("*.podspec", "*.podspec.json"), readers=(("*.podspec.json", "podspec_json"),)
+    )
     purl_type = "cocoapods"
     manifest_globs: tuple[str, ...] = ("**/Podfile", "**/*.podspec")
     lockfile_globs: tuple[str, ...] = ("**/Podfile.lock",)

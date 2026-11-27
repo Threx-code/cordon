@@ -130,13 +130,6 @@
  {
   "ids": [
    "npm",
-   "pypi"
-  ],
-  "site": "src/cordon_scanner/detect/supply/manifests/identity_findings.py::OWN_NAME_MEASURED_ON#0"
- },
- {
-  "ids": [
-   "npm",
    "nuget",
    "pypi",
    "rubygems"

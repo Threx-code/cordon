@@ -36,6 +36,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
@@ -477,7 +478,7 @@ class ModuleFile:
         module_name = module_version = None
         for call in calls:
             kw = call.keywords
-            if call.name == "module":
+            if call.name == "module" and call.receiver is None:
                 module_name = kw.get("name") if isinstance(kw.get("name"), str) else None
                 module_version = kw.get("version") if isinstance(kw.get("version"), str) else None
             elif call.name in (
@@ -712,6 +713,7 @@ class BazelEcosystem(BaseEcosystem):
     """Bazel modules and external repositories."""
 
     id = "bazel"
+    own_name = OwnName(("MODULE.bazel",))
     purl_type = "bazel"
     manifest_globs: tuple[str, ...] = (
         "**/MODULE.bazel",
