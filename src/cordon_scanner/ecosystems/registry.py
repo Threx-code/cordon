@@ -241,6 +241,17 @@ class EcosystemRegistry:
     _MANIFEST_INDEX: ClassVar[_GlobIndex | None] = None
     _LOCKFILE_INDEX: ClassVar[_GlobIndex | None] = None
 
+    @staticmethod
+    def fill_bundle_keywords() -> None:
+        """Homebrew Bundle installs other ecosystems' packages by keyword: give the Brewfile reader each adapter's.
+        Run once, as this module loads, so the Homebrew module never imports the registry that imports it."""
+        from types import MappingProxyType
+
+        from cordon_scanner.ecosystems.packages.homebrew import Brewfile
+
+        declared = ((getattr(e, "bundle_keyword", None), e) for e in EcosystemRegistry.ECOSYSTEMS)
+        Brewfile.BUNDLE_KEYWORDS = MappingProxyType({k: e for k, e in declared if k})
+
     @classmethod
     def manifest_index(cls) -> _GlobIndex:
         if cls._MANIFEST_INDEX is None:
@@ -306,6 +317,9 @@ class EcosystemRegistry:
         if isinstance(implementation, BaseEcosystem):
             return implementation.declared_dependencies(files)
         return frozenset()
+
+
+EcosystemRegistry.fill_bundle_keywords()
 
 
 class RegistryPublishing:

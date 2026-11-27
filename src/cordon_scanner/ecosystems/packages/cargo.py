@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
 class CargoEcosystem(BaseEcosystem):
     id = "cargo"
+    bundle_keyword = "cargo"
     purl_type = "cargo"
     manifest_globs: tuple[str, ...] = ("**/Cargo.toml", "**/.cargo/config.toml", "**/.cargo/config")
     lockfile_globs: tuple[str, ...] = ("**/Cargo.lock",)

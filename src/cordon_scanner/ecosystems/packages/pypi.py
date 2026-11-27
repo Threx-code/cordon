@@ -110,6 +110,7 @@ class PypiEcosystem(PypiLockfiles, BaseEcosystem):
         return out
 
     id = "pypi"
+    bundle_keyword = "uv"
 
     _REQUIRES_DIST: ClassVar[re.Pattern[str]] = re.compile(
         r"(?m)^Requires-Dist:\s*([A-Za-z0-9][A-Za-z0-9._-]*)([^\n]*)$"

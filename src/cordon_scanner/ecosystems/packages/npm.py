@@ -173,6 +173,7 @@ class NpmEcosystem(NpmProjects, NpmPackageCode, BaseEcosystem):
         return str(value) if isinstance(value, str) and value else None
 
     id = "npm"
+    bundle_keyword = "npm"
 
     def declared_dependencies(self, files: Sequence[ReleaseFile]) -> frozenset[str]:
         """A published tarball's runtime dependencies: its package.json's, optional ones too."""

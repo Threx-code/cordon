@@ -16,6 +16,8 @@ covers:
   - UNI-03
   - UNI-18
 dependencies:
+  # A `vscode` line is an editor-extension dependency, recorded in that ecosystem.
+  - {name: ms-python.python, ecosystem: vscode, resolved_version: null}
   # The Brewfile.
   - {name: jq, dependency_type: dev, manifest_location: {path: Brewfile}}
   - {name: wget, manifest_location: {path: Brewfile}}
@@ -43,16 +45,14 @@ dependencies:
   # The cask's.
   - {name: macos, dependency_type: platform, manifest_location: {path: Casks/firefox.rb}}
 absent:
-  # An App Store app and an editor extension: not Homebrew packages.
+  # An App Store app: not a Homebrew package, and no ecosystem here holds it.
   - Xcode
-  - ms-python.python
 sources:
   - "source https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-1.8.2.tar.gz"
   - "source sha256 71b8d6e8f5fe81f6c6d0d110e3892251f6ce76ed095abd315e26e6e1193af3af"
   - "source sha256 766e48423e79359ea31e41db9e5c289675947a7fcf2efdcedb726ac9d0da3784"
   - "download https://download-installer.cdn.mozilla.net/pub/firefox/releases/157.0.1/mac/#{language}/Firefox%20157.0.1.dmg"
   - "mas app Xcode (App Store id 497799835)"
-  - "vscode extension ms-python.python"
 hooks:
   - {kind: build, path: Formula/jq.rb, command: def install}
   - {kind: build, path: Formula/wget.rb, command: def install}

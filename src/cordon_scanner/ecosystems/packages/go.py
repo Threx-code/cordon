@@ -180,6 +180,7 @@ class GoModFile:
 
 class GoEcosystem(BaseEcosystem):
     id = "gomod"
+    bundle_keyword = "go"
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         return name.rsplit("/", 1)[0] if "/" in name else None
