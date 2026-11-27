@@ -98,7 +98,7 @@ class TestInstalledExtensions:
         assert self.findings(tmp_path) == [] and self.added(tmp_path) == []
 
     @pytest.mark.parametrize("suffix", sorted(InstalledExtensions.CODE_KINDS))
-    def test_an_added_file_of_each_code_kind_is_suspect_at_high(
+    def test_an_added_file_of_each_code_kind_is_suspect_at_medium(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, suffix: str
     ) -> None:
         folder = Machine.unpack(tmp_path, ".cursor/extensions")
@@ -106,7 +106,7 @@ class TestInstalledExtensions:
         (folder / f"zzdropped{suffix}").write_bytes(b"\0\1")
         assert self.findings(tmp_path) == []
         found = self.added(tmp_path)
-        assert len(found) == 1 and found[0]["severity"] == "high"
+        assert len(found) == 1 and found[0]["severity"] == "medium"
         assert f"zzdropped{suffix}" in found[0]["message"]
         assert found[0]["path"] == "extensions/cursor:vscjava.vscode-java-pack@0.31.2"
 
@@ -169,7 +169,7 @@ class TestInstalledExtensions:
         (folder / "out" / "main.js").write_bytes(b"1")
         (folder / "out" / "dropped.node").write_bytes(b"x")
         assert self.findings(tmp_path) == []
-        assert [f["severity"] for f in self.added(tmp_path)] == ["high"]
+        assert [f["severity"] for f in self.added(tmp_path)] == ["medium"]
 
     def test_an_editor_that_installs_from_the_marketplace_is_not_asked(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -261,3 +261,35 @@ class TestTheFlag:
                 )
             )
         assert seen == [False, True]
+
+
+class TestFilesAreHashedAChunkAtATime:
+    def test_a_file_larger_than_a_chunk_has_the_hash_of_all_its_bytes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import hashlib
+
+        body = bytes(range(256)) * 40  # 10,240 bytes
+        target = tmp_path / "big.bin"
+        target.write_bytes(body)
+        monkeypatch.setattr(InstalledExtensions, "CHUNK", 1000)
+        assert InstalledExtensions.digest(target) == hashlib.sha256(body).hexdigest()
+
+    def test_no_read_takes_a_whole_file_at_once(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        target = tmp_path / "x.bin"
+        target.write_bytes(b"0" * 5000)
+        monkeypatch.setattr(InstalledExtensions, "CHUNK", 1000)
+        sizes: list[int] = []
+        real = Path.open
+
+        def spy(self: Path, *args: object, **kwargs: object):
+            handle = real(self, *args, **kwargs)
+            read = handle.read
+            handle.read = lambda n=-1: (sizes.append(n), read(n))[1]  # type: ignore[method-assign]
+            return handle
+
+        monkeypatch.setattr(Path, "open", spy)
+        InstalledExtensions.digest(target)
+        assert sizes and all(0 < n <= 1000 for n in sizes)

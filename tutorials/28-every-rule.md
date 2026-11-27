@@ -768,7 +768,7 @@ rule's own samples.
 |---|---|---|
 | `MALWARE.EXTENSION.KNOWN.001` | critical | An editor extension is a recorded malicious release |
 | `MALWARE.EXTENSION.REMOVED.001` | critical | A recommended or vendored editor extension was removed from the Marketplace as malware |
-| `SUSPECT.EXTENSION.ADDED_CODE.001` | high | An installed editor extension holds code its signed package does not have |
+| `SUSPECT.EXTENSION.ADDED_CODE.001` | medium | An installed editor extension holds code its signed package does not have |
 | `SUSPECT.EXTENSION.HIDDEN_NAME.001` | medium | An editor extension's display name carries invisible characters |
 | `SUSPECT.EXTENSION.LOOKALIKE.001` | medium | A recommended editor extension imitates a popular one |
 | `SUSPECT.EXTENSION.MALICIOUS_VERSIONS.001` | low | A named editor extension has had malicious releases |

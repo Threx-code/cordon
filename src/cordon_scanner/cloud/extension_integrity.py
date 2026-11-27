@@ -8,7 +8,8 @@ and never part of an offline inventory) and its files are compared by SHA-256 wi
 Two things are reported. A file that is in the signed package and differs. And a file the package never had, when it is of a
 code kind (`CODE_KINDS`: a script, a native library, a program): tampering with an extension most often adds one, a `.js` the entry
 point requires or a dropped binary. An added file that the signed entry point or any signed file names is the same finding as a
-changed file (critical, VULNERABLE.PROVENANCE.INVALID.001); one nothing signed names is SUSPECT.EXTENSION.ADDED_CODE.001 (high).
+changed file (critical, VULNERABLE.PROVENANCE.INVALID.001); one nothing signed names is SUSPECT.EXTENSION.ADDED_CODE.001 (medium: reported, not blocking;
+not measured on real installed folders, and extensions download language servers and binaries into their own folder on first use).
 An added data or cache file is not reported: a folder holds more than the package did (a runtime download, a language server
 fetched on first use). Editors that install from Microsoft's Marketplace are not asked (its packages are signed by Microsoft and are
 not guaranteed byte-identical to Open VSX's, and its terms stop us asking it); `not_verified` names them."""
@@ -62,6 +63,20 @@ class InstalledExtensions:
     )
     ADDED_CODE_RULE: ClassVar[str] = "SUSPECT.EXTENSION.ADDED_CODE.001"
 
+    CHUNK: ClassVar[int] = 1 << 20
+
+    @classmethod
+    def digest(cls, entry: Path) -> str | None:
+        """The file's SHA-256, read a chunk at a time so no one file is held whole; None where it cannot be read."""
+        hasher = hashlib.sha256()
+        try:
+            with entry.open("rb") as handle:
+                while chunk := handle.read(cls.CHUNK):
+                    hasher.update(chunk)
+        except OSError:
+            return None
+        return hasher.hexdigest()
+
     @classmethod
     def members(cls, folder: Path) -> dict[str, str] | None:
         """The folder's files by the name they have in the package, with SHA-256s; None when the folder is too large to hash."""
@@ -91,10 +106,9 @@ class InstalledExtensions:
                     if relative == cls.MANIFEST[0]
                     else f"{cls.PACKAGE_ROOT}{relative}"
                 )
-                try:
-                    found[name] = hashlib.sha256(entry.read_bytes()).hexdigest()
-                except OSError:
-                    continue
+                digest = cls.digest(entry)
+                if digest is not None:
+                    found[name] = digest
         return found
 
     @classmethod
@@ -191,7 +205,7 @@ class InstalledExtensions:
                     f"{f' and {len(shown) - 5} more' if len(shown) > 5 else ''}."
                 )
             elif unnamed:
-                rule_id, severity, category = cls.ADDED_CODE_RULE, "high", "suspicious"
+                rule_id, severity, category = cls.ADDED_CODE_RULE, "medium", "suspicious"
                 shown = [f"{n} ({added[n]})" for n in unnamed]
                 message = (
                     f"{editor} has {identifier}@{version} installed, and its folder holds code the package Open VSX signed "

@@ -169,10 +169,11 @@ class InstalledRules:
                 "SUSPECT.EXTENSION.ADDED_CODE.001",
                 "An installed editor extension holds code its signed package does not have",
                 Category.SUSPICIOUS,
-                Severity.HIGH,
+                Severity.MEDIUM,
                 Confidence.MEDIUM,
                 "An installed extension's folder holds a script, native library or program that the package its registry "
-                "signed for that release does not contain, and nothing in the signed package names it.",
+                "signed for that release does not contain, and nothing in the signed package names it. Not measured on real "
+                "installed folders: extensions download language servers and binaries into their own folder on first use.",
                 "Reinstall the extension from its registry and check what added the file.",
                 (),
             )
