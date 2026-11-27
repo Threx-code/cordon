@@ -26,6 +26,11 @@ from cordon_scanner.foundation.models import Scope
 from cordon_scanner.foundation.results import Dependency
 
 MAX_COMPONENTS: Final = 50_000
+#: The property cdxgen writes beside a `pkg:generic/` Package URL to say the type it would have had were it registered
+#: (`terraform-provider`, `terraform-module`, `nix`).
+PROPOSED_TYPE: Final = "cdx:purl:proposedType"
+#: Proposed types that are not an ecosystem adapter's own purl type.
+PROPOSED_ALIASES: Final = {"terraform-provider": "terraform", "terraform-module": "terraform"}
 #: Ecosystems whose components a tool writes under another ecosystem's purl type, by that type.
 ALSO_SERVES_BY_TYPE: Final[dict[str, tuple[str, ...]]] = {"maven": ("gradle",)}
 SERVED_BY_ANOTHER_TYPE: Final = frozenset(e for also in ALSO_SERVES_BY_TYPE.values() for e in also)
@@ -74,6 +79,9 @@ class PackageUrl:
         "docker": "image",
         "oci": "image",
         **dict.fromkeys(("vscode-extension", "vscode", "openvsx"), "dotted"),
+        # A provider or module address leads with the registry host (`registry.terraform.io/hashicorp/aws`), which
+        # is where it is served from, not part of its name.
+        "terraform": "registry_path",
     }
     #: Ecosystems whose components a tool writes under another ecosystem's purl type: a Gradle build's artefacts are
     #: Maven coordinates, so a `pkg:maven/` component belongs to a Gradle project as well.
@@ -101,11 +109,15 @@ class PackageUrl:
     }
 
     @staticmethod
-    def parse(text: str) -> PackageUrl | None:
+    def parse(text: str, proposed: str | None = None) -> PackageUrl | None:
+        """The Package URL in `text`. A `generic` one takes the type its tool proposed beside it, where that is an
+        ecosystem's own purl type or one of `PROPOSED_ALIASES`."""
         found = PackageUrl.PATTERN.match(text.strip()) if len(text) <= 2048 else None
         if found is None:
             return None
         kind, path, version, query = found.groups()
+        if kind.lower() == "generic" and proposed:
+            kind = PROPOSED_ALIASES.get(proposed.lower(), proposed)
         parts = [urllib.parse.unquote(p) for p in path.strip("/").split("/") if p]
         if not parts:
             return None
@@ -139,6 +151,10 @@ class PackageUrl:
         if form == "name":
             # The namespace is the distribution or channel; the package's own name is the name.
             return self.name
+        if form == "registry_path":
+            pieces = self.namespace.split("/")
+            kept = pieces[1:] if "." in pieces[0] else pieces
+            return "/".join([*kept, self.name])
         if form == "dotted":
             # An editor extension is `publisher.name`, the editor's own identifier, compared in lower case.
             return f"{self.namespace}.{self.name}".lower()
@@ -284,11 +300,16 @@ class SbomDocument:
         licence: str | None,
         scope: Scope,
         problems: list[str],
+        proposed: str | None = None,
     ) -> SbomComponent | None:
         if not isinstance(name, str) or not name.strip():
             problems.append(f"a component ({key[:60]}) has no name")
             return None
-        purl = PackageUrl.parse(purl_text) if isinstance(purl_text, str) and purl_text else None
+        purl = (
+            PackageUrl.parse(purl_text, proposed)
+            if isinstance(purl_text, str) and purl_text
+            else None
+        )
         if isinstance(purl_text, str) and purl_text and purl is None:
             problems.append(f"{name[:60]}'s Package URL does not parse")
             return None
@@ -399,6 +420,14 @@ class SbomDocument:
                 " AND ".join(x for x in licences if x) or None,
                 scope,
                 reading.problems,
+                next(
+                    (
+                        str(p.get("value"))
+                        for p in component.get("properties") or []
+                        if isinstance(p, dict) and p.get("name") == PROPOSED_TYPE
+                    ),
+                    None,
+                ),
             )
             if parsed is not None:
                 reading.components.append(parsed)

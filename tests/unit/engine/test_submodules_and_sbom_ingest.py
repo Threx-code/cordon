@@ -16,6 +16,7 @@ from cordon_scanner.engine.sbom_ingest import PackageUrl, SbomDocument, SbomInve
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Scope
+from support import ROOT
 
 
 class IngestHelpers:
@@ -43,6 +44,51 @@ class IngestHelpers:
             "metadata": {"tools": {"components": [{"name": "maker", "version": "2"}]}},
             **fields,
         }
+
+
+class TestToolsThatWriteAGenericPackageUrl:
+    """cdxgen writes a terraform provider or module, and a flake input, as `pkg:generic/...` with the type it would
+    have had in `cdx:purl:proposedType` (`sbom_captures/cdxgen-terraform-nix.json`: the components its own tests assert)."""
+
+    DOCUMENT = ROOT / "tests" / "unit" / "engine" / "sbom_captures" / "cdxgen-terraform-nix.json"
+
+    @classmethod
+    def read(cls):
+        return SbomDocument.read(json.loads(cls.DOCUMENT.read_text(encoding="utf-8")))
+
+    def test_a_terraform_provider_and_module_are_read_without_their_registry_host(self) -> None:
+        found = {(c.ecosystem, c.name, c.version) for c in self.read().components}
+        assert ("terraform", "hashicorp/aws", "5.80.0") in found
+        assert ("terraform", "terraform-aws-modules/vpc/aws", "5.1.2") in found
+
+    def test_a_flake_input_is_read_as_a_nix_package(self) -> None:
+        assert ("nix", "nixpkgs", "latest") in {
+            (c.ecosystem, c.name, c.version) for c in self.read().components
+        }
+
+    def test_a_generic_package_with_no_proposed_type_is_still_unread(self) -> None:
+        reading = self.read()
+        assert "openssl" not in {c.name for c in reading.components}
+        assert any("openssl" in p for p in reading.problems)
+
+    @pytest.mark.parametrize(
+        ("purl", "ecosystem", "name"),
+        [
+            ("pkg:terraform/hashicorp/aws@5.80.0", "terraform", "hashicorp/aws"),
+            (
+                "pkg:terraform/registry.terraform.io/hashicorp/aws@5.80.0",
+                "terraform",
+                "hashicorp/aws",
+            ),
+            ("pkg:nix/hello@2.12.3", "nix", "hello"),
+        ],
+    )
+    def test_syft_writes_the_types_the_adapters_use(
+        self, purl: str, ecosystem: str, name: str
+    ) -> None:
+        parsed = PackageUrl.parse(purl)
+        assert parsed is not None
+        assert (parsed.ecosystem, parsed.package_name) == (ecosystem, name)
 
 
 class TestSubmodules:
