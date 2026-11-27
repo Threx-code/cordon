@@ -10,7 +10,6 @@ expected to fail and fail the run the moment they pass, so the entry is taken of
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from pathlib import Path
 from typing import ClassVar
 
 import pytest
@@ -386,7 +385,15 @@ class TestNoPhantomCoverage:
         """(reader, Name, attr) for every name a reader imports from cordon_scanner and reads."""
         import ast
 
-        tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+        from support import ROOT as REPO
+
+        tree = ast.parse(
+            (
+                REPO
+                / "tests/unit/ecosystems/coverage"
+                / "test_every_feature_covers_every_ecosystem.py"
+            ).read_text(encoding="utf-8")
+        )
         readers = [
             m
             for c in tree.body
