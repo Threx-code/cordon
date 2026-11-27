@@ -162,7 +162,9 @@ class OpenVsxSignature:
         return cls.verify(*fetched)
 
     @classmethod
-    def compare(cls, name: str, version: str, files: Mapping[str, str]) -> ModuleCheck:
+    def compare(
+        cls, name: str, version: str, files: Mapping[str, str], *, added: bool = True
+    ) -> ModuleCheck:
         """Whether the files of an extension in hand (name in the package -> SHA-256) are the files Open VSX signed for
         `name` `version`: the registry's package is verified first, then every file in hand is looked up in it.
         Only what is in hand is judged: a file the signed package has and the copy lacks is not reported, because a missing file adds no code to run
@@ -179,16 +181,16 @@ class OpenVsxSignature:
         except (zipfile.BadZipFile, ValueError, OSError) as exc:
             return ModuleCheck("unverifiable", f"the signed package could not be read: {exc}")
         changed = sorted(n for n, digest in files.items() if n in known and known[n] != digest)
-        added = sorted(n for n in files if n not in known)
-        if not changed and not added:
+        added_files = sorted(n for n in files if n not in known) if added else []
+        if not changed and not added_files:
             return ModuleCheck("verified", f"every file is as Open VSX signed {name} {version}")
         shown = [
             *(f"{n} (changed)" for n in changed),
-            *(f"{n} (not in the signed package)" for n in added),
+            *(f"{n} (not in the signed package)" for n in added_files),
         ]
         more = f" and {len(shown) - 5} more" if len(shown) > 5 else ""
         return ModuleCheck(
             "invalid",
-            f"{len(changed)} file(s) differ from and {len(added)} are absent from what Open VSX signed for {name} {version}: "
+            f"{len(changed)} file(s) differ from and {len(added_files)} are absent from what Open VSX signed for {name} {version}: "
             f"{', '.join(shown[:5])}{more}",
         )
