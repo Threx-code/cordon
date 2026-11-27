@@ -137,9 +137,7 @@ class Coverage:
 #: Ecosystems whose missing clauses are cross-ecosystem features still being built for them: each is a strict
 #: expected failure, so it fails the suite the moment it is complete until its entry comes off. Never a
 #: place to park a clause: what is missing here is a row of the feature guard's BUILDING list too.
-BUILDING: dict[str, str] = {
-    "vscode": "UNI-13: look-alike names are being built for editor extensions",
-}
+BUILDING: dict[str, str] = {}
 
 
 class TestTheContract:

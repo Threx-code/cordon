@@ -221,6 +221,21 @@ class More:
         )
 
     @classmethod
+    def typosquat_targets(cls) -> frozenset[str]:
+        """The ecosystems the look-alike check has popular names to measure a slip against: the table it reads
+        (`PopularPackageNames.popular`), never a refreshed list, and never a `<ecosystem>.index.txt` sample."""
+        from cordon_scanner.intel.registry import PopularPackageNames
+
+        return cls.ids(e for e in EcosystemRegistry.BY_ID if PopularPackageNames.popular(e))
+
+    @staticmethod
+    def typosquat_reasons() -> dict[str, str]:
+        """An ecosystem whose contract says look-alike names do not apply to it (UNI-13), with the contract's reason."""
+        from cordon_scanner.ecosystems.contract import CONTRACTS
+
+        return {c.id: c.not_applicable["UNI-13"] for c in CONTRACTS if "UNI-13" in c.not_applicable}
+
+    @classmethod
     def own_name_findings(cls) -> frozenset[str]:
         from cordon_scanner.ecosystems.own_names import OwnName
 
@@ -272,6 +287,7 @@ class Features:
         "malware dataset": (More.malware_dataset, dict),
         "SBOM package-URL ingest": (More.sbom_ingest, dict),
         "MCP package check": (More.mcp_packages, dict),
+        "typosquat (look-alike names)": (More.typosquat_targets, More.typosquat_reasons),
         "name-signal readers": (More.name_signals, dict),
         "private registries": (Coverage.private_registries, dict),
         "agent hook install recognition": (More.agent_hook, dict),

@@ -310,6 +310,8 @@ The VS Code extensions a workspace recommends or pins, from Open VSX. Ecosystem 
 │ OFFLINE         the dependency graph, lockfile integrity, licences,        │
 │                 install hooks                                              │
 │                 known-malicious and known-vulnerable releases, offline     │
+│                 typosquats and dependency confusion against its popular    │
+│                 names                                                      │
 │ WITH --online   registry: withdrawn releases, version distance, hash       │
 │                 agreement                                                  │
 │                 provenance: whether a build attestation exists, and        │
