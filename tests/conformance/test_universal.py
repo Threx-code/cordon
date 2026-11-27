@@ -131,6 +131,35 @@ class TestMatching:
         assert any(f["rule_id"] == "MALWARE.DEPENDENCY.KNOWN.001" for f in report["findings"])
 
 
+class TestOneVerdictPerFact:
+    """A known-malicious release named once is reported once, in every ecosystem: however many readers see the
+    file that names it (an ecosystem's manifest reader, the agent rules, a package rule), exactly one MALWARE
+    finding names it. Two readers each reporting the same fact was found by hand (an editor extension reported by
+    the dependency rule and the extension rule); this holds every ecosystem to one."""
+
+    @pytest.mark.parametrize("profile", ALL, ids=ids(ALL))
+    def test_one_malicious_release_is_one_finding(self, profile, tmp_path) -> None:
+        name, _, version = profile.names[0], None, profile.versions[1]
+        advisories = [
+            Universal.advisory(
+                profile, name, identifier="CONFORMANCE-ONE", versions=[version], malicious=True
+            )
+        ]
+        report = Universal.scan(
+            Universal.project(tmp_path, profile, [Pkg(name, version)]), profile.id, advisories
+        )
+        about = [
+            f["rule_id"]
+            for f in report["findings"]
+            if f["rule_id"].startswith("MALWARE.")
+            and (
+                name.lower() == str((f.get("location") or {}).get("package") or "").lower()
+                or name.lower() in str(f.get("message") or "").lower()
+            )
+        ]
+        assert len(about) == 1, f"{profile.id}: {len(about)} malware findings for one fact: {about}"
+
+
 class TestTyposquatting:
     """UNI-13: a one-edit slip of a popular name is flagged; the popular name and a legitimate
     look-alike are not."""
