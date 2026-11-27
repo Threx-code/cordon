@@ -225,13 +225,13 @@ class More:
     def credential_homes(cls) -> frozenset[str]:
         from cordon_scanner.analysis.shared.credential_homes import ECOSYSTEM_CREDENTIALS
 
-        return cls.ids(e for e, credential in ECOSYSTEM_CREDENTIALS.items() if credential.services)
+        return cls.ids(e for e, credential in ECOSYSTEM_CREDENTIALS.items() if credential.homes)
 
     @classmethod
     def credential_homes_reasons(cls) -> dict[str, str]:
         from cordon_scanner.analysis.shared.credential_homes import ECOSYSTEM_CREDENTIALS
 
-        return {e: c.reason for e, c in ECOSYSTEM_CREDENTIALS.items() if not c.services}
+        return {e: c.reason for e, c in ECOSYSTEM_CREDENTIALS.items() if not c.homes}
 
     @classmethod
     def private_registries(cls) -> frozenset[str]:

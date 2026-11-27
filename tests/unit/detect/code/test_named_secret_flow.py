@@ -14,6 +14,7 @@ from cordon_scanner import Scanner
 from cordon_scanner.analysis.shared.credential_homes import (
     CREDENTIAL_HOMES,
     ECOSYSTEM_CREDENTIALS,
+    OTHER_HOMES,
     SecretFlow,
 )
 from cordon_scanner.detect.code.secretflow import GoFlow, JavaScriptFlow
@@ -75,6 +76,10 @@ REGISTRY_CREDENTIALS = [
     ("HOMEBREW_GITHUB_API_TOKEN", "api.github.com"),
     ("HOMEBREW_DOCKER_REGISTRY_TOKEN", "ghcr.io"),
     ("HOMEBREW_DOCKER_REGISTRY_BASIC_AUTH_TOKEN", "ghcr.io"),
+    ("MAVEN_USERNAME", "repo1.maven.org"),
+    ("MAVEN_CENTRAL_TOKEN", "central.sonatype.com"),
+    ("HACKAGE_KEY", "hackage.haskell.org"),
+    ("HACKAGE_PASSWORD", "hackage.haskell.org"),
 ]
 
 
@@ -91,12 +96,25 @@ class TestEveryEcosystemsCredential:
     def test_every_ecosystem_has_a_credential_or_a_reason(self) -> None:
         assert set(ECOSYSTEM_CREDENTIALS) == set(EcosystemRegistry.BY_ID)
         for ecosystem, credential in ECOSYSTEM_CREDENTIALS.items():
-            assert bool(credential.services) != bool(credential.reason), ecosystem
+            assert bool(credential.homes) != bool(credential.reason), ecosystem
 
-    def test_every_service_an_ecosystem_names_is_a_home(self) -> None:
-        homes = {home.service for _, home in CREDENTIAL_HOMES}
-        for ecosystem, credential in ECOSYSTEM_CREDENTIALS.items():
-            assert set(credential.services) <= homes, ecosystem
+    def test_only_the_ecosystems_that_cannot_name_one_are_reasons(self) -> None:
+        assert {e for e, c in ECOSYSTEM_CREDENTIALS.items() if c.reason} == {
+            "cran",
+            "gomod",
+            "helm",
+            "pub",
+            "swift",
+        }
+
+    def test_the_detectors_homes_are_this_table(self) -> None:
+        """What `SecretFlow` judges by is built from `ECOSYSTEM_CREDENTIALS` and the homes no ecosystem uses, nothing else."""
+        named = [home for c in ECOSYSTEM_CREDENTIALS.values() for home in c.homes]
+        assert set(CREDENTIAL_HOMES) == {*OTHER_HOMES, *named}
+        assert len(CREDENTIAL_HOMES) == len(set(CREDENTIAL_HOMES))
+
+    def test_a_maven_settings_file_is_a_credential_store(self) -> None:
+        assert SecretFlow.store_of(["~", ".m2", "settings.xml"]) == "m2"
 
 
 class TestPython:
