@@ -76,6 +76,12 @@ class Coverage:
         return PrivateRegistries.supported()
 
     @staticmethod
+    def confusable_reasons() -> Mapping[str, str]:
+        from cordon_scanner.detect.supply.registries.detector import NOT_CONFUSABLE
+
+        return NOT_CONFUSABLE
+
+    @staticmethod
     def release_compare() -> frozenset[str]:
         from cordon_scanner.cli.commands.review import COMPARABLE
 
@@ -232,7 +238,7 @@ class Features:
         "advisory sources (OSV or the upstream project)": (Coverage.advisory_sources, dict),
         "campaign fingerprints": (Coverage.campaign_fingerprints, dict),
         "the previous release from the registry archive": (Coverage.previous_release, dict),
-        "look-alike names": (Coverage.confusable_names, dict),
+        "look-alike names": (Coverage.confusable_names, Coverage.confusable_reasons),
         "old-versus-new release compare in the pre-merge gate": (Coverage.release_compare, dict),
         "archive fetch (digest verified)": (More.archive_fetch, dict),
         "release history (when each release was published)": (More.release_history, dict),
@@ -255,7 +261,6 @@ class Features:
     BUILDING: ClassVar[frozenset[str]] = frozenset(
         {
             # Not yet built for every ecosystem:
-            "look-alike names",
             "registry facts client",
             "advisory-text symbols",
             "SBOM package-URL ingest",

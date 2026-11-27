@@ -21,6 +21,7 @@ import pytest
 from cordon_scanner.detect.base import GraphUnit, ScanContext
 from cordon_scanner.detect.supply.registries.detector import (
     CONFUSABLE_ECOSYSTEMS,
+    NOT_CONFUSABLE,
     REGISTRY_ECOSYSTEMS,
     RegistryDetector,
 )
@@ -1935,7 +1936,7 @@ class TestTheDetectorAsksTheNewRegistries:
             self.dependency("nuget", "p", integrity=SHA512_B64)
         )
 
-    @pytest.mark.parametrize("ecosystem", ["gomod", "maven", "composer"])
+    @pytest.mark.parametrize("ecosystem", sorted(NOT_CONFUSABLE))
     def test_absence_is_not_dependency_confusion_where_names_are_owned(
         self, answer, ecosystem
     ) -> None:
