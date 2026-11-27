@@ -26,3 +26,4 @@
 | vscode-java-pack-0.31.2-package.json | Open VSX vscjava.vscode-java-pack 0.31.2 .vsix (member extension/package.json) | MIT | e4fc02f77e09efec5eeab7e6df0b94c22fcca2cabfecbecee47038e9526515f3 |
 | cdxgen-package.json | package.json of github.com/CycloneDX/cdxgen (the real-project capture of the package-format set, formats/sbom/cdxgen-repo) | Apache-2.0 | see formats/CAPTURES.md |
 | cdxgen-pyproject.toml | pyproject.toml of the same repository | Apache-2.0 | see formats/CAPTURES.md |
+| terraform-provider-null_v3.2.2_x5 (member name only) | the one member of terraform-provider-null_3.2.2_linux_amd64.zip, https://releases.hashicorp.com/terraform-provider-null/3.2.2/ (listed 2026-11-27; the 13 MB binary is not copied) | MPL-2.0 | zip sha256 in the SHA256SUMS the registry publishes beside it |

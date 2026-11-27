@@ -58,6 +58,9 @@ class Real:
             with zipfile.ZipFile(io.BytesIO(NUPKG.read_bytes())) as archive:
                 member = next(n for n in archive.namelist() if n.endswith(".nuspec"))
                 return archive.read(member)
+        if self.capture == "member-name":
+            # A provider release holds one binary; its name is what states the provider, so the bytes are not needed.
+            return b""
         if self.capture == "traefik-config":
             # The real image config blob (its OCI labels) of traefik 3.0.4, as the registry served it.
             records = json.loads(RECORDS.read_text(encoding="utf-8"))
@@ -131,6 +134,7 @@ CASES = [
         "swift-argument-parser",
         "swift-argument-parser-Package.swift",
     ),
+    Real("terraform", "terraform-provider-null_v3.2.2_x5", "null", "null", "member-name"),
     Real("vcpkg", "ports/zlib/vcpkg.json", "zlib", "zlib", "zlib-vcpkg.json"),
     Real(
         "vscode",
@@ -167,7 +171,7 @@ class TestEveryEcosystemStatesHowItsOwnNameIsRead:
         none = {
             e.id for e in EcosystemRegistry.all_ecosystems() if isinstance(e.own_name, NoOwnName)
         }
-        assert none == {"actions", "terraform"}
+        assert none == {"actions"}
 
     def test_only_the_formats_it_was_measured_on_may_block(self) -> None:
         assert IdentityFindings.own_name_measured_on() == {"npm", "pypi"}

@@ -156,6 +156,15 @@ class OwnNameReaders:
         return last if OwnNameReaders._IMAGE_NAME.fullmatch(last) else None
 
     @staticmethod
+    def provider_binary(path: str, content: FileContent) -> str | None:
+        """The provider type a release's binary is named for (`terraform-provider-null_v3.2.2_x5` -> `null`)."""
+        found = re.fullmatch(
+            r"terraform-provider-([A-Za-z0-9-]{1,64})_v\d[^/]{0,64}",
+            posixpath.basename(path.rpartition("!")[2]),
+        )
+        return found.group(1) if found else None
+
+    @staticmethod
     def gradle_root(path: str, content: FileContent) -> str | None:
         found = re.search(r"""rootProject\.name\s*=\s*["']([^"'\n]{1,200})["']""", content.text)
         return found.group(1) if found else None
