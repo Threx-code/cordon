@@ -38,6 +38,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.launchers import NoLauncher
 from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
@@ -840,6 +841,9 @@ class HomebrewEcosystem(BaseEcosystem):
 
     purl_type = "brew"
     published_archive = (BottleArchive(),)
+    mcp_launch = NoLauncher(
+        "`brew install` installs a formula and a later command runs it; brew has no command that runs a formula (https://docs.brew.sh/Manpage)"
+    )
     manifest_globs: tuple[str, ...] = (
         "**/Brewfile",
         # The names Brewfiles go by in real dotfiles: `brew bundle --global` reads ~/.Brewfile, and

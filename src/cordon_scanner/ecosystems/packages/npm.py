@@ -25,6 +25,7 @@ from cordon_scanner.ecosystems.base import (
     Manifest,
     ReleaseFile,
 )
+from cordon_scanner.ecosystems.launchers import Launcher
 from cordon_scanner.ecosystems.packages.javascript.conditions import NpmConditions
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Hook, Scope
@@ -210,6 +211,19 @@ class NpmEcosystem(NpmProjects, NpmPackageCode, BaseEcosystem):
 
     purl_type = "npm"
     published_archive = (NpmPackageArchive(), NpmRenamedArchive())
+    mcp_launch = (
+        Launcher(
+            (("npx",), ("bunx",), ("pnpx",), ("pnpm", "dlx"), ("yarn", "dlx")),
+            "npm",
+            "https://docs.npmjs.com/cli/v10/commands/npx",
+        ),
+        Launcher(
+            (("deno", "run"),),
+            "npm",
+            "https://docs.deno.com/runtime/reference/cli/run/",
+            read="deno_npm_package",
+        ),
+    )
     manifest_globs: tuple[str, ...] = ("**/package.json", "**/deno.json", "**/deno.jsonc")
     #: bundledDependencies: npm installs a tarball's own `node_modules` with it as shipped, and
     #: `require()` loads them -- where a payload can hide in a dependency. Theirs too, recursively.

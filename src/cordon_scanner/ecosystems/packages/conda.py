@@ -29,6 +29,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.launchers import Launcher
 from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Scope
 
@@ -515,6 +516,9 @@ class CondaEcosystem(BaseEcosystem):
 
     purl_type = "conda"
     published_archive = (CondaArchive(),)
+    mcp_launch = (
+        Launcher((("pixi", "exec"),), "conda", "https://pixi.sh/latest/reference/cli/pixi/exec/"),
+    )
     manifest_globs: tuple[str, ...] = (
         "**/environment.yml",
         "**/environment.yaml",

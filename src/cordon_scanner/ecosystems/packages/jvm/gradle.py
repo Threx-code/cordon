@@ -36,6 +36,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.launchers import NoLauncher
 from cordon_scanner.ecosystems.packages.jvm.maven import MavenEcosystem
 from cordon_scanner.foundation.formats.safexml import SafeXml, SafeXmlError
 from cordon_scanner.foundation.models import Hook, Scope
@@ -255,6 +256,9 @@ class GradleEcosystem(BaseEcosystem):
 
     purl_type = "maven"
     published_archive = SameArchiveAs("maven")
+    mcp_launch = NoLauncher(
+        "Gradle runs its own project's build; a Maven coordinate is launched by jbang, which the maven declaration holds (https://docs.gradle.org/current/userguide/command_line_interface.html)"
+    )
     manifest_globs: tuple[str, ...] = (
         "**/build.gradle",
         "**/build.gradle.kts",

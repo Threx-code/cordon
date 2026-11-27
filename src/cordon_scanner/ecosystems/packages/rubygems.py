@@ -31,6 +31,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.launchers import Launcher
 from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
@@ -642,6 +643,11 @@ class RubyGemsEcosystem(BaseEcosystem):
     id = "rubygems"
     purl_type = "gem"
     published_archive = (GemArchive(),)
+    mcp_launch = (
+        Launcher(
+            (("gem", "exec"),), "gem", "https://guides.rubygems.org/command-reference/#gem-exec"
+        ),
+    )
     manifest_globs: tuple[str, ...] = (
         "**/Gemfile",
         "**/gems.rb",

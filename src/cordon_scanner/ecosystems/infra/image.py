@@ -41,6 +41,7 @@ from cordon_scanner.ecosystems.infra.references import (
     PublicRegistries,
     ReferenceGrammar,
 )
+from cordon_scanner.ecosystems.launchers import Launcher
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -581,6 +582,13 @@ class ImageEcosystem(BaseEcosystem):
 
     purl_type = "docker"
     published_archive = (OciLayoutArchive(), DockerSaveArchive())
+    mcp_launch = (
+        Launcher(
+            (("docker",), ("podman",)),
+            "image",
+            "https://docs.docker.com/reference/cli/docker/container/run/",
+        ),
+    )
     manifest_globs: tuple[str, ...] = (
         "**/Dockerfile",
         "**/Dockerfile.*",

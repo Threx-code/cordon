@@ -187,7 +187,19 @@ class More:
     def device_attestation(cls) -> frozenset[str]:
         from cordon_scanner.cloud.device_attestation import DeviceAttestation
 
-        return cls.ids(DeviceAttestation.SPLITTERS)
+        return cls.ids(DeviceAttestation.splitters())
+
+    @staticmethod
+    def device_attestation_reasons() -> dict[str, str]:
+        from cordon_scanner.ecosystems.base import BaseEcosystem
+        from cordon_scanner.ecosystems.launchers import NoLauncher
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+        return {
+            e.id: e.mcp_launch.reason
+            for e in EcosystemRegistry.all_ecosystems()
+            if isinstance(e, BaseEcosystem) and isinstance(e.mcp_launch, NoLauncher)
+        }
 
     @classmethod
     def subjects(cls) -> frozenset[str]:
@@ -270,7 +282,7 @@ class Features:
         "private registries": (More.private_registries, dict),
         "agent hook install recognition": (More.agent_hook, dict),
         "fixer (lockfile fix)": (More.fixer, dict),
-        "device attestation splitters": (More.device_attestation, dict),
+        "device attestation splitters": (More.device_attestation, More.device_attestation_reasons),
         "subject canonicalisation": (More.subjects, dict),
         "manifest findings (own name)": (More.own_name_findings, dict),
         "credential homes": (More.credential_homes, More.credential_homes_reasons),
@@ -289,7 +301,6 @@ class Features:
             "private registries",
             "agent hook install recognition",
             "fixer (lockfile fix)",
-            "device attestation splitters",
             "manifest findings (own name)",
         }
     )

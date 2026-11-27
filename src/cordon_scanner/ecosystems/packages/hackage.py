@@ -41,6 +41,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.launchers import NoLauncher
 from cordon_scanner.ecosystems.packages.haskell.cabal import (
     GHC_PACKAGES,
     CabalDeps,
@@ -588,6 +589,9 @@ class HackageEcosystem(BaseEcosystem):
     id = "hackage"
     purl_type = "hackage"
     published_archive = (HackageArchive(),)
+    mcp_launch = NoLauncher(
+        "`cabal install` installs an executable and a later command runs it; `cabal run` runs a target of the project in the current directory (https://cabal.readthedocs.io/en/stable/cabal-commands.html#cabal-run)"
+    )
     manifest_globs: tuple[str, ...] = (
         "**/*.cabal",
         "**/cabal.project",

@@ -33,6 +33,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.launchers import Launcher
 from cordon_scanner.foundation.models import Scope
 
 if TYPE_CHECKING:
@@ -809,6 +810,13 @@ class NixEcosystem(BaseEcosystem):
 
     purl_type = "nix"
     published_archive = (NarArchive(),)
+    mcp_launch = (
+        Launcher(
+            (("nix", "run"),),
+            "nix",
+            "https://nix.dev/manual/nix/stable/command-ref/new-cli/nix3-run.html",
+        ),
+    )
     manifest_globs: tuple[str, ...] = ("**/flake.nix", "**/default.nix", "**/shell.nix")
     lockfile_globs: tuple[str, ...] = ("**/flake.lock",)
     registry_hosts: frozenset[str] = frozenset()

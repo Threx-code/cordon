@@ -57,11 +57,22 @@ class DeviceAttestation:
         r"([\w.\-]+)(?:\[[\w,.\-]*\])?(?:==|@)(\d[\w.\-+]*)"
     )
 
-    #: How a pinned package is read, by ecosystem: a table keyed by it, so a third ecosystem is one more entry.
-    SPLITTERS: ClassVar[dict[str, str]] = {"npm": "_split_npm", "pypi": "_split_pypi"}
+    #: The package URLs the platform accepts today (`pkg:npm|pypi/...`, the closed form of its inventory statement). A pinned
+    #: package of any other ecosystem is split like the rest and counted in `unnamed` until the platform's form is widened.
+    PLATFORM_PURL: ClassVar[re.Pattern[str]] = re.compile(r"pkg:(?:npm|pypi)/.+")
     SEPARATORS: ClassVar[str] = "-_."
 
     # -- the statement -------------------------------------------------------------------------------------------
+
+    @classmethod
+    def splitters(cls) -> dict[str, str]:
+        """How a pinned package is read, by ecosystem: the kind of spec its adapter's launcher names (`mcp_launch`), so a new
+        ecosystem is one more declaration."""
+        from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
+
+        return {
+            ecosystem: launcher.spec for ecosystem, launcher in reversed(McpConfigs.launchers())
+        }
 
     @classmethod
     def statement(
@@ -93,14 +104,15 @@ class DeviceAttestation:
     def _purl(cls, server: dict[str, Any]) -> str | None:
         """The package URL of a server launched from a PINNED npm or PyPI package, else None (it is then counted)."""
         ecosystem, spec = server.get("ecosystem"), server.get("package")
+        kinds = cls.splitters()
         if (
             not isinstance(ecosystem, str)
-            or ecosystem not in cls.SPLITTERS
+            or ecosystem not in kinds
             or server.get("pinned") is not True
             or not isinstance(spec, str)
         ):
             return None
-        split = getattr(cls, cls.SPLITTERS[ecosystem])(spec)
+        split = cls._split(kinds[ecosystem], spec)
         if split is None:
             return None
         name, version = split
@@ -108,7 +120,24 @@ class DeviceAttestation:
             return None
         if not cls.VERSION.fullmatch(version) or len(version) > cls.MAX_VERSION:
             return None
-        return f"pkg:{ecosystem}/{name}@{version}"
+        from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
+
+        purl = f"pkg:{McpConfigs.purl_type(ecosystem)}/{name}@{version}"
+        return purl if cls.PLATFORM_PURL.fullmatch(purl) else None
+
+    @classmethod
+    def _split(cls, kind: str, spec: str) -> tuple[str, str] | None:
+        """The (name, version) of a pinned spec of this kind, the name written as a package URL writes it."""
+        own = getattr(cls, f"_split_{kind}", None)
+        if own is not None:
+            return own(spec)  # type: ignore[no-any-return]
+        from cordon_scanner.detect.agents.mcp_servers.declarations import LaunchSpecs
+
+        name, version = getattr(LaunchSpecs, f"{kind}_split")(spec)
+        if not version:
+            return None
+        # A Maven coordinate `group:artifact` is a package URL's `group/artifact`; a version's colon is written `%3A`.
+        return name.replace(":", "/"), version.replace(":", "%3A")
 
     @classmethod
     def _split_npm(cls, spec: str) -> tuple[str, str]:

@@ -30,6 +30,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.launchers import NoLauncher
 from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -327,6 +328,9 @@ class PubEcosystem(BaseEcosystem):
     id = "pub"
     purl_type = "pub"
     published_archive = (PubArchive(),)
+    mcp_launch = NoLauncher(
+        "`dart pub global activate` installs a package and `dart pub global run` runs it afterwards: two steps (https://dart.dev/tools/pub/cmd/pub-global)"
+    )
     manifest_globs: tuple[str, ...] = ("**/pubspec.yaml",)
     lockfile_globs: tuple[str, ...] = ("**/pubspec.lock", "**/.dart_tool/package_config.json")
     registry_hosts: frozenset[str] = frozenset({"pub.dev", "pub.dartlang.org"})

@@ -35,6 +35,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.launchers import NoLauncher
 from cordon_scanner.foundation.models import Scope
 
 if TYPE_CHECKING:
@@ -479,6 +480,9 @@ class JuliaEcosystem(BaseEcosystem):
     id = "julia"
     purl_type = "julia"
     published_archive = (JuliaArchive(),)
+    mcp_launch = NoLauncher(
+        "`Pkg.add` installs a package and Julia then loads it; Julia has no command that fetches a named release and runs it (https://pkgdocs.julialang.org/v1/managing-packages/)"
+    )
     manifest_globs: tuple[str, ...] = ("**/Project.toml", "**/JuliaProject.toml")
     lockfile_globs: tuple[str, ...] = (
         "**/Manifest.toml",

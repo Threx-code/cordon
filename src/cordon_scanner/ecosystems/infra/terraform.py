@@ -38,6 +38,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.launchers import NoLauncher
 from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.foundation.models import Scope
 
@@ -707,6 +708,9 @@ class TerraformEcosystem(BaseEcosystem):
 
     purl_type = "terraform"
     published_archive = (ProviderArchive(),)
+    mcp_launch = NoLauncher(
+        "`terraform init` downloads the providers and modules of a configuration; a provider is a plugin Terraform starts itself, not a command a configuration can name (https://developer.hashicorp.com/terraform/cli/commands/init)"
+    )
     manifest_globs: tuple[str, ...] = ("**/*.tf", "**/*.tf.json")
     lockfile_globs: tuple[str, ...] = ("**/.terraform.lock.hcl",)
     registry_hosts: frozenset[str] = frozenset({"registry.terraform.io", "registry.opentofu.org"})

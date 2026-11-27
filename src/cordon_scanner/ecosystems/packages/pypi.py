@@ -26,6 +26,7 @@ from cordon_scanner.ecosystems.base import (
     Manifest,
     ReleaseFile,
 )
+from cordon_scanner.ecosystems.launchers import Launcher
 from cordon_scanner.ecosystems.packages.python.lockfiles import PypiLockfiles
 from cordon_scanner.ecosystems.packages.python.requirements import (
     _NORMALIZE,
@@ -132,6 +133,12 @@ class PypiEcosystem(PypiLockfiles, BaseEcosystem):
 
     purl_type = "pypi"
     published_archive = (PypiArchive(),)
+    mcp_launch = (
+        Launcher((("uvx",), ("pipx",)), "pypi", "https://docs.astral.sh/uv/guides/tools/"),
+        Launcher(
+            (("uv", "tool"),), "pypi", "https://docs.astral.sh/uv/guides/tools/", skip=("run",)
+        ),
+    )
     manifest_globs: tuple[str, ...] = (
         "**/pyproject.toml",
         "**/setup.py",

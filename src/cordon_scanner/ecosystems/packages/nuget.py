@@ -35,6 +35,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.launchers import Launcher
 from cordon_scanner.foundation.formats.safexml import Element, SafeXml, SafeXmlError
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -557,6 +558,13 @@ class NuGetEcosystem(BaseEcosystem):
 
     purl_type = "nuget"
     published_archive = (NuGetArchive(),)
+    mcp_launch = (
+        Launcher(
+            (("dnx",), ("dotnet", "dnx"), ("dotnet", "tool", "exec")),
+            "nuget",
+            "https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-tool-exec",
+        ),
+    )
     manifest_globs: tuple[str, ...] = (
         "**/*.csproj",
         "**/*.fsproj",

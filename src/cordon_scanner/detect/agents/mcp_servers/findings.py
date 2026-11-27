@@ -734,9 +734,8 @@ class McpServerFindings:
                     message=RULES["SUSPECT.MCP.UNPINNED.001"].message
                     + f" ({ecosystem}: {package})",
                 )
-        elif McpConfigs.program(command) in ("docker", "podman") and "run" in args:
+        if McpConfigs.program(command) in ("docker", "podman") and "run" in args:
             launched = configuration.ServerExposure.docker_run(args)
-            image = launched.image if launched is not None else None
             if launched is not None and launched.host_access:
                 yield AgentFinding.at_text(
                     "SUSPECT.MCP.CONTAINER_HOST_ACCESS.001",
@@ -753,15 +752,6 @@ class McpServerFindings:
                         if launched.socket_only
                         else ""
                     ),
-                )
-            if image and "@sha256:" not in image:
-                yield AgentFinding.at_text(
-                    "SUSPECT.MCP.UNPINNED.001",
-                    unit,
-                    ctx,
-                    text,
-                    image,
-                    message=RULES["SUSPECT.MCP.UNPINNED.001"].message + f" (image: {image})",
                 )
 
     @staticmethod

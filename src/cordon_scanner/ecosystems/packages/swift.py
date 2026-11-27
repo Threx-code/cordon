@@ -30,6 +30,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.launchers import Launcher
 from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
@@ -344,6 +345,11 @@ class SwiftEcosystem(BaseEcosystem):
 
     purl_type = "swift"
     published_archive = (SwiftArchive(),)
+    mcp_launch = (
+        Launcher(
+            (("mint", "run"),), "swift", "https://github.com/yonaskolb/Mint#running-a-package"
+        ),
+    )
     manifest_globs: tuple[str, ...] = ("**/Package.swift",)
     lockfile_globs: tuple[str, ...] = ("**/Package.resolved",)
     registry_hosts: frozenset[str] = frozenset({"github.com", "gitlab.com", "bitbucket.org"})

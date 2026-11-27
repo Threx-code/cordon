@@ -37,6 +37,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.launchers import NoLauncher
 from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
@@ -716,6 +717,9 @@ class BazelEcosystem(BaseEcosystem):
     purl_type = "bazel"
     published_archive = NoArchive(
         "the Bazel Central Registry holds only MODULE.bazel and a source.json naming the upstream project's own archive; the archive is whatever that project publishes (captured: bazel/source)"
+    )
+    mcp_launch = NoLauncher(
+        "`bazel run @module//pkg:target` runs a target of a module the project's own MODULE.bazel already pins, so a launch command never names a release (https://bazel.build/external/module)"
     )
     manifest_globs: tuple[str, ...] = (
         "**/MODULE.bazel",

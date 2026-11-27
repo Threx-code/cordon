@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import tomllib
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.detect.agents.paths import MCP_PATHS
@@ -11,77 +12,59 @@ from cordon_scanner.foundation.formats import jsonc
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 
 if TYPE_CHECKING:
+    from cordon_scanner.ecosystems.launchers import Launcher
     from cordon_scanner.foundation.content import FileContent
 
 
 # -- A3: MCP launch commands -----------------------------------------------------------------
-_RUNNERS: Final = {
-    "npx": "npm",
-    "bunx": "npm",
-    "pnpx": "npm",
-    "uvx": "pypi",
-    "pipx": "pypi",
-}
+class LaunchSpecs:
+    """How the words after a launch command read, by the kind of spec a launcher names (`Launcher.spec`): `<kind>_package(words)`
+    finds the package spec among them, `<kind>_split(spec)` reads its (name, version or None), `<kind>_pinned(spec)` says whether
+    it names one release. The declarations that use them are the adapters' `mcp_launch` (`ecosystems/launchers.py`)."""
 
-_DLX_RUNNERS: Final = {
-    ("pnpm", "dlx"): "npm",
-    ("yarn", "dlx"): "npm",
-    ("pipx", "run"): "pypi",
-    ("uv", "tool"): "pypi",
-}
+    NPM_EXACT: ClassVar[re.Pattern[str]] = re.compile(r"\d+\.\d+\.\d+(?:[-+][\w.]+)?")
+    PYPI_PIN: ClassVar[re.Pattern[str]] = re.compile(r"([\w.\-\[\],]+?)(?:==|@)(\d[\w.\-+]*)")
+    PYPI_SPLIT: ClassVar[re.Pattern[str]] = re.compile(
+        r"([\w.\-]+)(?:\[[^\]]*\])?(?:==|@)(\d[\w.\-+]*)"
+    )
+    GO_EXACT: ClassVar[re.Pattern[str]] = re.compile(r"v\d+\.\d+\.\d+(?:[-+][\w.+]+)?")
+    GO_VALUE_FLAGS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "-tags",
+            "-ldflags",
+            "-gcflags",
+            "-asmflags",
+            "-C",
+            "-exec",
+            "-mod",
+            "-modfile",
+            "-overlay",
+            "-p",
+            "-pkgdir",
+        }
+    )
+    NUGET_EXACT: ClassVar[re.Pattern[str]] = re.compile(
+        r"[0-9][0-9.]{0,30}(?:-[\w.]{1,60})?(?:\+[\w.]{1,60})?"
+    )
+    NUGET_VALUE_FLAGS: ClassVar[frozenset[str]] = frozenset(
+        {"--version", "--source", "--add-source", "--configfile", "--framework", "--verbosity"}
+    )
+    GAV: ClassVar[re.Pattern[str]] = re.compile(
+        r"([\w.\-]+):([\w.\-]+):([\w.\-+]+)(?::[\w.\-]+)?(?:@\S+)?"
+    )
+    GEM_EXACT: ClassVar[re.Pattern[str]] = re.compile(r"(?:=\s*)?(\d[\w.]{0,60})")
+    NIX_REV: ClassVar[re.Pattern[str]] = re.compile(r"(?:/|[?&]rev=)([0-9a-f]{40})(?=[#?&]|$)")
+    CONDA_PIN: ClassVar[re.Pattern[str]] = re.compile(
+        r"([\w.\-]{1,200})\s*={1,2}\s*(\d[\w.\-+]{0,60})"
+    )
+    DENO_SPECIFIER: ClassVar[re.Pattern[str]] = re.compile(r"npm:(\S+)")
+    SWIFT_EXACT: ClassVar[re.Pattern[str]] = re.compile(r"\d+\.\d+\.\d+(?:[-+][\w.]+)?")
 
-
-class McpConfigs:
-    """MCP server declarations in every agent's configuration dialect, and what they launch."""
-
-    #: Ecosystems whose package specs read `name@version`, scoped names led by an `@`
-    #: (`@scope/pkg@1.2.3`).
-    SCOPED_AT_SPECS: ClassVar[frozenset[str]] = frozenset({"npm"})
-
-    PATHS: ClassVar[tuple[str, ...]] = MCP_PATHS
-    """The files an agent reads its MCP servers from (`agents.paths.MCP_PATHS`): where to look for
-    the declarations `mcp_servers` reads."""
-
-    #: The launchers whose package spec `split_spec` reads into a name and a version.
-    SPLIT_SPECS: ClassVar[frozenset[str]] = frozenset({"npm", "pypi"})
-
-    @staticmethod
-    def split_spec(ecosystem: str, spec: str) -> tuple[str, str | None]:
-        """`@scope/pkg@1.2.3` to (`@scope/pkg`, `1.2.3`); a floating spec gets version None."""
-        if ecosystem in McpConfigs.SCOPED_AT_SPECS:
-            head, _, version = (
-                spec[1:].partition("@") if spec.startswith("@") else spec.partition("@")
-            )
-            name = "@" + head if spec.startswith("@") else head
-            exact = re.fullmatch(r"\d+\.\d+\.\d+(?:[-+][\w.]+)?", version)
-            return name, version if exact else None
-        match = re.fullmatch(r"([\w.\-]+)(?:\[[^\]]*\])?(?:==|@)(\d[\w.\-+]*)", spec)
-        if match:
-            return match.group(1), match.group(2)
-        return re.split(r"[\[=@<>~!]", spec, maxsplit=1)[0], None
-
-    @staticmethod
-    def program(command: str) -> str:
-        """The program a command names, as one word: its last path part, on either separator, lower
-        case, without Windows' `.cmd` or `.exe`. A Windows config names `C:\\Program Files\\nodejs\\
-        npx.cmd`; split on `/` alone it stayed the whole path, so its server's package was never
-        examined, nor a `docker.exe run`'s image, nor an agent hook's runner (4 Nov)."""
-        return re.split(r"[/\\]", command)[-1].lower().removesuffix(".cmd").removesuffix(".exe")
+    # -- finding the package among the words -------------------------------------------------
 
     @staticmethod
-    def launched_package(command: str, args: list[str]) -> tuple[str, str, bool] | None:
-        """The (ecosystem, package spec, pinned) an MCP launch command downloads, if it does."""
-        runner = McpConfigs.program(command)
-        rest = list(args)
-        ecosystem = _RUNNERS.get(runner)
-        if ecosystem is None and rest:
-            ecosystem = _DLX_RUNNERS.get((runner, rest[0].lower()))
-            if ecosystem is not None:
-                rest = rest[1:]
-                if runner == "uv" and rest and rest[0] == "run":
-                    rest = rest[1:]
-        if ecosystem is None:
-            return None
+    def _first_package(rest: list[str]) -> str | None:
+        """The first word that is not a flag or a flag's value (the `npx` / `uvx` reading, unchanged)."""
         package = None
         skip_next = False
         for arg in rest:
@@ -98,19 +81,360 @@ class McpConfigs:
                 continue
             package = arg
             break
+        return package or None
+
+    @staticmethod
+    def npm_package(rest: list[str]) -> str | None:
+        return LaunchSpecs._first_package(rest)
+
+    @staticmethod
+    def pypi_package(rest: list[str]) -> str | None:
+        return LaunchSpecs._first_package(rest)
+
+    @staticmethod
+    def deno_npm_package(rest: list[str]) -> str | None:
+        """`deno run npm:pkg@1.2.3`: the `npm:` specifier, without its prefix."""
+        for arg in rest:
+            found = LaunchSpecs.DENO_SPECIFIER.fullmatch(arg)
+            if found:
+                return found.group(1)
+        return None
+
+    @staticmethod
+    def image_package(rest: list[str]) -> str | None:
+        """`docker run [options] IMAGE`: the image reference, for a command that runs one."""
+        from cordon_scanner.detect.agents.configuration import ServerExposure
+
+        launched = ServerExposure.docker_run(rest)
+        return launched.image if launched is not None and launched.image else None
+
+    @staticmethod
+    def go_package(rest: list[str]) -> str | None:
+        """`go run module@version`: a module path with a version query; a local package path launches nothing downloaded."""
+        skip = False
+        for arg in rest:
+            if skip:
+                skip = False
+                continue
+            if arg in LaunchSpecs.GO_VALUE_FLAGS:
+                skip = True
+                continue
+            if arg.startswith("-"):
+                continue
+            return arg if "@" in arg and not arg.startswith((".", "/")) else None
+        return None
+
+    @staticmethod
+    def nuget_package(rest: list[str]) -> str | None:
+        """`dnx package[@version]` or `dnx package --version V`."""
+        package: str | None = None
+        version: str | None = None
+        skip = False
+        for index, arg in enumerate(rest):
+            if skip:
+                skip = False
+                continue
+            flag, _, inline = arg.partition("=")
+            if flag in LaunchSpecs.NUGET_VALUE_FLAGS:
+                if flag == "--version":
+                    version = inline or (rest[index + 1] if index + 1 < len(rest) else None)
+                skip = not inline
+                continue
+            if arg.startswith("-"):
+                continue
+            if package is None:
+                package = arg
+        if package is None:
+            return None
+        return f"{package}@{version}" if version and "@" not in package else package
+
+    @staticmethod
+    def maven_package(rest: list[str]) -> str | None:
+        """`jbang group:artifact:version`: the first word that is a Maven coordinate."""
+        return next(
+            (a for a in rest if not a.startswith("-") and LaunchSpecs.GAV.fullmatch(a)), None
+        )
+
+    @staticmethod
+    def gem_package(rest: list[str]) -> str | None:
+        """`gem exec [-v REQ] [-g GEM] gem_name command`: the gem, with a `-v` requirement written `gem@REQ`."""
+        name: str | None = None
+        requirement: str | None = None
+        skip = False
+        for index, arg in enumerate(rest):
+            if skip:
+                skip = False
+                continue
+            flag, _, inline = arg.partition("=")
+            if flag in ("-v", "--version", "-g", "--gem"):
+                value = inline or (rest[index + 1] if index + 1 < len(rest) else "")
+                if flag in ("-v", "--version"):
+                    requirement = value or None
+                else:
+                    name = value or name
+                skip = not inline
+                continue
+            if arg.startswith("-"):
+                continue
+            if name is None:
+                name = arg
+            break
+        if not name:
+            return None
+        return f"{name}@{requirement}" if requirement else name
+
+    @staticmethod
+    def nix_package(rest: list[str]) -> str | None:
+        """`nix run FLAKE#attr`: the flake reference (the words before `--`)."""
+        for arg in rest:
+            if arg == "--":
+                return None
+            if arg.startswith("-"):
+                continue
+            return arg if ":" in arg or "#" in arg else None
+        return None
+
+    @staticmethod
+    def conda_package(rest: list[str]) -> str | None:
+        """`pixi exec [--spec SPEC] command`: the spec, else the command's first word (the package it guesses)."""
+        for index, arg in enumerate(rest):
+            flag, _, inline = arg.partition("=")
+            if flag in ("--spec", "-s"):
+                return inline or (rest[index + 1] if index + 1 < len(rest) else None)
+        skip = False
+        for arg in rest:
+            if skip:
+                skip = False
+                continue
+            if arg in (
+                "--with",
+                "-w",
+                "--channel",
+                "-c",
+                "--platform",
+                "--manifest-path",
+                "--list",
+            ):
+                skip = True
+                continue
+            if arg.startswith("-"):
+                continue
+            return arg
+        return None
+
+    @staticmethod
+    def swift_package(rest: list[str]) -> str | None:
+        """`mint run owner/repo@version`."""
+        return next((a for a in rest if not a.startswith("-")), None)
+
+    # -- reading it ---------------------------------------------------------------------------
+
+    @staticmethod
+    def npm_split(spec: str) -> tuple[str, str | None]:
+        head, _, version = spec[1:].partition("@") if spec.startswith("@") else spec.partition("@")
+        name = "@" + head if spec.startswith("@") else head
+        return name, version if LaunchSpecs.NPM_EXACT.fullmatch(version) else None
+
+    @staticmethod
+    def pypi_split(spec: str) -> tuple[str, str | None]:
+        match = LaunchSpecs.PYPI_SPLIT.fullmatch(spec)
+        if match:
+            return match.group(1), match.group(2)
+        return re.split(r"[\[=@<>~!]", spec, maxsplit=1)[0], None
+
+    @staticmethod
+    def image_split(spec: str) -> tuple[str, str | None]:
+        """`name@sha256:...` is a digest, `name:tag` a tag (a colon before the last `/` is a registry port)."""
+        if "@" in spec:
+            name, _, digest = spec.partition("@")
+            return name, digest or None
+        last = spec.rpartition("/")[2]
+        if ":" in last:
+            name, _, tag = spec.rpartition(":")
+            return name, tag or None
+        return spec, None
+
+    @staticmethod
+    def go_split(spec: str) -> tuple[str, str | None]:
+        name, _, version = spec.rpartition("@")
+        return name, version if LaunchSpecs.GO_EXACT.fullmatch(version) else None
+
+    @staticmethod
+    def nuget_split(spec: str) -> tuple[str, str | None]:
+        name, _, version = spec.partition("@")
+        return name, version if LaunchSpecs.NUGET_EXACT.fullmatch(version) else None
+
+    @staticmethod
+    def maven_split(spec: str) -> tuple[str, str | None]:
+        found = LaunchSpecs.GAV.fullmatch(spec)
+        if found is None:
+            return spec, None
+        version = found.group(3)
+        floating = (
+            version in ("RELEASE", "LATEST") or "+" in version or version.startswith(("[", "("))
+        )
+        return f"{found.group(1)}:{found.group(2)}", None if floating else version
+
+    @staticmethod
+    def gem_split(spec: str) -> tuple[str, str | None]:
+        name, _, requirement = spec.partition("@")
+        found = LaunchSpecs.GEM_EXACT.fullmatch(requirement.strip()) if requirement else None
+        return name, found.group(1) if found else None
+
+    @staticmethod
+    def nix_split(spec: str) -> tuple[str, str | None]:
+        """`github:owner/repo/<rev>#attr` to (`owner/repo`, rev); another reference keeps its text before `#` and `?`."""
+        reference = spec.partition("#")[0]
+        rev = LaunchSpecs.NIX_REV.search(reference)
+        scheme, _, rest = reference.partition(":")
+        if scheme in ("github", "gitlab", "sourcehut") and rest:
+            pieces = rest.partition("?")[0].split("/")
+            return "/".join(pieces[:2]), rev.group(1) if rev else None
+        return reference.partition("?")[0], rev.group(1) if rev else None
+
+    @staticmethod
+    def conda_split(spec: str) -> tuple[str, str | None]:
+        found = LaunchSpecs.CONDA_PIN.fullmatch(spec.strip())
+        if found:
+            return found.group(1), found.group(2)
+        return re.split(r"[=<>!~ ]", spec.strip(), maxsplit=1)[0], None
+
+    @staticmethod
+    def swift_split(spec: str) -> tuple[str, str | None]:
+        name, _, version = spec.partition("@")
+        return name, version if LaunchSpecs.SWIFT_EXACT.fullmatch(version) else None
+
+    # -- whether it names one release -------------------------------------------------------------
+
+    @staticmethod
+    def npm_pinned(spec: str) -> bool:
+        return LaunchSpecs.npm_split(spec)[1] is not None
+
+    @staticmethod
+    def pypi_pinned(spec: str) -> bool:
+        return LaunchSpecs.PYPI_PIN.fullmatch(spec) is not None
+
+    @staticmethod
+    def image_pinned(spec: str) -> bool:
+        return "@sha256:" in spec
+
+    @staticmethod
+    def go_pinned(spec: str) -> bool:
+        return LaunchSpecs.go_split(spec)[1] is not None
+
+    @staticmethod
+    def nuget_pinned(spec: str) -> bool:
+        return LaunchSpecs.nuget_split(spec)[1] is not None
+
+    @staticmethod
+    def maven_pinned(spec: str) -> bool:
+        return LaunchSpecs.maven_split(spec)[1] is not None
+
+    @staticmethod
+    def gem_pinned(spec: str) -> bool:
+        return LaunchSpecs.gem_split(spec)[1] is not None
+
+    @staticmethod
+    def nix_pinned(spec: str) -> bool:
+        return LaunchSpecs.NIX_REV.search(spec.partition("#")[0]) is not None
+
+    @staticmethod
+    def conda_pinned(spec: str) -> bool:
+        return LaunchSpecs.CONDA_PIN.fullmatch(spec.strip()) is not None
+
+    @staticmethod
+    def swift_pinned(spec: str) -> bool:
+        return LaunchSpecs.swift_split(spec)[1] is not None
+
+
+class McpConfigs:
+    """MCP server declarations in every agent's configuration dialect, and what they launch."""
+
+    PATHS: ClassVar[tuple[str, ...]] = MCP_PATHS
+    """The files an agent reads its MCP servers from (`agents.paths.MCP_PATHS`): where to look for
+    the declarations `mcp_servers` reads."""
+
+    @staticmethod
+    def launchers() -> tuple[tuple[str, Launcher], ...]:
+        """Every (ecosystem id, launcher) the adapters declare (`mcp_launch`), in registry order."""
+        from cordon_scanner.ecosystems.base import BaseEcosystem
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+        return tuple(
+            (ecosystem.id, launcher)
+            for ecosystem in EcosystemRegistry.all_ecosystems()
+            if isinstance(ecosystem, BaseEcosystem) and isinstance(ecosystem.mcp_launch, tuple)
+            for launcher in ecosystem.mcp_launch
+        )
+
+    @staticmethod
+    def launcher_ecosystems() -> frozenset[str]:
+        """The ecosystems an MCP server can be launched from by a command that names its release (those whose spec is read)."""
+        return frozenset(ecosystem for ecosystem, _ in McpConfigs.launchers())
+
+    @staticmethod
+    def purl_type(ecosystem: str) -> str:
+        """The package-URL type of an ecosystem's packages (its adapter's: `golang` for `gomod`, `gem` for `rubygems`)."""
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+        adapter = EcosystemRegistry.get(ecosystem)
+        return adapter.purl_type if adapter is not None else ecosystem
+
+    @staticmethod
+    def spec_kind(ecosystem: str) -> str | None:
+        return next((lc.spec for e, lc in McpConfigs.launchers() if e == ecosystem), None)
+
+    @staticmethod
+    def split_spec(ecosystem: str, spec: str) -> tuple[str, str | None]:
+        """`@scope/pkg@1.2.3` to (`@scope/pkg`, `1.2.3`); a floating spec gets version None."""
+        kind = McpConfigs.spec_kind(ecosystem) or "pypi"
+        split: Callable[[str], tuple[str, str | None]] = getattr(LaunchSpecs, f"{kind}_split")
+        return split(spec)
+
+    @staticmethod
+    def program(command: str) -> str:
+        """The program a command names, as one word: its last path part, on either separator, lower
+        case, without Windows' `.cmd` or `.exe`. A Windows config names `C:\\Program Files\\nodejs\\
+        npx.cmd`; split on `/` alone it stayed the whole path, so its server's package was never
+        examined, nor a `docker.exe run`'s image, nor an agent hook's runner (4 Nov)."""
+        return re.split(r"[/\\]", command)[-1].lower().removesuffix(".cmd").removesuffix(".exe")
+
+    @staticmethod
+    def launched_package(command: str, args: list[str]) -> tuple[str, str, bool] | None:
+        """The (ecosystem, package spec, pinned) an MCP launch command downloads, if it does."""
+        runner = McpConfigs.program(command)
+        rest = list(args)
+        launchers = McpConfigs.launchers()
+        found: tuple[str, Launcher] | None = next(
+            ((e, lc) for e, lc in launchers if any(words == (runner,) for words in lc.commands)),
+            None,
+        )
+        if found is None:
+            for ecosystem, launcher in launchers:
+                for words in launcher.commands:
+                    if (
+                        len(words) > 1
+                        and words[0] == runner
+                        and [a.lower() for a in rest[: len(words) - 1]] == list(words[1:])
+                    ):
+                        found = (ecosystem, launcher)
+                        rest = rest[len(words) - 1 :]
+                        if launcher.skip and rest[: len(launcher.skip)] == list(launcher.skip):
+                            rest = rest[len(launcher.skip) :]
+                        break
+                if found is not None:
+                    break
+        if found is None:
+            return None
+        ecosystem, launcher = found
+        read: Callable[[list[str]], str | None] = getattr(
+            LaunchSpecs, launcher.read or f"{launcher.spec}_package"
+        )
+        package = read(rest)
         if not package:
             return None
-        if ecosystem in McpConfigs.SCOPED_AT_SPECS:
-            name, _, version = (
-                package[1:].partition("@") if package.startswith("@") else package.partition("@")
-            )
-            if package.startswith("@"):
-                name = "@" + name
-            pinned = bool(re.fullmatch(r"\d+\.\d+\.\d+(?:[-+][\w.]+)?", version))
-        else:
-            match = re.fullmatch(r"([\w.\-\[\],]+?)(?:==|@)(\d[\w.\-+]*)", package)
-            pinned = match is not None
-        return ecosystem, package, pinned
+        pinned: Callable[[str], bool] = getattr(LaunchSpecs, f"{launcher.spec}_pinned")
+        return ecosystem, package, pinned(package)
 
     @staticmethod
     def mcp_servers(path: str, text: str) -> list[tuple[str, dict[str, Any]]]:

@@ -32,6 +32,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.launchers import NoLauncher
 from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
@@ -432,6 +433,9 @@ class GitHubActionsEcosystem(BaseEcosystem):
 
     purl_type = "githubactions"
     published_archive = (ActionArchive(),)
+    mcp_launch = NoLauncher(
+        "an action runs only inside a workflow job on a GitHub runner (`uses:` in a workflow file); no command on a machine downloads one and runs it (https://docs.github.com/en/actions/sharing-automations/creating-actions/about-custom-actions)"
+    )
     manifest_globs: tuple[str, ...] = (
         "**/.github/workflows/*.yml",
         "**/.github/workflows/*.yaml",
