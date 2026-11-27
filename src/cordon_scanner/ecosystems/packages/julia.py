@@ -24,6 +24,7 @@ from __future__ import annotations
 import dataclasses
 import re
 import tomllib
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.ecosystems.archive_shapes import JuliaArchive
@@ -486,6 +487,20 @@ class JuliaEcosystem(BaseEcosystem):
         "**/Artifacts.toml",
     )
     registry_hosts: frozenset[str] = frozenset({"pkg.julialang.org", "github.com/juliaregistries"})
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A Manifest.toml resolving these packages: `{path: content}`."""
+        rows = "".join(
+            f'\n[[deps.{name}]]\nuuid = "00000000-0000-0000-0000-000000000000"\nversion = "{version}"\n'
+            for name, version in pins
+        )
+        return {"Manifest.toml": f'julia_version = "1.10.0"\nmanifest_format = "2.0"\n{rows}'}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A Julia package is named by its name and uuid, and checked at a version."""
+        raise ValueError("a Julia package needs a version, and its uuid: Project.toml names both")
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()

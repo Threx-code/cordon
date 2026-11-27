@@ -15,7 +15,12 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.ecosystems.archive_shapes import ArchiveLevels
-from cordon_scanner.ecosystems.base import BaseEcosystem, Ecosystem, ReleaseFile
+from cordon_scanner.ecosystems.base import (
+    BaseEcosystem,
+    Ecosystem,
+    ProjectDefaults,
+    ReleaseFile,
+)
 from cordon_scanner.ecosystems.editors.vscode import VsCodeEcosystem
 from cordon_scanner.ecosystems.infra.infra import INFRA_ECOSYSTEMS
 from cordon_scanner.ecosystems.others import (
@@ -313,6 +318,16 @@ class EcosystemRegistry:
 class RegistryPublishing:
     """The publishing and install facts RegistryFacts answers, by asking the ecosystem: projects,
     releases, archives, entry points and the code it ships."""
+
+    @staticmethod
+    def package_check_ecosystems() -> tuple[str, ...]:
+        """The ecosystems that write a project for a package named by an agent (`pinned_project`), in registry order."""
+        return tuple(
+            ecosystem.id
+            for ecosystem in EcosystemRegistry.all_ecosystems()
+            if isinstance(ecosystem, BaseEcosystem)
+            and type(ecosystem).pinned_project is not ProjectDefaults.pinned_project
+        )
 
     @staticmethod
     def pinned_project(ecosystem: str, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:

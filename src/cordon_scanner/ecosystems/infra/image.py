@@ -24,6 +24,7 @@ A digest pins an image; a tag names one the registry can re-point.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.ecosystems.archive_shapes import DockerSaveArchive, OciLayoutArchive
@@ -630,6 +631,19 @@ class ImageEcosystem(BaseEcosystem):
     lockfile_globs: tuple[str, ...] = ()
     registry_hosts: frozenset[str] = HUB_HOSTS
     records_integrity = False
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A Dockerfile with one stage from each of these images at these tags: `{path: content}`."""
+        stages = "".join(
+            f"FROM {name}:{version} AS stage{index}\n" for index, (name, version) in enumerate(pins)
+        )
+        return {"Dockerfile": stages}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A Dockerfile with one stage from each of these images, untagged: `{path: content}`."""
+        return {"Dockerfile": "".join(f"FROM {name} AS stage{i}\n" for i, name in enumerate(names))}
 
     def normalize_name(self, name: str) -> str:
         reference = ImageReference.parse(name)

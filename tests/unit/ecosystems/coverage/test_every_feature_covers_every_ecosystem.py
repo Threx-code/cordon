@@ -280,7 +280,6 @@ class Features:
             "registry facts client",
             "package-URL scan targets",
             "advisory-text symbols",
-            "MCP package check",
             "name-signal readers",
             "private registries",
             "agent hook install recognition",

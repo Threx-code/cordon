@@ -50,8 +50,6 @@
  {"ids": ["gradle", "maven"], "site": "src/cordon_scanner/intel/registries/registry_client.py::RegistryClient.attestation_payload#0"},
  {"ids": ["actions", "ansible", "bazel", "cargo", "cocoapods", "composer", "conan", "conda", "cran", "gomod", "gradle", "hackage", "helm", "hex", "homebrew", "image", "julia", "maven", "nuget", "opam", "pub", "rubygems", "terraform", "vcpkg"], "site": "src/cordon_scanner/intel/registries/registry_hosts.py::ALIASES#0"},
  {"ids": ["actions", "ansible", "bazel", "cargo", "cocoapods", "composer", "conan", "conda", "cran", "gomod", "hackage", "hex", "homebrew", "image", "julia", "maven", "nuget", "opam", "pub", "rubygems", "terraform", "vcpkg"], "site": "src/cordon_scanner/intel/registries/registry_hosts.py::HOSTS#0"},
- {"ids": ["cargo", "composer", "cran", "gomod", "hex", "maven", "npm", "nuget", "pub", "pypi", "rubygems", "swift"], "site": "src/cordon_scanner/mcp/packages.py::ECOSYSTEMS#0"},
- {"ids": ["cargo", "gomod", "hex", "maven", "npm", "nuget", "pub", "pypi", "rubygems"], "site": "src/cordon_scanner/mcp/packages.py::FETCHABLE#0"},
  {"ids": ["cargo", "composer", "npm", "nuget", "pypi", "rubygems"], "site": "src/cordon_scanner/mcp/packages.py::_REGISTRY_FLAGS#0"},
  {"ids": ["cargo", "composer", "gomod", "npm", "nuget", "pypi", "rubygems"], "site": "src/cordon_scanner/mcp/packages.py::_VALUED#0"},
  {"ids": ["pypi", "rubygems"], "site": "src/cordon_scanner/sources/install/plan.py::OWN_NAMES#0"},

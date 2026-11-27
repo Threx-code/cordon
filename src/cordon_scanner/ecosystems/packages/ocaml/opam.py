@@ -27,6 +27,7 @@ locked archive URL is not a departure from it -- only a pin is.
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from cordon_scanner.ecosystems.archive_shapes import NoArchive
@@ -229,6 +230,18 @@ class OpamEcosystem(BaseEcosystem):
     opam-repository's own definition of the package. dune's lock does record each archive's
     checksum, and those are kept and judged (a malformed one is reported); a missing one is the
     format, not a gap."""
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A locked opam file requiring these packages at these versions: `{path: content}`."""
+        deps = "".join(f'  "{name}" {{= "{version}"}}\n' for name, version in pins)
+        return {"check.opam.locked": f'opam-version: "2.0"\nname: "check"\ndepends: [\n{deps}]\n'}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """An opam file depending on these packages with no version: `{path: content}`."""
+        deps = "".join(f'  "{name}"\n' for name in names)
+        return {"check.opam": f'opam-version: "2.0"\nname: "check"\ndepends: [\n{deps}]\n'}
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()

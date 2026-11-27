@@ -23,35 +23,29 @@ from typing import ClassVar, Final
 
 from cordon_scanner.ecosystems.registry import EcosystemRegistry, RegistryFacts
 from cordon_scanner.foundation.dependencies import InstallTool
+from cordon_scanner.sources.package import PackageTarget
 
-#: The ecosystems a package check accepts, by the name the advisory database uses.
-ECOSYSTEMS: Final[tuple[str, ...]] = (
-    "npm",
-    "pypi",
-    "cargo",
-    "gomod",
-    "maven",
-    "nuget",
-    "composer",
-    "rubygems",
-    "pub",
-    "hex",
-    "cran",
-    "swift",
-)
+#: The ecosystems a package check accepts, by the name the advisory database uses: every ecosystem that writes a
+#: project for a named package (`pinned_project` and `loose_project` of its adapter).
+ECOSYSTEMS: Final[tuple[str, ...]] = RegistryFacts.package_check_ecosystems()
+
+
+class Fetchable:
+    """The package-URL type of each ecosystem whose published archive the scanner can fetch and scan: the types a
+    package-URL scan target takes (`PackageTarget.TYPES`), the ecosystem's own type where it has several."""
+
+    @staticmethod
+    def kinds() -> dict[str, str]:
+        found: dict[str, str] = {}
+        for kind, ecosystem in PackageTarget.TYPES.items():
+            own = EcosystemRegistry.BY_ID[ecosystem].purl_type
+            if ecosystem not in found or kind == own:
+                found[ecosystem] = kind
+        return {e: k for e, k in found.items() if e in ECOSYSTEMS}
+
 
 #: Package-URL types for the ecosystems whose published archive the scanner can fetch and scan.
-FETCHABLE: Final[dict[str, str]] = {
-    "npm": "npm",
-    "pypi": "pypi",
-    "cargo": "cargo",
-    "rubygems": "gem",
-    "nuget": "nuget",
-    "gomod": "golang",
-    "hex": "hex",
-    "pub": "pub",
-    "maven": "maven",
-}
+FETCHABLE: Final[dict[str, str]] = Fetchable.kinds()
 
 ALIASES: Final[dict[str, str]] = {
     "pip": "pypi",
@@ -76,7 +70,6 @@ ALIASES: Final[dict[str, str]] = {
     "dotnet": "nuget",
     ".net": "nuget",
     "java": "maven",
-    "gradle": "maven",
 }
 
 #: A tool's reader: (ecosystem, tool, its declaration, the words after it, the result) -> read.

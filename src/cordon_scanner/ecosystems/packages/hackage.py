@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import dataclasses
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -598,6 +599,23 @@ class HackageEcosystem(BaseEcosystem):
     records_integrity = False
     """A freeze file pins versions and no hashes (Cabal checks downloads against Hackage's signed
     index); Stack's lock records the cabal-file revision hash, kept where present."""
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A freeze file pinning these packages: `{path: content}`."""
+        rows = ",\n             ".join(f"any.{name} =={version}" for name, version in pins)
+        return {"cabal.project.freeze": f"constraints: {rows}\n"}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A package description depending on these packages with no version: `{path: content}`."""
+        deps = ", ".join(["base", *names])
+        return {
+            "check.cabal": (
+                "cabal-version: 2.4\nname: check\nversion: 0.1.0.0\nbuild-type: Simple\n\n"
+                f"library\n  build-depends: {deps}\n  default-language: Haskell2010\n"
+            )
+        }
 
     def normalize_name(self, name: str) -> str:
         """Hackage refuses a name that differs from an existing one only in case."""

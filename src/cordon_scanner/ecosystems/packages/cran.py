@@ -590,7 +590,7 @@ class CranEcosystem(BaseEcosystem):
     def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
         """A project naming these packages with no version: `{path: content}`."""
         return {
-            "DESCRIPTION": "Package: cordoncheck\nVersion: 0.0.0\nImports: "
+            "DESCRIPTION": "Package: cordoncheck\nVersion: 0.0.0\nLicense: Unlimited\nImports: "
             + ", ".join(names)
             + "\n"
         }

@@ -25,6 +25,7 @@ import gzip
 import hashlib
 import io
 import tarfile
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.ecosystems.archive_shapes import HelmArchive
@@ -303,6 +304,22 @@ class HelmEcosystem(BaseEcosystem):
     registry_hosts: frozenset[str] = frozenset()
     records_integrity = False
     """A lock records no hash per chart; a downloaded archive in charts/ is hashed when present."""
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A Chart.lock resolving these charts: `{path: content}`."""
+        rows = "".join(
+            f"- name: {name}\n  repository: https://charts.invalid\n  version: {version}\n"
+            for name, version in pins
+        )
+        return {
+            "Chart.lock": f'dependencies:\n{rows}digest: sha256:{"0" * 64}\ngenerated: "2000-01-01T00:00:00Z"\n'
+        }
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A chart dependency is declared with a version."""
+        raise ValueError("a Helm dependency needs a version")
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()

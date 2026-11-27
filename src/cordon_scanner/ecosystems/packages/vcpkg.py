@@ -24,6 +24,7 @@ import dataclasses
 import json
 import posixpath
 import re
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from cordon_scanner.ecosystems.archive_shapes import NoArchive
@@ -366,6 +367,26 @@ class VcpkgEcosystem(BaseEcosystem):
     records_integrity = False
     """No vcpkg file records a port's hash: each version is pinned by git-tree in the registry's
     version database, at the baseline commit."""
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A manifest depending on these ports, each overridden to this version: `{path: content}`."""
+        manifest = {
+            "name": "check",
+            "version": "0.0.0",
+            "dependencies": [name for name, _ in pins],
+            "overrides": [{"name": name, "version": version} for name, version in pins],
+        }
+        return {"vcpkg.json": json.dumps(manifest)}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A manifest depending on these ports with no version: `{path: content}`."""
+        return {
+            "vcpkg.json": json.dumps(
+                {"name": "check", "version": "0.0.0", "dependencies": list(names)}
+            )
+        }
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()

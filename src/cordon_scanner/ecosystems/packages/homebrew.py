@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.ecosystems.archive_shapes import BottleArchive
@@ -868,6 +869,17 @@ class HomebrewEcosystem(BaseEcosystem):
     # A formula or cask in the tree does not take the place of the one a Brewfile names: an
     # unqualified name resolves from Homebrew's own taps first.
     defines_members = False
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A Brewfile.lock.json recording these formulae at these versions: `{path: content}`."""
+        entries = {name: {"version": version} for name, version in pins}
+        return {"Brewfile.lock.json": json.dumps({"entries": {"brew": entries}})}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A Brewfile naming these formulae: `{path: content}`."""
+        return {"Brewfile": "".join(f'brew "{name}"\n' for name in names)}
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()

@@ -22,6 +22,7 @@ this module reads dependencies only.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.ecosystems.archive_shapes import ActionArchive
@@ -441,6 +442,21 @@ class GitHubActionsEcosystem(BaseEcosystem):
     registry_hosts: frozenset[str] = frozenset({"github.com"})
     records_integrity = False
     """A tag records no hash; a commit SHA pins one, and is kept as the record's integrity."""
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A workflow using these actions at these refs: `{path: content}`."""
+        steps = "".join(f"      - uses: {name}@{version}\n" for name, version in pins)
+        return {
+            ".github/workflows/check.yml": (
+                f"on: push\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n{steps}"
+            )
+        }
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """An action is used at a ref, so a name alone is no project."""
+        raise ValueError("an action is used at a version: a tag, a branch or a commit")
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()

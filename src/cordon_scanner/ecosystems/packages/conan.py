@@ -27,6 +27,7 @@ import ast
 import dataclasses
 import json
 import re
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
@@ -739,6 +740,22 @@ class ConanEcosystem(BaseEcosystem):
     )
     lockfile_globs: tuple[str, ...] = ("**/conan.lock",)
     registry_hosts: frozenset[str] = frozenset({"center.conan.io", "center2.conan.io", "conan.io"})
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A conan.lock requiring these packages at these versions: `{path: content}`."""
+        lock = {
+            "version": "0.5",
+            "requires": [f"{name}/{version}" for name, version in pins],
+            "build_requires": [],
+            "python_requires": [],
+        }
+        return {"conan.lock": json.dumps(lock)}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A Conan requirement is `name/version`."""
+        raise ValueError("a Conan requirement needs a version: name/version")
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()
