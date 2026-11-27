@@ -58,6 +58,29 @@ class Coverage:
         return frozenset(e for e in EcosystemRegistry.BY_ID if EcosystemRegistry.get(e) is not None)
 
     @staticmethod
+    def popular_lists() -> frozenset[str]:
+        """Every ecosystem the refresh lists from its registry's own popularity signal, or its whole index where the
+        registry ranks nothing, and whose list is shipped: the names look-alikes and the name-signal measurement are held against."""
+        import importlib.util
+
+        from support import ROOT
+
+        spec = importlib.util.spec_from_file_location(
+            "refresh_package_intel", ROOT / "scripts/refresh/refresh_package_intel.py"
+        )
+        assert spec is not None and spec.loader is not None
+        refresh = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(refresh)
+        data = ROOT / "src/cordon_scanner/intel/data"
+        # A ranked list is `<ecosystem>.txt` (also an allowlist of real names); a registry with no ranking ships a
+        # strided sample of its whole index as `<ecosystem>.index.txt`, which nothing loads as an allowlist.
+        return frozenset(
+            e
+            for e in refresh.SOURCES
+            if (data / f"{e}.txt").is_file() or (data / f"{e}.index.txt").is_file()
+        )
+
+    @staticmethod
     def previous_release() -> frozenset[str]:
         from cordon_scanner.sources.previous import PreviousRelease
 
@@ -235,6 +258,7 @@ class Features:
             Coverage.provenance_reasons,
         ),
         "version ordering for advisory ranges": (Coverage.version_order, dict),
+        "popular package lists": (Coverage.popular_lists, dict),
         "advisory sources (OSV or the upstream project)": (Coverage.advisory_sources, dict),
         "campaign fingerprints": (Coverage.campaign_fingerprints, dict),
         "the previous release from the registry archive": (Coverage.previous_release, dict),
@@ -265,6 +289,7 @@ class Features:
             "SBOM package-URL ingest",
             "MCP package check",
             "name-signal readers",
+            "popular package lists",
             "agent hook install recognition",
             "fixer (lockfile fix)",
             "device attestation splitters",

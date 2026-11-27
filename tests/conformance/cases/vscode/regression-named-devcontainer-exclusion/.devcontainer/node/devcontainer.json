@@ -1,0 +1,9 @@
+{
+	"name": "node",
+	"image": "mcr.microsoft.com/devcontainers/javascript-node:20",
+	"customizations": {
+		"vscode": {
+			"extensions": ["-dbaeumer.vscode-eslint", "streetsidesoftware.code-spell-checker"]
+		}
+	}
+}
