@@ -155,6 +155,14 @@ class TestSbomIngestion:
                 "1.0",
             ),
             ("pkg:github/actions/checkout@v4", "actions", "actions/checkout", "v4"),
+            (
+                "pkg:vscode-extension/ms-python/python@2024.18.0",
+                "vscode",
+                "ms-python.python",
+                "2024.18.0",
+            ),
+            ("pkg:vscode/GitHub/copilot@1.2.3", "vscode", "github.copilot", "1.2.3"),
+            ("pkg:openvsx/redhat/java@1.30.0", "vscode", "redhat.java", "1.30.0"),
         ],
     )
     def test_package_urls_name_packages_as_their_ecosystems_do(
@@ -166,6 +174,14 @@ class TestSbomIngestion:
             name,
             version,
         )
+
+    def test_a_maven_component_belongs_to_a_gradle_project_as_well(self) -> None:
+        parsed = PackageUrl.parse("pkg:maven/org.jetbrains.kotlin/kotlin-stdlib@2.0.21?type=jar")
+        assert parsed is not None and parsed.ecosystems == ("maven", "gradle")
+
+    def test_a_type_no_ecosystem_owns_belongs_to_none(self) -> None:
+        parsed = PackageUrl.parse("pkg:generic/openssl@3.0.0")
+        assert parsed is not None and parsed.ecosystems == ()
 
     @pytest.mark.conformance("x", "x.sbom")
     def test_cyclonedx_hashes_licences_scope_and_graph(self) -> None:

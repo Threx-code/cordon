@@ -69,7 +69,11 @@ class PackageUrl:
         ),
         "docker": "image",
         "oci": "image",
+        **dict.fromkeys(("vscode-extension", "vscode", "openvsx"), "dotted"),
     }
+    #: Ecosystems whose components a tool writes under another ecosystem's purl type: a Gradle build's artefacts are
+    #: Maven coordinates, so a `pkg:maven/` component belongs to a Gradle project as well.
+    ALSO_SERVES: ClassVar[dict[str, tuple[str, ...]]] = {"maven": ("gradle",)}
     ECOSYSTEMS: ClassVar[dict[str, str]] = {
         "npm": "npm",
         "pypi": "pypi",
@@ -99,6 +103,9 @@ class PackageUrl:
         "julia": "julia",
         "opam": "opam",
         "vcpkg": "vcpkg",
+        "vscode-extension": "vscode",
+        "vscode": "vscode",
+        "openvsx": "vscode",
     }
 
     @staticmethod
@@ -124,6 +131,12 @@ class PackageUrl:
         return PackageUrl.ECOSYSTEMS.get(self.type)
 
     @property
+    def ecosystems(self) -> tuple[str, ...]:
+        """Every ecosystem the component belongs to: its own, and those that write it under this purl type."""
+        own = PackageUrl.ECOSYSTEMS.get(self.type)
+        return (own, *PackageUrl.ALSO_SERVES.get(self.type, ())) if own else ()
+
+    @property
     def package_name(self) -> str:
         """The name the ecosystem itself uses: `@scope/name`, `group:artifact`, a module path."""
         if not self.namespace:
@@ -134,6 +147,9 @@ class PackageUrl:
         if form == "name":
             # The namespace is the distribution or channel; the package's own name is the name.
             return self.name
+        if form == "dotted":
+            # An editor extension is `publisher.name`, the editor's own identifier, compared in lower case.
+            return f"{self.namespace}.{self.name}".lower()
         if form == "image":
             host = self.qualifiers.get("repository_url", "").split("/", 1)[0]
             return (

@@ -157,7 +157,8 @@ class More:
     def sbom_ingest(cls) -> frozenset[str]:
         from cordon_scanner.engine.sbom_ingest import PackageUrl
 
-        return cls.ids(PackageUrl.ECOSYSTEMS.values())
+        served = [e for also in PackageUrl.ALSO_SERVES.values() for e in also]
+        return cls.ids([*PackageUrl.ECOSYSTEMS.values(), *served])
 
     @classmethod
     def mcp_packages(cls) -> frozenset[str]:
