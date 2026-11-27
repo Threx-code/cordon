@@ -496,6 +496,7 @@ class PackageIntelRefresh:
                 break
         return names, source
 
+    @staticmethod
     def pub_dev() -> tuple[list[tuple[str, int]], str]:
         """pub.dev, for Dart and Flutter, in popularity order.
 
