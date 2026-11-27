@@ -26,6 +26,7 @@ import io
 import json
 import re
 import zipfile
+from collections.abc import Mapping
 from typing import ClassVar
 
 from cordon_scanner.intel.provenance._ed25519 import Ed25519
@@ -116,8 +117,21 @@ class OpenVsxSignature:
 
     # -- the package -----------------------------------------------------------------------------------------
 
+    MAX_ENTRIES: ClassVar[int] = 20_000
+    MAX_UNPACKED: ClassVar[int] = 512 << 20
+
     @classmethod
-    def check(cls, name: str, version: str, integrity: str | None) -> ModuleCheck:
+    def signed_members(cls, package: bytes) -> dict[str, str]:
+        """Each file of a package, by its name in the archive, with the SHA-256 of its bytes."""
+        with zipfile.ZipFile(io.BytesIO(package)) as archive:
+            infos = [i for i in archive.infolist() if not i.is_dir()]
+            if len(infos) > cls.MAX_ENTRIES or sum(i.file_size for i in infos) > cls.MAX_UNPACKED:
+                raise ValueError("a package larger than any extension")
+            return {i.filename: hashlib.sha256(archive.read(i)).hexdigest() for i in infos}
+
+    @classmethod
+    def _fetched(cls, name: str, version: str) -> tuple[bytes, bytes, str | None] | ModuleCheck:
+        """The registry's package, its signature archive and the key id it names; or the answer when it cannot be had."""
         from cordon_scanner.intel.registries.openvsx import API, FILE_HOSTS, OpenVsx
         from cordon_scanner.intel.registries.registry_http import RegistryHttp
         from cordon_scanner.intel.registries.registry_request import RegistryRequest
@@ -138,4 +152,42 @@ class OpenVsxSignature:
             sigzip = RegistryRequest.fetch_bytes(link, lambda host: host in FILE_HOSTS)
         except (RegistryError, OSError, ValueError) as exc:
             return ModuleCheck("unverifiable", f"Open VSX could not be asked: {exc}")
-        return cls.verify(archive.data, sigzip, cls.key_id(files.get("publicKey")))
+        return archive.data, sigzip, cls.key_id(files.get("publicKey"))
+
+    @classmethod
+    def check(cls, name: str, version: str, integrity: str | None) -> ModuleCheck:
+        fetched = cls._fetched(name, version)
+        if isinstance(fetched, ModuleCheck):
+            return fetched
+        return cls.verify(*fetched)
+
+    @classmethod
+    def compare(cls, name: str, version: str, files: Mapping[str, str]) -> ModuleCheck:
+        """Whether the files of an extension in hand (name in the package -> SHA-256) are the files Open VSX signed for
+        `name` `version`: the registry's package is verified first, then every file in hand is looked up in it.
+        Only what is in hand is judged: a file the signed package has and the copy lacks is not reported."""
+        fetched = cls._fetched(name, version)
+        if isinstance(fetched, ModuleCheck):
+            return fetched
+        package, sigzip, key = fetched
+        signed = cls.verify(package, sigzip, key)
+        if signed.outcome != "verified":
+            return signed
+        try:
+            known = cls.signed_members(package)
+        except (zipfile.BadZipFile, ValueError, OSError) as exc:
+            return ModuleCheck("unverifiable", f"the signed package could not be read: {exc}")
+        changed = sorted(n for n, digest in files.items() if n in known and known[n] != digest)
+        added = sorted(n for n in files if n not in known)
+        if not changed and not added:
+            return ModuleCheck("verified", f"every file is as Open VSX signed {name} {version}")
+        shown = [
+            *(f"{n} (changed)" for n in changed),
+            *(f"{n} (not in the signed package)" for n in added),
+        ]
+        more = f" and {len(shown) - 5} more" if len(shown) > 5 else ""
+        return ModuleCheck(
+            "invalid",
+            f"{len(changed)} file(s) differ from and {len(added)} are absent from what Open VSX signed for {name} {version}: "
+            f"{', '.join(shown[:5])}{more}",
+        )

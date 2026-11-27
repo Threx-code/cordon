@@ -1352,6 +1352,7 @@
   "test_hackage_tuf.py": "intel/provenance",
   "test_nuget_signature.py": "intel/provenance",
   "test_openvsx_signature.py": "intel/provenance",
+  "test_vendored_extension.py": "intel/provenance",
   "test_gosumdb.py": "intel/provenance",
   "test_helm_provenance.py": "intel/provenance",
   "test_terraform_provenance.py": "intel/provenance",
