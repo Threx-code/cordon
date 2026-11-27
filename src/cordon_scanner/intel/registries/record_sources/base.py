@@ -58,6 +58,8 @@ class Document:
     """A record is not made without a required document; an optional one that is missing is passed as None."""
     needs_token: bool = False
     """A document only the host's authenticated API serves (a commit date): fetched only when a token is configured."""
+    array: bool = False
+    """The document is a JSON array (RubyGems' version list): handed to the record as the list itself."""
 
 
 @dataclass(frozen=True)
@@ -241,11 +243,14 @@ class RecordFetch:
                         else body.decode("utf-8", "replace")
                     )
                 else:
-                    found[document.url] = (
-                        RegistryClient._fetch(document.url)
-                        if document.kind == "json"
-                        else RegistryHttp.text(document.url)
-                    )
+                    if document.kind != "json":
+                        found[document.url] = RegistryHttp.text(document.url)
+                    elif document.array:
+                        found[document.url] = RegistryClient._fetch(document.url, array=True)[
+                            "items"
+                        ]
+                    else:
+                        found[document.url] = RegistryClient._fetch(document.url)
             except PackageNotFound:
                 if document.required:
                     return False

@@ -31,7 +31,7 @@ class RubygemsSource(RecordSource):
     def documents(self, name: str, version: str) -> tuple[Document, ...]:
         quoted = urllib.parse.quote(name, safe="")
         return (
-            Document(f"{API}/versions/{quoted}.json"),
+            Document(f"{API}/versions/{quoted}.json", array=True),
             Document(f"{API}/gems/{quoted}.json", required=False),
             Document(f"{API}/gems/{quoted}/owners.json", required=False),
         )
