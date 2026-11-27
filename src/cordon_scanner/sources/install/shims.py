@@ -39,7 +39,7 @@ class Shims:
         "dotnet": "nuget", "dart": "pub", "flutter": "pub", "conda": "conda", "mamba": "conda",
         "composer": "composer", "mvn": "maven", "terraform": "terraform", "tofu": "terraform",
         "helm": "helm", "ansible-galaxy": "ansible", "mix": "hex",
-        "bazel": "bazel", "bazelisk": "bazel", "julia": "julia", "nix": "nix", "swift": "swift",
+        "bazel": "bazel", "bazelisk": "bazel", "julia": "julia", "nix": "nix", "swift": "swift", "Rscript": "cran", "R": "cran",
     }  # fmt: skip
 
     #: An ecosystem with no install tool, and why. Only where the thing itself does not exist.
