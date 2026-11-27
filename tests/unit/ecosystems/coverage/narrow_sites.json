@@ -345,13 +345,6 @@
  },
  {
   "ids": [
-   "npm",
-   "pypi"
-  ],
-  "site": "src/cordon_scanner/intel/advisories/advisory_text.py::APPLIES_TO#0"
- },
- {
-  "ids": [
    "cocoapods",
    "conan",
    "conda",

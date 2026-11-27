@@ -176,6 +176,14 @@ class More:
 
         return cls.ids(AdvisoryTextSymbols.APPLIES_TO)
 
+    @staticmethod
+    def advisory_text_reasons() -> dict[str, str]:
+        from cordon_scanner.intel.advisories.advisory_text import AdvisoryTextSymbols, NoSymbols
+
+        return {
+            e: r.reason for e, r in AdvisoryTextSymbols.RULES.items() if isinstance(r, NoSymbols)
+        }
+
     @classmethod
     def malware_dataset(cls) -> frozenset[str]:
         from cordon_scanner.intel.malware.malware_sources import MalwareSources
@@ -283,7 +291,7 @@ class Features:
         "release history (when each release was published)": (More.release_history, dict),
         "registry facts client": (More.registry_facts, dict),
         "package-URL scan targets": (More.package_url_targets, More.package_url_reasons),
-        "advisory-text symbols": (More.advisory_text, dict),
+        "advisory-text symbols": (More.advisory_text, More.advisory_text_reasons),
         "malware dataset": (More.malware_dataset, dict),
         "SBOM package-URL ingest": (More.sbom_ingest, dict),
         "MCP package check": (More.mcp_packages, dict),
@@ -301,7 +309,6 @@ class Features:
     BUILDING: ClassVar[frozenset[str]] = frozenset(
         {
             # Not yet built for every ecosystem:
-            "advisory-text symbols",
             "SBOM package-URL ingest",
             "MCP package check",
             "name-signal readers",

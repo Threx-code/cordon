@@ -1342,6 +1342,7 @@
   "test_formats.py": "detect/binary",
   "test_not_a_pickle.py": "detect/binary",
   "test_function_reachability.py": "intel/advisories",
+  "test_advisory_text_every_ecosystem.py": "ecosystems/coverage",
   "test_gem_extension_hooks.py": "engine/pipeline",
   "test_git_source.py": "sources",
   "test_gitfetch.py": "intel/provenance",
