@@ -6,6 +6,14 @@ Cabal runs with a private `--config-file` that names that repository and no othe
 to its signed SHA-256 and scanned; anything else is `unknown package`, at the solve, before a download is possible (there is no remote).
 The user's own cabal config and extra repositories are therefore not used for a guarded install. Each package's latest .cabal revision
 comes from the verified index, so the build matches what Hackage would serve.
+
+Cabal's shared store (`~/.cabal/store`) cannot hand back code other than the tarball scanned: a unit's id is a hash of its inputs, and one
+input is the SHA-256 of the source tarball (cabal-install 3.14.1.1, `Distribution/Client/PackageHash.hs`: `pkgHashSourceHash` in
+`PackageHashInputs`, written into the hash as `entry "src" showHashValue pkgHashSourceHash`; `ProjectPlanning.hs` fills it with
+`readFileHashValue tarball` for a repository that publishes no hashes, as this one). Shown in the `haskell` image with the network off:
+split-0.2.5.1 built from the real tarball is store unit `...-117f4e87...`; the same name and version from a tarball with one comment
+added is rebuilt as a different unit, `...-f8edb595...`. What the hash does not include is the revised .cabal beside the tarball; a revision
+changes bounds and metadata, and the solver's choice of dependencies is part of the hash.
 """
 
 from __future__ import annotations
