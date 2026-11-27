@@ -131,9 +131,9 @@ class More:
 
     @classmethod
     def registry_facts(cls) -> frozenset[str]:
-        from cordon_scanner.intel.registries.registry_hosts import HOSTS
+        from cordon_scanner.intel.registries.registry_client import RegistryClient
 
-        return cls.ids(HOSTS)
+        return cls.ids(RegistryClient.CLIENTS)
 
     @classmethod
     def package_url_targets(cls) -> frozenset[str]:
@@ -261,7 +261,6 @@ class Features:
     BUILDING: ClassVar[frozenset[str]] = frozenset(
         {
             # Not yet built for every ecosystem:
-            "registry facts client",
             "advisory-text symbols",
             "SBOM package-URL ingest",
             "MCP package check",

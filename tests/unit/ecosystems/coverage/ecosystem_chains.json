@@ -87,10 +87,6 @@
  "src/cordon_scanner/intel/registries/private_registries.py::matching": [
   "image"
  ],
- "src/cordon_scanner/intel/registries/registry_client.py::_cached_facts": [
-  "npm",
-  "pypi"
- ],
  "src/cordon_scanner/intel/registries/registry_client.py::attestation_payload": [
   "gradle",
   "image",
