@@ -56,6 +56,38 @@ class PackageHelpers:
         return buffer.getvalue()
 
 
+class TestEveryEcosystemHasAPackageUrlOrAReason:
+    def test_each_ecosystem_is_a_type_or_has_its_reason(self) -> None:
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+        named = set(PackageTarget.TYPES.values()) | set(PackageTarget.NOT_PURL_TYPES)
+        assert set(EcosystemRegistry.BY_ID) | {"vscode"} <= named
+
+    def test_a_reason_is_for_an_ecosystem_that_is_no_type(self) -> None:
+        assert not set(PackageTarget.NOT_PURL_TYPES) & set(PackageTarget.TYPES.values())
+        assert all(
+            len(why) >= 60 and why.endswith(".") for why in PackageTarget.NOT_PURL_TYPES.values()
+        )
+
+    def test_a_target_reaches_the_verified_archive_of_its_ecosystem(self, monkeypatch) -> None:
+        from cordon_scanner.intel.base import PackageArchive
+        from cordon_scanner.intel.registries.archive_sources.table import ArchiveSources
+
+        asked = []
+
+        def archive(ecosystem, name, version):
+            asked.append((ecosystem, name, version))
+            return PackageArchive(
+                ecosystem, name, str(version), "x.vsix", b"PK\x05\x06" + b"\0" * 18
+            )
+
+        monkeypatch.setattr(ArchiveSources, "package_archive", staticmethod(archive))
+        target = PackageTarget.parse("pkg:vscode-extension/ms-python/python@2024.0.0")
+        with target.fetched() as path:
+            assert path.name.endswith(".vsix")
+        assert asked == [("vscode", "ms-python.python", "2024.0.0")]
+
+
 class TestParsingPackageUrls:
     @pytest.mark.parametrize(
         "purl, expected",
@@ -70,6 +102,31 @@ class TestParsingPackageUrls:
             ("pkg:gem/rack@3.1.6", ("rubygems", "rack", "3.1.6")),
             ("pkg:nuget/Newtonsoft.Json@13.0.1", ("nuget", "Newtonsoft.Json", "13.0.1")),
             ("pkg:PyPI/six@1.16.0", ("pypi", "six", "1.16.0")),
+            ("pkg:githubactions/actions/checkout@v4", ("actions", "actions/checkout", "v4")),
+            ("pkg:ansible/community/general@8.0.0", ("ansible", "community.general", "8.0.0")),
+            ("pkg:bazel/rules_cc@0.0.9", ("bazel", "rules_cc", "0.0.9")),
+            ("pkg:cocoapods/Alamofire@5.8.0", ("cocoapods", "Alamofire", "5.8.0")),
+            ("pkg:composer/monolog/monolog@3.5.0", ("composer", "monolog/monolog", "3.5.0")),
+            ("pkg:conan/zlib@1.3", ("conan", "zlib", "1.3")),
+            ("pkg:conda/numpy@1.26.0", ("conda", "numpy", "1.26.0")),
+            ("pkg:cran/ggplot2@3.4.4", ("cran", "ggplot2", "3.4.4")),
+            ("pkg:hackage/aeson@2.2.0.0", ("hackage", "aeson", "2.2.0.0")),
+            ("pkg:helm/bitnami/nginx@15.0.0", ("helm", "bitnami/nginx", "15.0.0")),
+            ("pkg:brew/libyaml@0.2.5", ("homebrew", "libyaml", "0.2.5")),
+            ("pkg:julia/JSON@0.21.4", ("julia", "JSON", "0.21.4")),
+            ("pkg:nix/nixos/nixpkgs@24.05", ("nix", "nixos/nixpkgs", "24.05")),
+            ("pkg:opam/dune@3.12.0", ("opam", "dune", "3.12.0")),
+            ("pkg:swift/apple/swift-log@1.5.0", ("swift", "apple/swift-log", "1.5.0")),
+            ("pkg:terraform/hashicorp/aws@5.0.0", ("terraform", "hashicorp/aws", "5.0.0")),
+            ("pkg:vcpkg/zlib@1.3", ("vcpkg", "zlib", "1.3")),
+            (
+                "pkg:vscode-extension/ms-python/python@2024.0.0",
+                ("vscode", "ms-python.python", "2024.0.0"),
+            ),
+            (
+                "pkg:maven/org.apache.commons/commons-lang3@3.14.0",
+                ("maven", "org.apache.commons:commons-lang3", "3.14.0"),
+            ),
         ],
     )
     def test_supported_forms(self, purl, expected) -> None:
@@ -81,7 +138,10 @@ class TestParsingPackageUrls:
         [
             ("pkg:npm/left-pad@1.3.0?repository_url=https://evil.example", "qualifiers"),
             ("pkg:npm/left-pad@1.3.0#lib/index.js", "qualifiers"),
-            ("pkg:conan/zlib@1.3", "cannot fetch"),
+            ("pkg:deb/debian/curl@7.88", "cannot fetch"),
+            ("pkg:ansible/acme@1.0", "namespace and name"),
+            ("pkg:vscode-extension/ms-python@1.0", "namespace and name"),
+            ("pkg:conan/a/b/c@1.0", "not a valid"),
             ("pkg:npm/", "not a valid"),
             ("pkg:pypi/a/b@1.0", "not a valid"),
             ("pkg:npm/../../etc/passwd@1", "not a valid"),
@@ -157,7 +217,7 @@ class TestFetchingAndScanning:
         assert "--online" in capsys.readouterr().err
 
     def test_a_malformed_package_url_is_a_usage_error(self, capsys) -> None:
-        assert CommandLine.run(["scan", "pkg:conan/zlib@1", "--online"]) == 3
+        assert CommandLine.run(["scan", "pkg:deb/x@1", "--online"]) == 3
 
     def test_a_package_that_cannot_be_fetched_is_never_clean(self, archive, capsys) -> None:
         archive(RegistryError("registry.npmjs.org has no package by that name"))

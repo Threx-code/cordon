@@ -135,6 +135,12 @@ class More:
 
         return cls.ids(PackageTarget.TYPES.values())
 
+    @staticmethod
+    def package_url_reasons() -> Mapping[str, str]:
+        from cordon_scanner.sources.package import PackageTarget
+
+        return PackageTarget.NOT_PURL_TYPES
+
     @classmethod
     def advisory_text(cls) -> frozenset[str]:
         from cordon_scanner.intel.advisories.advisory_text import AdvisoryTextSymbols
@@ -231,7 +237,7 @@ class Features:
         "archive fetch (digest verified)": (More.archive_fetch, dict),
         "release history (when each release was published)": (More.release_history, dict),
         "registry facts client": (More.registry_facts, dict),
-        "package-URL scan targets": (More.package_url_targets, dict),
+        "package-URL scan targets": (More.package_url_targets, More.package_url_reasons),
         "advisory-text symbols": (More.advisory_text, dict),
         "malware dataset": (More.malware_dataset, More.malware_dataset_reasons),
         "SBOM package-URL ingest": (More.sbom_ingest, dict),
@@ -251,7 +257,6 @@ class Features:
             # Not yet built for every ecosystem:
             "look-alike names",
             "registry facts client",
-            "package-URL scan targets",
             "advisory-text symbols",
             "SBOM package-URL ingest",
             "MCP package check",
