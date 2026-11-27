@@ -166,7 +166,8 @@ class Tuf:
             raise TufError(
                 f"the {name} metadata is not signed by enough of the keys the root names"
             )
-        return document["signed"]
+        signed: dict[str, Any] = document["signed"]
+        return signed
 
     @staticmethod
     def expired(signed: dict[str, Any], now: dt.datetime) -> bool:

@@ -416,7 +416,12 @@ class PrivateRegistryQueries(Protocol):
         resolved_from: str | None,
     ) -> PrivateRegistry | None: ...
     def facts(
-        self, registry: PrivateRegistry, ecosystem: str, name: str, version: str | None
+        self,
+        registry: PrivateRegistry,
+        ecosystem: str,
+        name: str,
+        version: str | None,
+        source: str | None = None,
     ) -> PackageFacts: ...
 
 

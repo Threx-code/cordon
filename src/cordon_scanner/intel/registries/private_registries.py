@@ -250,7 +250,8 @@ class PrivateRegistries:
             raise RegistryError(f"{registry.variable} is not set, so {registry.host} was not asked")
         own = getattr(PrivateRegistries, f"_{ecosystem}", None)
         if own is not None:
-            return own(registry, credential, name, version)
+            facts: PackageFacts = own(registry, credential, name, version)
+            return facts
         alias = ALIASES.get(ecosystem)
         if alias is None:
             raise RegistryError(
