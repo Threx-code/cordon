@@ -292,9 +292,12 @@ What a dependency update adds, compared with a git revision.
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ target                    repository directory (default: .)                │
 │ --base REF                the revision to compare with, e.g. origin/main   │
-│ --format {text,markdown,json,github}                                       │
+│ --format {text,markdown,json,github,codeclimate,bitbucket}                 │
 │                           github: one ::error annotation per blocking      │
-│                           reason, titled with its reason code              │
+│                           reason, titled with its reason code;             │
+│                           codeclimate: GitLab's Code Quality report of the │
+│                           same; bitbucket: a Code Insights report and its  │
+│                           annotations                                      │
 │ --online                  fetch each changed package's old and new         │
 │                           releases from its registry, verify, scan and     │
 │                           compare them                                     │
