@@ -1520,7 +1520,6 @@
   "test_package_commands.py": "sources",
   "test_package_formats.py": "intel/advisories",
   "test_package_intel.py": "intel/registries",
-  "test_malware_sources.py": "intel/malware",
   "test_one_user_agent.py": "foundation",
   "test_package_list_sources.py": "intel/registries",
   "test_refresh_generic_agent.py": "intel/registries",
