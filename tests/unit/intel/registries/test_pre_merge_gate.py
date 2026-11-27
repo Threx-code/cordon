@@ -264,7 +264,10 @@ class TestGitLabAndBitbucket:
         found = [a for a in document["annotations"] if a["summary"].startswith("R100 ")]
         assert found, "no R100 annotation"
         annotation = found[0]
-        assert annotation["severity"] == "CRITICAL" and annotation["annotation_type"] == "VULNERABILITY"
+        assert (
+            annotation["severity"] == "CRITICAL"
+            and annotation["annotation_type"] == "VULNERABILITY"
+        )
         assert annotation["path"] == "package-lock.json" and len(annotation["summary"]) <= 450
 
     @pytest.mark.parametrize(("form", "empty"), [("codeclimate", []), ("bitbucket", "PASSED")])
