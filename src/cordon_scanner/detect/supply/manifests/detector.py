@@ -79,7 +79,10 @@ class ManifestDetector(BaseDetector):
 
         # Read before the manifest lookup: a wheel's METADATA and an sdist's PKG-INFO are a
         # release's own metadata without being dependency manifests.
-        name_risk = list(IdentityFindings.name_risk_findings(unit, ctx))
+        name_risk = [
+            *IdentityFindings.name_risk_findings(unit, ctx),
+            *IdentityFindings.own_name_findings(unit, ctx),
+        ]
         named = EcosystemRegistry.manifest_ecosystem(unit.path)
         # Or a file a manifest includes, whatever its name (`-r extra.in`): the graph followed it
         # as the installer does, so every manifest rule reads it too (item 37). The include's
@@ -129,7 +132,6 @@ class ManifestDetector(BaseDetector):
         findings.extend(LifecycleFindings.lifecycle_findings(manifest, unit, ctx))
         findings.extend(IdentityFindings.confusion_findings(manifest, unit, ctx))
         findings.extend(SourceFindings.source_findings(manifest, unit, ctx))
-        findings.extend(IdentityFindings.own_name_findings(manifest, unit, ctx, ecosystem_id))
         findings.extend(name_risk)
         findings.extend(SourceFindings.wrapper_findings(unit, ctx))
         return findings

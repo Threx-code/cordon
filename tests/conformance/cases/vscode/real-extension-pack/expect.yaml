@@ -1,0 +1,18 @@
+# The extension.vsixmanifest of vscjava.vscode-java-pack 0.31.2 (MIT), taken from its .vsix on
+# Open VSX (the .vsix's sha256 911168da03c2d416b83a77cea9e52e396c616e73d8e2b5a58ebf4dd508667cca matched
+# the registry's published digest when it was captured). An
+# extension pack: installing it installs each extension it packs.
+kinds: [real-world, valid]
+covers:
+  - file:extension.vsixmanifest
+  - vscode.vsix-identity
+  - vscode.vsix-dependencies
+  - UNI-07
+dependencies:
+  - {name: redhat.java, ecosystem: vscode, dependency_type: runtime, manifest_location: {path: extension.vsixmanifest}}
+  - {name: vscjava.vscode-java-debug, ecosystem: vscode}
+  - {name: vscjava.vscode-java-test, ecosystem: vscode}
+  - {name: vscjava.vscode-maven, ecosystem: vscode}
+  - {name: vscjava.vscode-gradle, ecosystem: vscode}
+  - {name: vscjava.vscode-java-dependency, ecosystem: vscode}
+only: true

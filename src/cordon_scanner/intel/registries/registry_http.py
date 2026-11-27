@@ -21,6 +21,7 @@ from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.intel.registries import registry_request as base
 from cordon_scanner.intel.registries.challenge import Challenge
+from cordon_scanner.intel.registries.private_route import PrivateRoute
 from cordon_scanner.intel.registries.registry_hosts import (
     _MAX_GZIP_BYTES,
     Redirected,
@@ -37,7 +38,10 @@ class RegistryHttp:
         url: str, *, accept: str = "application/json", headers: Mapping[str, str] | None = None
     ) -> bytes:
         """One bounded, redirect-free, credential-free answer, decompressed when the server sent
-        gzip (NuGet's registration pages always are), with the decompressed size bounded too."""
+        gzip (NuGet's registration pages always are), with the decompressed size bounded too. Under
+        a private route (`PrivateRoute`) the address is the private registry's and the operator's
+        credential goes with it; any other address is refused."""
+        url, credential = PrivateRoute.apply(url)
         parsed = urllib.parse.urlsplit(url)
         if parsed.scheme != "https":
             raise RegistryError(f"refusing a non-HTTPS registry URL: {parsed.scheme}")
@@ -48,6 +52,7 @@ class RegistryHttp:
                 "Accept": accept,
                 "Accept-Encoding": "gzip",
                 **(headers or {}),
+                **credential,
             },
             method="GET",
         )

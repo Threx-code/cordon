@@ -93,6 +93,11 @@ PROVENANCE_ECOSYSTEMS: Final = frozenset(
         "helm",
         "ansible",
         "terraform",
+        "gomod",
+        "actions",
+        "nuget",
+        "hackage",
+        "vscode",
     }
 )
 #: Registries whose own documentation, read on 2026-11-25, states no build-provenance attestation or signature a client can fetch and verify
@@ -181,7 +186,8 @@ INTEGRITY_MISMATCH_RULES: Final = frozenset(
         "SUSPECT.LOCKFILE.INTEGRITY_MALFORMED.001",
     }
 )
-PROVENANCE_INVALID_RULES: Final = frozenset({"VULNERABLE.PROVENANCE.INVALID.001"})
+PROVENANCE_INVALID_RULE: Final = "VULNERABLE.PROVENANCE.INVALID.001"
+PROVENANCE_INVALID_RULES: Final = frozenset({PROVENANCE_INVALID_RULE})
 
 
 class EcosystemFacts(Protocol):

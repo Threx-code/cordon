@@ -39,6 +39,7 @@ from cordon_scanner.ecosystems.infra.references import (
     PublicRegistries,
     ReferenceGrammar,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -570,6 +571,10 @@ class ImageEcosystem(BaseEcosystem):
     """Container images a build pulls, a Compose file runs, and a Kubernetes manifest deploys."""
 
     id = "image"
+    own_name = OwnName(
+        ("blobs/sha256/*", "?" * 64 + ".json"),
+        readers=(("blobs/sha256/*", "image_config"), ("?" * 64 + ".json", "image_config")),
+    )
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         return name.rsplit("/", 1)[0] if "/" in name else None

@@ -37,6 +37,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -725,6 +726,7 @@ class ConanEcosystem(BaseEcosystem):
     """Conan 1 and 2: recipes, consumers, locks, profiles and remotes."""
 
     id = "conan"
+    own_name = OwnName(("conanfile.py",))
     purl_type = "conan"
     manifest_globs: tuple[str, ...] = (
         "**/conanfile.txt",

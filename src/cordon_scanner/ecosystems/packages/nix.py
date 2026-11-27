@@ -31,6 +31,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Scope
 
 if TYPE_CHECKING:
@@ -801,6 +802,7 @@ class NixEcosystem(BaseEcosystem):
     """Flake inputs and hand-pinned sources."""
 
     id = "nix"
+    own_name = OwnName(("package.nix",), readers=(("package.nix", "nix_pname"),))
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         return name.rsplit("/", 1)[0] if "/" in name else None

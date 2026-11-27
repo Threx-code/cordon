@@ -46,9 +46,10 @@ class UpstreamArchive(ArchiveSource):
     REDIRECTS: ClassVar[int] = (
         3  # a release download on a code host answers with a redirect to its storage
     )
+    PUBLIC: ClassVar[bool] = True
 
     def allows(self, host: str) -> bool:
-        return PublicHost.ok(host)
+        return PublicHost.named(host)
 
     @staticmethod
     def https(url: str) -> bool:

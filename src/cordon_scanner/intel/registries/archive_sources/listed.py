@@ -101,10 +101,11 @@ class HelmArchive(ArchiveSource):
     ecosystem: ClassVar[str] = "helm"
     HOSTS: ClassVar[frozenset[str]] = frozenset()
     REDIRECTS: ClassVar[int] = 3
+    PUBLIC: ClassVar[bool] = True
     API: ClassVar[str] = "https://artifacthub.io/api/v1/packages"
 
     def allows(self, host: str) -> bool:
-        return PublicHost.ok(host)
+        return PublicHost.named(host)
 
     def documents(self, name: str, version: str) -> tuple[Document, ...]:
         asked = HelmSource().documents(name, version)

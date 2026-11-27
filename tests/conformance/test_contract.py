@@ -134,14 +134,31 @@ class Coverage:
         return [(c.id, *Coverage.of(c.id)) for c in CONTRACTS]
 
 
+#: Ecosystems whose missing clauses are cross-ecosystem features still being built for them: each is a strict
+#: expected failure, so it fails the suite the moment it is complete until its entry comes off. Never a
+#: place to park a clause: what is missing here is a row of the feature guard's BUILDING list too.
+BUILDING: dict[str, str] = {}
+
+
 class TestTheContract:
-    def test_every_ecosystem_meets_the_required_coverage(self) -> None:
-        short = [
-            f"{eco}: {rate:.1%} -- missing {', '.join(missing)}"
-            for eco, rate, missing in Coverage.table()
-            if rate < REQUIRED_COVERAGE
-        ]
-        assert not short, "\n".join(short)
+    @pytest.mark.parametrize(
+        "ecosystem",
+        [
+            pytest.param(
+                c.id,
+                marks=[pytest.mark.xfail(strict=True, reason=BUILDING[c.id])]
+                if c.id in BUILDING
+                else [],
+            )
+            for c in CONTRACTS
+        ],
+    )
+    def test_every_ecosystem_meets_the_required_coverage(self, ecosystem: str) -> None:
+        rate, missing = Coverage.of(ecosystem)
+        assert rate >= REQUIRED_COVERAGE, f"{ecosystem}: {rate:.1%} -- missing {', '.join(missing)}"
+
+    def test_what_is_being_built_is_a_contract(self) -> None:
+        assert set(BUILDING) <= {c.id for c in CONTRACTS}
 
     def test_not_applicable_always_says_why(self) -> None:
         for contract in CONTRACTS:
@@ -191,7 +208,6 @@ class TestEveryRegisteredEcosystemHasAContract:
     """Every ecosystem the registry holds, built in or added by a plugin, is held to a contract: an ecosystem cannot be
     added without one, and one without proofs fails `test_every_ecosystem_meets_the_required_coverage`."""
 
-    @pytest.mark.xfail(strict=True, reason="the editor-extension contract is being built")
     def test_the_contracts_are_the_registry(self) -> None:
         from cordon_scanner.ecosystems.registry import EcosystemRegistry
 

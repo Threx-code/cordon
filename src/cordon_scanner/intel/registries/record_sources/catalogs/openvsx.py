@@ -72,7 +72,11 @@ class OpenVsxSource(RecordSource):
         ]
         total: int = max(sizes, default=0)
         offset = read
-        if read >= total or offset >= self.PAGE * self.MAX_PAGES:
+        # A page that added nothing would be asked for again at the same offset: stop there.
+        empty = any(
+            isinstance(d, dict) and not (d.get("extensions") or []) for d in documents.values()
+        )
+        if empty or read >= total or offset >= self.PAGE * self.MAX_PAGES:
             return ()
         return (self.page(ident, offset),)
 

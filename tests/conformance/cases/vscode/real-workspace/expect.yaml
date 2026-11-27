@@ -1,0 +1,21 @@
+# microsoft/vscode's own .vscode/extensions.json (MIT) and microsoft/vscode-dev-containers'
+# python-3 devcontainer.json (MIT), in a named configuration folder as the editor allows. Neither
+# file names a version: every extension is recorded unresolved, never guessed.
+kinds: [real-world, valid]
+covers:
+  - file:.vscode/extensions.json
+  - file:.devcontainer/python/devcontainer.json
+  - vscode.recommendations
+  - vscode.devcontainer
+  - vscode.case-insensitive
+  - UNI-01
+  - UNI-02
+  - UNI-04
+  - UNI-06
+  - UNI-08
+  - UNI-10
+dependencies:
+  - {name: github.vscode-pull-request-github, ecosystem: vscode, resolved_version: null, dependency_type: runtime, manifest_location: {path: .vscode/extensions.json}}
+  - {name: oxc.oxc-vscode, ecosystem: vscode}
+  - {name: ms-python.python, ecosystem: vscode, manifest_location: {path: .devcontainer/python/devcontainer.json}}
+  - {name: ms-python.vscode-pylance, ecosystem: vscode}

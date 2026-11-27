@@ -10,7 +10,7 @@ import io
 import re
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.detect.base import (
     FileUnit,
@@ -35,6 +35,10 @@ if TYPE_CHECKING:
 
 class History:
     """A package's release history, as evidence about the scanned release."""
+
+    #: Open VSX is the registry of editor extensions, which go by one ecosystem id, `vscode`; the old spelling is still read.
+    EXTENSION: ClassVar[str] = "vscode"
+    DISTRIBUTION_ALIASES: ClassVar[dict[str, str]] = {"openvsx": EXTENSION}
 
     @staticmethod
     def registry_facts(units: Sequence[FileUnit], root: Path | None = None) -> dict[str, float]:
@@ -62,13 +66,14 @@ class History:
     ) -> tuple[str, str, str] | None:
         """(ecosystem, name, version) of the release a published archive is, for
         `ReleaseHistory`: the manifest its format names, read the way that format writes it."""
+        distribution = History.DISTRIBUTION_ALIASES.get(distribution, distribution)
         if RegistryFacts.identity_in_metadata(distribution):
             identities, _ = ReleaseChecks.release_identities(units)
             for ecosystem, name, version, _ in identities:
                 if ecosystem == distribution:
                     return ecosystem, name, version
             return None
-        if distribution == "openvsx":
+        if distribution == History.EXTENSION:
             manifest = next((u for u in units if u.path.endswith("!extension/package.json")), None)
             try:
                 document = (
@@ -87,7 +92,7 @@ class History:
             )
             if all(isinstance(v, str) and v for v in (publisher, extension, release)):
                 # As published: the API redirects any other spelling to this one.
-                return "openvsx", f"{publisher}.{extension}", str(release)
+                return History.EXTENSION, f"{publisher}.{extension}", str(release)
             return None
         pattern = RegistryFacts.release_manifest(distribution)
         if pattern is None:
@@ -270,13 +275,13 @@ class History:
     @staticmethod
     def history_distribution(units: list[FileUnit]) -> str:
         """The format release history knows this archive as: a published package's, or Open VSX
-        for an editor extension (`.vsix`), which is not otherwise graded as a package."""
+        for an editor extension (`.vsix`: `vscode`), which is not otherwise graded as a package."""
         package = PackageFormat.of(units)
         if package:
             return package
         tops = {u.path.partition("!")[2] for u in units if u.path.count("!") == 1}
         if "extension.vsixmanifest" in tops and "extension/package.json" in tops:
-            return "openvsx"
+            return History.EXTENSION
         return ""
 
 

@@ -34,6 +34,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Scope
 from cordon_scanner.foundation.network.failures import NetworkFailure
@@ -293,6 +294,7 @@ class HelmEcosystem(BaseEcosystem):
     """Chart dependencies."""
 
     id = "helm"
+    own_name = OwnName(("Chart.yaml",))
     purl_type = "helm"
     # requirements.yaml is Ansible's name too: an apiVersion v1 chart's is read through the
     # Chart.yaml beside it, not claimed by name.

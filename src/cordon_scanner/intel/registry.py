@@ -58,6 +58,20 @@ ROLES: dict[str, tuple[str, str]] = {
         "YOUNG_DEPENDENCY_DAYS",
     ),
     "BazelProvenance": ("cordon_scanner.intel.provenance.bazel_provenance", "BazelProvenance"),
+    "GoSumdb": ("cordon_scanner.intel.provenance.gosumdb", "GoSumdb"),
+    "HackageTuf": ("cordon_scanner.intel.provenance.releases.hackage_tuf", "HackageTuf"),
+    "OpenVsxSignature": (
+        "cordon_scanner.intel.provenance.releases.openvsx_signature",
+        "OpenVsxSignature",
+    ),
+    "NuGetSignature": (
+        "cordon_scanner.intel.provenance.releases.nuget_signature",
+        "NuGetSignature",
+    ),
+    "GitHubAttestations": (
+        "cordon_scanner.intel.provenance.releases.github_attestations",
+        "GitHubAttestations",
+    ),
     "GitHubRepository": ("cordon_scanner.intel.provenance.github_repository", "GitHubRepository"),
     "HelmProvenance": ("cordon_scanner.intel.provenance.helm_provenance", "HelmProvenance"),
     "TerraformProvenance": (
@@ -123,6 +137,7 @@ if TYPE_CHECKING:
         EstablishedNames,
         Exploitations,
         ExploitLikelihoods,
+        ExtensionSignatures,
         FeedOverlays,
         FeedStatus,
         HallucinationLookup,
@@ -169,6 +184,7 @@ if TYPE_CHECKING:
     from cordon_scanner.intel.provenance import (
         github_repository as _intel_provenance_github_repository,
     )
+    from cordon_scanner.intel.provenance import gosumdb as _intel_provenance_gosumdb
     from cordon_scanner.intel.provenance import helm_provenance as _intel_provenance_helm_provenance
     from cordon_scanner.intel.provenance import (
         homebrew_provenance as _intel_provenance_homebrew_provenance,
@@ -176,6 +192,18 @@ if TYPE_CHECKING:
     from cordon_scanner.intel.provenance import openpgp as _intel_provenance_openpgp
     from cordon_scanner.intel.provenance import (
         terraform_provenance as _intel_provenance_terraform_provenance,
+    )
+    from cordon_scanner.intel.provenance.releases import (
+        github_attestations as _intel_provenance_releases_github_attestations,
+    )
+    from cordon_scanner.intel.provenance.releases import (
+        hackage_tuf as _intel_provenance_releases_hackage_tuf,
+    )
+    from cordon_scanner.intel.provenance.releases import (
+        openvsx_signature as _intel_provenance_releases_openvsx_signature,
+    )
+    from cordon_scanner.intel.provenance.releases import (
+        nuget_signature as _intel_provenance_releases_nuget_signature,
     )
     from cordon_scanner.intel.registries import installers as _intel_registries_installers
     from cordon_scanner.intel.registries import names as _intel_registries_names
@@ -228,6 +256,15 @@ if TYPE_CHECKING:
 
     # The detectors' ports (intel/base.py, review 27 F2).
     BazelProvenance: ModuleProvenance = _intel_provenance_bazel_provenance.BazelProvenance
+    GoSumdb: ModuleProvenance = _intel_provenance_gosumdb.GoSumdb
+    GitHubAttestations: ModuleProvenance = (
+        _intel_provenance_releases_github_attestations.GitHubAttestations
+    )
+    HackageTuf: ModuleProvenance = _intel_provenance_releases_hackage_tuf.HackageTuf
+    OpenVsxSignature: ExtensionSignatures = (
+        _intel_provenance_releases_openvsx_signature.OpenVsxSignature
+    )
+    NuGetSignature: ModuleProvenance = _intel_provenance_releases_nuget_signature.NuGetSignature
     GitHubRepository: RepositoryHeads = _intel_provenance_github_repository.GitHubRepository
     HelmProvenance: ChartProvenance = _intel_provenance_helm_provenance.HelmProvenance
     TerraformProvenance: ProviderProvenance = (
@@ -312,7 +349,10 @@ __all__ = [
     "ExploitedCatalogue",
     "FeedClient",
     "FeedStore",
+    "GitHubAttestations",
     "GitHubRepository",
+    "GoSumdb",
+    "HackageTuf",
     "HallucinatedPackages",
     "HelmProvenance",
     "HomebrewProvenance",
@@ -321,7 +361,9 @@ __all__ = [
     "LiveMcp",
     "LiveMcpError",
     "McpApprovals",
+    "NuGetSignature",
     "OfficialInstallers",
+    "OpenVsxSignature",
     "OpenPgp",
     "OsvImport",
     "PackageNotFound",

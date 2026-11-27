@@ -226,6 +226,16 @@ class TestEditorExtensionsRecord:
         )
         assert record.prior_versions == 12
 
+    def test_paging_follows_until_read_and_stops_on_an_empty_page(self) -> None:
+        source = RecordSources.of("vscode")
+        assert source is not None
+        name = "acme.tool"
+        first = {"totalSize": 150, "extensions": [{"namespace": "acme", "name": "tool"}] * 100}
+        (following,) = source.followed(name, "", {"p0": first})
+        assert "offset=100" in following.url
+        empty = {"totalSize": 150, "extensions": []}
+        assert source.followed(name, "", {"p0": first, "p1": empty}) == ()
+
     def test_a_name_that_is_not_an_extension_id_asks_nothing(self) -> None:
         source = RecordSources.of("vscode")
         assert source is not None

@@ -53,7 +53,8 @@ from __future__ import annotations
 
 import re
 import urllib.parse
-from typing import TYPE_CHECKING, ClassVar
+from types import MappingProxyType
+from typing import TYPE_CHECKING, ClassVar, Final
 
 from cordon_scanner.detect.base import (
     BaseDetector,
@@ -132,22 +133,50 @@ REGISTRY_ECOSYSTEMS = frozenset(
         "bazel",
         "homebrew",
         "image",
+        "vscode",
     }
 )
 """Ecosystems whose registry this can ask. Kept beside the client's own host
 map so a manifest for an ecosystem with no configured registry is skipped
 before a request is built rather than after it fails."""
 
-CONFUSABLE_ECOSYSTEMS = frozenset({"npm", "pypi", "cargo", "rubygems", "nuget", "pub", "hex"})
-"""Where a name missing from the public registry is a dependency-confusion risk.
+CONFUSION: Final = {
+    "actions": "",
+    "ansible": "",
+    "bazel": "A module enters the Bazel Central Registry only by a pull request its maintainers review, so a stranger cannot publish a name unreviewed.",
+    "cargo": "",
+    "cocoapods": "",
+    "composer": "Since Composer 2 a custom repository is canonical for every package it holds, so Packagist is never consulted for a name a private repository serves.",
+    "conan": "ConanCenter takes a recipe only by a pull request to conan-center-index that its maintainers review, so a stranger cannot publish a name unreviewed.",
+    "conda": "A conda package name is unique only within a channel, so a name missing from the channel asked says nothing about the channel the project installs from.",
+    "cran": "CRAN accepts a new package only after its maintainers review the submission by hand, so a stranger cannot publish a name unreviewed.",
+    "gomod": "A Go module path is a URL its owner controls, so a stranger cannot register a private module path on the public proxy.",
+    "gradle": "Gradle resolves from Maven repositories, whose public index verifies group ownership by domain: a private artefact cannot be shadowed by a stranger.",
+    "hackage": "",
+    "helm": "A chart name is unique only within its repository, which the dependency names by URL: there is no public namespace to claim.",
+    "hex": "",
+    "homebrew": "A formula enters homebrew-core only by a pull request its maintainers review; a private formula lives in a tap and is named tap/formula.",
+    "image": "",
+    "julia": "",
+    "maven": "Maven Central verifies group ownership by domain, so a private artefact absent from the public index cannot be shadowed by a stranger registering the name.",
+    "nix": "A flake input is a git or tarball URL or a registry alias, not a name in a namespace anyone can claim.",
+    "npm": "",
+    "nuget": "",
+    "opam": "opam-repository takes a new package only by a pull request its maintainers review, so a stranger cannot publish a name unreviewed.",
+    "pub": "",
+    "pypi": "",
+    "rubygems": "",
+    "swift": "A Swift dependency is a git URL; names exist only in a registry the organisation runs itself, and there is no public Swift registry to shadow.",
+    "terraform": "",
+    "vcpkg": "A port enters the public vcpkg registry only by a pull request its maintainers review; a private port lives in an overlay or a registry of its own.",
+    "vscode": "",
+}
+"""Where a name missing from the public registry is a dependency-confusion risk, for every ecosystem: "" where a stranger can claim the
+name first-come (a missing name is then reported), and the reason it is not where one cannot. Written, not skipped."""
 
-Not Composer either: since Composer 2 a custom repository is canonical for every package it
-holds, so Packagist is never consulted for a name a private repository serves.
+CONFUSABLE_ECOSYSTEMS = frozenset(e for e, why in CONFUSION.items() if not why)
+NOT_CONFUSABLE: Final = MappingProxyType({e: why for e, why in CONFUSION.items() if why})
 
-Not Go and not Maven. A Go module path is a URL its owner controls and Maven Central verifies
-group ownership by domain, so a private module or artefact absent from the public index cannot
-be shadowed by a stranger registering the name - and both are absent for every private module
-in existence, so reporting them would bury the finding where it means something."""
 
 MIN_ATTESTED_SIBLINGS = 3
 """How many *earlier* attested releases make an unattested one worth reporting.
@@ -324,6 +353,7 @@ class RegistryDetector(BaseDetector):
                         dependency.ecosystem,
                         dependency.name,
                         dependency.version or (dependency.integrity if by_digest else None),
+                        source=dependency.resolved_from,
                     )
                     if private is not None
                     else RegistryClient.facts(

@@ -1,17 +1,22 @@
 """Editor extensions (VS Code Marketplace and Open VSX): the extensions a workspace asks for, as dependencies.
 
 ```
-  .vscode/extensions.json          `recommendations`: extension ids a workspace asks its editor to install
-  .devcontainer/devcontainer.json  `customizations.vscode.extensions` (and the older top-level `extensions`):
-  .devcontainer.json               ids installed into the container, `publisher.name` or `publisher.name@version`
-  extension.vsixmanifest           an extension's own manifest inside its .vsix: its identity (publisher, name,
-                                   version) and the extensions it depends on or packs
+  .vscode/extensions.json              `recommendations`: extension ids a workspace asks its editor to install
+                                       (`unwantedRecommendations` names ones it asks not to: never dependencies)
+  <name>.code-workspace                `extensions.recommendations`, the same list for a multi-root workspace
+  .devcontainer/devcontainer.json,     `customizations.vscode.extensions` (and the older top-level `extensions`):
+  .devcontainer/<name>/devcontainer.json,  ids installed into the container, `publisher.name` or
+  .devcontainer.json                   `publisher.name@version`; `-publisher.name` asks for one NOT to be installed
+  .gitpod.yml                          `vscode.extensions`: Open VSX ids, `id@version`, or the URL of a .vsix
+  extension.vsixmanifest               an extension's own manifest inside its .vsix: its identity (publisher,
+                                       name, version) and the extensions it depends on or packs
 ```
 
-An extension is `publisher.name`, compared case-insensitively as the editor does. Only a devcontainer entry
-written `@version`, or an extension's own manifest, names a version: a recommendation is an id only, so it
-carries no version, and nothing is guessed for it. An extension runs in the editor with the user's rights the
-moment it is enabled: every one is a runtime dependency.
+An extension is `publisher.name`, compared case-insensitively as the editor does. Only an entry written
+`@version`, or an extension's own manifest, names a version: a recommendation is an id only, so it carries no
+version, and nothing is guessed for it. A .vsix named by URL is an archive source: its name is the file's, its
+source the URL. An extension runs in the editor with the user's rights the moment it is enabled: every one is a
+runtime dependency.
 """
 
 from __future__ import annotations
@@ -24,6 +29,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Scope
 
 if TYPE_CHECKING:
@@ -52,15 +58,39 @@ class ExtensionId:
         return f"{publisher}.{name}", version.strip()
 
 
+class VsixUrl:
+    """A .vsix named by an https URL (a Gitpod entry): `(file name without .vsix, "")`, or None."""
+
+    @staticmethod
+    def parse(value: Any) -> tuple[str, str] | None:
+        from urllib.parse import urlsplit
+
+        if not isinstance(value, str) or len(value) > 2048 or "://" not in value:
+            return None
+        parts = urlsplit(value.strip())
+        stem = parts.path.rsplit("/", 1)[-1]
+        if parts.scheme != "https" or not parts.hostname or not stem.lower().endswith(".vsix"):
+            return None
+        name = stem[: -len(".vsix")].lower()
+        return (name, "") if name and set(name) <= ExtensionId.CHARS | {"."} else None
+
+
 class VsCodeEcosystem(BaseEcosystem):
     """Editor extensions, read from the files that name them."""
 
     id = "vscode"
+    own_name = OwnName(
+        ("extension/package.json",),
+        readers=(("extension/package.json", "extension_manifest"),),
+    )
     purl_type = "vscode-extension"
     manifest_globs: tuple[str, ...] = (
         "**/.vscode/extensions.json",
+        "**/*.code-workspace",
         "**/.devcontainer/devcontainer.json",
+        "**/.devcontainer/*/devcontainer.json",
         "**/.devcontainer.json",
+        "**/.gitpod.yml",
         "**/extension.vsixmanifest",
     )
     lockfile_globs: tuple[str, ...] = ()
@@ -90,34 +120,79 @@ class VsCodeEcosystem(BaseEcosystem):
             path=content.path, ecosystem=self.id, parse_error="extensions have no lock file"
         )
 
-    def parse_manifest(self, content: FileContent) -> Manifest:
-        if content.path.rsplit("/", 1)[-1] == "extension.vsixmanifest":
-            return self._vsix(content)
-        from cordon_scanner.foundation.formats.jsonc import Jsonc
+    #: Each file kind by its name's ending, the reader that takes its document, and the field read.
+    READERS: ClassVar[tuple[tuple[str, str, str], ...]] = (
+        ("extension.vsixmanifest", "_vsix", "ExtensionDependencies"),
+        (".code-workspace", "_workspace", "extensions.recommendations"),
+        ("extensions.json", "_recommendations", "recommendations"),
+        (".gitpod.yml", "_gitpod", "vscode.extensions"),
+        ("devcontainer.json", "_devcontainer", "customizations.vscode.extensions"),
+    )
 
-        data = Jsonc.loads(content.text)
+    def parse_manifest(self, content: FileContent) -> Manifest:
+        reader = next(
+            (r for r in self.READERS if content.path.rsplit("/", 1)[-1].endswith(r[0])), None
+        )
+        if reader is None:
+            return BaseEcosystem._err(content, self.id, "not a file that names extensions")
+        if reader[1] == "_vsix":
+            return self._vsix(content)
+        read = getattr(self, reader[1])
+        try:
+            data = self._yaml(content) if content.path.endswith(".yml") else self._jsonc(content)
+        except ValueError as exc:
+            return BaseEcosystem._err(content, self.id, str(exc))
         if not isinstance(data, dict):
-            return BaseEcosystem._err(content, self.id, "not a JSON object")
-        if content.path.endswith("extensions.json"):
-            entries, field = data.get("recommendations"), "recommendations"
-        else:
-            vscode = (
-                (data.get("customizations") or {}).get("vscode")
-                if isinstance(data.get("customizations"), dict)
-                else None
-            )
-            entries = (
-                vscode.get("extensions") if isinstance(vscode, dict) else data.get("extensions")
-            )
-            field = "customizations.vscode.extensions" if isinstance(vscode, dict) else "extensions"
+            return BaseEcosystem._err(content, self.id, "not a mapping")
+        entries, field = read(data, reader[2])
         return Manifest(
             path=content.path, ecosystem=self.id, dependencies=self._declared(entries, field)
         )
 
+    @staticmethod
+    def _jsonc(content: FileContent) -> Any:
+        from cordon_scanner.foundation.formats.jsonc import Jsonc
+
+        data = Jsonc.loads(content.text)
+        if data is None and content.text.strip():
+            raise ValueError("not a JSON object")
+        return data
+
+    @staticmethod
+    def _yaml(content: FileContent) -> Any:
+        from cordon_scanner.foundation.formats.datayaml import DataYaml
+
+        return DataYaml.load(content.text, source=content.path)
+
+    @staticmethod
+    def _recommendations(data: dict[str, Any], field: str) -> tuple[Any, str]:
+        return data.get("recommendations"), field
+
+    @staticmethod
+    def _workspace(data: dict[str, Any], field: str) -> tuple[Any, str]:
+        extensions = data.get("extensions")
+        return (extensions.get("recommendations") if isinstance(extensions, dict) else None), field
+
+    @staticmethod
+    def _gitpod(data: dict[str, Any], field: str) -> tuple[Any, str]:
+        vscode = data.get("vscode")
+        return (vscode.get("extensions") if isinstance(vscode, dict) else None), field
+
+    @staticmethod
+    def _devcontainer(data: dict[str, Any], field: str) -> tuple[Any, str]:
+        customizations = data.get("customizations")
+        vscode = customizations.get("vscode") if isinstance(customizations, dict) else None
+        if isinstance(vscode, dict):
+            return vscode.get("extensions"), field
+        return data.get("extensions"), "extensions"
+
     def _declared(self, entries: Any, field: str) -> tuple[DeclaredDependency, ...]:
         found: dict[str, DeclaredDependency] = {}
         for entry in entries if isinstance(entries, list) else ():
-            parsed = ExtensionId.parse(entry)
+            if isinstance(entry, str) and entry.strip().startswith("-"):
+                continue  # `-publisher.name`: asks for the extension NOT to be installed
+            archive = VsixUrl.parse(entry)
+            parsed = archive or ExtensionId.parse(entry)
             if parsed is None or parsed[0] in found:
                 continue
             ident, version = parsed
@@ -127,6 +202,7 @@ class VsCodeEcosystem(BaseEcosystem):
                 scope=Scope.RUNTIME,
                 field_name=field,
                 ecosystem=self.id,
+                source=entry.strip() if archive else None,
             )
         return tuple(found.values())
 
@@ -155,4 +231,4 @@ class VsCodeEcosystem(BaseEcosystem):
         )
 
 
-__all__ = ["ExtensionId", "VsCodeEcosystem"]
+__all__ = ["ExtensionId", "VsCodeEcosystem", "VsixUrl"]

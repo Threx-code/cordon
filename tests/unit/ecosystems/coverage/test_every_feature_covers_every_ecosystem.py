@@ -58,6 +58,29 @@ class Coverage:
         return frozenset(e for e in EcosystemRegistry.BY_ID if EcosystemRegistry.get(e) is not None)
 
     @staticmethod
+    def popular_lists() -> frozenset[str]:
+        """Every ecosystem the refresh lists from its registry's own popularity signal, or its whole index where the
+        registry ranks nothing, and whose list is shipped: the names look-alikes and the name-signal measurement are held against."""
+        import importlib.util
+
+        from support import ROOT
+
+        spec = importlib.util.spec_from_file_location(
+            "refresh_package_intel", ROOT / "scripts/refresh/refresh_package_intel.py"
+        )
+        assert spec is not None and spec.loader is not None
+        refresh = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(refresh)
+        data = ROOT / "src/cordon_scanner/intel/data"
+        # A ranked list is `<ecosystem>.txt` (also an allowlist of real names); a registry with no ranking ships a
+        # strided sample of its whole index as `<ecosystem>.index.txt`, which nothing loads as an allowlist.
+        return frozenset(
+            e
+            for e in refresh.SOURCES
+            if (data / f"{e}.txt").is_file() or (data / f"{e}.index.txt").is_file()
+        )
+
+    @staticmethod
     def previous_release() -> frozenset[str]:
         from cordon_scanner.sources.previous import PreviousRelease
 
@@ -68,6 +91,18 @@ class Coverage:
         from cordon_scanner.detect.supply.registries.detector import CONFUSABLE_ECOSYSTEMS
 
         return frozenset(CONFUSABLE_ECOSYSTEMS)
+
+    @staticmethod
+    def private_registries() -> frozenset[str]:
+        from cordon_scanner.intel.registries.private_registries import PrivateRegistries
+
+        return PrivateRegistries.supported()
+
+    @staticmethod
+    def confusable_reasons() -> Mapping[str, str]:
+        from cordon_scanner.detect.supply.registries.detector import NOT_CONFUSABLE
+
+        return NOT_CONFUSABLE
 
     @staticmethod
     def release_compare() -> frozenset[str]:
@@ -119,9 +154,9 @@ class More:
 
     @classmethod
     def registry_facts(cls) -> frozenset[str]:
-        from cordon_scanner.intel.registries.registry_hosts import HOSTS
+        from cordon_scanner.intel.registries.registry_client import RegistryClient
 
-        return cls.ids(HOSTS)
+        return cls.ids(RegistryClient.CLIENTS)
 
     @classmethod
     def package_url_targets(cls) -> frozenset[str]:
@@ -129,11 +164,25 @@ class More:
 
         return cls.ids(PackageTarget.TYPES.values())
 
+    @staticmethod
+    def package_url_reasons() -> Mapping[str, str]:
+        from cordon_scanner.sources.package import PackageTarget
+
+        return PackageTarget.NOT_PURL_TYPES
+
     @classmethod
     def advisory_text(cls) -> frozenset[str]:
         from cordon_scanner.intel.advisories.advisory_text import AdvisoryTextSymbols
 
         return cls.ids(AdvisoryTextSymbols.APPLIES_TO)
+
+    @staticmethod
+    def advisory_text_reasons() -> dict[str, str]:
+        from cordon_scanner.intel.advisories.advisory_text import AdvisoryTextSymbols, NoSymbols
+
+        return {
+            e: r.reason for e, r in AdvisoryTextSymbols.RULES.items() if isinstance(r, NoSymbols)
+        }
 
     @classmethod
     def malware_dataset(cls) -> frozenset[str]:
@@ -180,22 +229,57 @@ class More:
         )
 
     @classmethod
-    def own_name_findings(cls) -> frozenset[str]:
-        from cordon_scanner.detect.supply.manifests.identity_findings import IdentityFindings
+    def typosquat_targets(cls) -> frozenset[str]:
+        """The ecosystems the look-alike check has popular names to measure a slip against: the table it reads
+        (`PopularPackageNames.popular`), never a refreshed list, and never a `<ecosystem>.index.txt` sample."""
+        from cordon_scanner.intel.registry import PopularPackageNames
 
-        return cls.ids(IdentityFindings.OWN_NAME_MEASURED_ON)
+        return cls.ids(e for e in EcosystemRegistry.BY_ID if PopularPackageNames.popular(e))
+
+    @staticmethod
+    def typosquat_reasons() -> dict[str, str]:
+        """An ecosystem whose contract says look-alike names do not apply to it (UNI-13), with the contract's reason."""
+        from cordon_scanner.ecosystems.contract import CONTRACTS
+
+        return {c.id: c.not_applicable["UNI-13"] for c in CONTRACTS if "UNI-13" in c.not_applicable}
+
+    @classmethod
+    def own_name_findings(cls) -> frozenset[str]:
+        from cordon_scanner.ecosystems.own_names import OwnName
+
+        return cls.ids(
+            e.id for e in EcosystemRegistry.all_ecosystems() if isinstance(e.own_name, OwnName)
+        )
+
+    @classmethod
+    def own_name_reasons(cls) -> dict[str, str]:
+        from cordon_scanner.ecosystems.own_names import NoOwnName
+
+        return {
+            e.id: e.own_name.reason
+            for e in EcosystemRegistry.all_ecosystems()
+            if isinstance(e.own_name, NoOwnName)
+        }
 
     @classmethod
     def package_format(cls) -> frozenset[str]:
         return cls.ids(More.compared("cordon_scanner.engine.package_format", "of"))
 
     @classmethod
-    def private_registries(cls) -> frozenset[str]:
-        return cls.ids(More.compared("cordon_scanner.intel.registries.private_registries", "facts"))
-
-    @classmethod
     def agent_hook(cls) -> frozenset[str]:
-        return cls.ids(More.compared("cordon_scanner.cloud.agent.agent_hook", "of"))
+        from cordon_scanner.cloud.agent.agent_hook import AgentCalls, NotInstalled
+
+        return cls.ids(
+            e for e, i in AgentCalls.INSTALLERS.items() if not isinstance(i, NotInstalled)
+        )
+
+    @staticmethod
+    def agent_hook_reasons() -> dict[str, str]:
+        from cordon_scanner.cloud.agent.agent_hook import AgentCalls, NotInstalled
+
+        return {
+            e: i.reason for e, i in AgentCalls.INSTALLERS.items() if isinstance(i, NotInstalled)
+        }
 
     @classmethod
     def install_guard(cls) -> frozenset[str]:
@@ -228,48 +312,43 @@ class Features:
             Coverage.provenance_reasons,
         ),
         "version ordering for advisory ranges": (Coverage.version_order, dict),
+        "popular package lists": (Coverage.popular_lists, dict),
         "advisory sources (OSV or the upstream project)": (Coverage.advisory_sources, dict),
         "campaign fingerprints": (Coverage.campaign_fingerprints, dict),
         "the previous release from the registry archive": (Coverage.previous_release, dict),
-        "look-alike names": (Coverage.confusable_names, dict),
+        "look-alike names": (Coverage.confusable_names, Coverage.confusable_reasons),
         "old-versus-new release compare in the pre-merge gate": (Coverage.release_compare, dict),
         "archive fetch (digest verified)": (More.archive_fetch, dict),
         "release history (when each release was published)": (More.release_history, dict),
         "registry facts client": (More.registry_facts, dict),
-        "package-URL scan targets": (More.package_url_targets, dict),
-        "advisory-text symbols": (More.advisory_text, dict),
+        "package-URL scan targets": (More.package_url_targets, More.package_url_reasons),
+        "advisory-text symbols": (More.advisory_text, More.advisory_text_reasons),
         "malware dataset": (More.malware_dataset, dict),
         "SBOM package-URL ingest": (More.sbom_ingest, dict),
         "MCP package check": (More.mcp_packages, dict),
+        "typosquat (look-alike names)": (More.typosquat_targets, More.typosquat_reasons),
         "name-signal readers": (More.name_signals, dict),
-        "private registries": (More.private_registries, dict),
-        "agent hook install recognition": (More.agent_hook, dict),
+        "private registries": (Coverage.private_registries, dict),
+        "agent hook install recognition": (More.agent_hook, More.agent_hook_reasons),
         "install shims and planners": (More.install_guard, More.install_guard_reasons),
         "fixer (lockfile fix)": (More.fixer, dict),
         "device attestation splitters": (More.device_attestation, dict),
         "subject canonicalisation": (More.subjects, dict),
-        "manifest findings (own name)": (More.own_name_findings, dict),
+        "manifest findings (own name)": (More.own_name_findings, More.own_name_reasons),
         "package format sniffing": (More.package_format, dict),
     }
     #: Features being built now: expected to fail until they cover every ecosystem; the entry comes off when they do.
     BUILDING: ClassVar[frozenset[str]] = frozenset(
         {
             # Not yet built for every ecosystem:
-            "provenance (signed build attestations)",
-            "look-alike names",
-            "registry facts client",
-            "package-URL scan targets",
-            "advisory-text symbols",
-            "name-signal readers",
             "SBOM package-URL ingest",
             "MCP package check",
-            "private registries",
-            "agent hook install recognition",
+            "name-signal readers",
+            "popular package lists",
             "install shims and planners",
             "fixer (lockfile fix)",
             "device attestation splitters",
             "subject canonicalisation",
-            "manifest findings (own name)",
             "package format sniffing",
         }
     )

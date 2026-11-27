@@ -37,7 +37,7 @@ class ImageRef:
         parts = text.split("/")
         host = parts[0] if len(parts) > 1 and ("." in parts[0] or ":" in parts[0]) else ""
         registry, path = (host, parts[1:]) if host else (None, parts)
-        if registry is not None and not PublicHost.ok(registry.rsplit(":", 1)[0]):
+        if registry is not None and not PublicHost.named(registry.rsplit(":", 1)[0]):
             return None
         if registry is None and len(path) == 1:
             path = ["library", *path]
@@ -89,7 +89,7 @@ class ImageArchive(OciArchive):
         if found is None or not reference:
             return None
         try:
-            layout, _pull = RegistryImage(found[0], found[1]).pull(reference)
+            layout, _pull = RegistryImage(found[0], found[1], public_only=True).pull(reference)
         except RegistryImageError as exc:
             raise RegistryError(str(exc)) from exc
         weak = "" if reference.startswith("sha256:") else OCI_TAG
@@ -129,7 +129,9 @@ class HomebrewArchive(OciArchive):
             or reference.startswith("sha256:")
         ):
             return None
-        image = RegistryImage("ghcr.io", "homebrew/core/" + name.replace("@", "/"))
+        image = RegistryImage(
+            "ghcr.io", "homebrew/core/" + name.replace("@", "/"), public_only=True
+        )
         try:
             body, _media = image.manifest(reference)
             index = json.loads(body)

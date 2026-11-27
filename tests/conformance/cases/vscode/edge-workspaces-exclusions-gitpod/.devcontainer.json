@@ -1,0 +1,4 @@
+{
+	"image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+	"extensions": ["-ms-python.python", "esbenp.prettier-vscode@10.4.0", "esbenp.prettier-vscode"]
+}

@@ -14,6 +14,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 
 # Each `*Ecosystem` imported below from its own module (GitHub Actions, Bazel, CocoaPods, Composer,
 # Conan, Conda, CRAN, Gradle, Hex, NuGet, Pub, RubyGems, Swift) is re-exported where it always lived.
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
 
 class CargoEcosystem(BaseEcosystem):
     id = "cargo"
+    own_name = OwnName(("Cargo.toml",))
     purl_type = "cargo"
     manifest_globs: tuple[str, ...] = ("**/Cargo.toml", "**/.cargo/config.toml", "**/.cargo/config")
     lockfile_globs: tuple[str, ...] = ("**/Cargo.lock",)

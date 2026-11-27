@@ -247,6 +247,7 @@ ORDERED: dict[str, tuple[str, str]] = {
     "actions": ("v4", "v5"),
     "image": ("3.12.9-slim", "3.12.10-slim"),
     "bazel": ("0.0.9", "0.0.10"),
+    "vscode": ("0.9.1", "0.31.2"),
 }
 
 

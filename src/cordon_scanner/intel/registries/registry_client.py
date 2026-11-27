@@ -190,34 +190,73 @@ class RegistryClient:
         """
         return value if isinstance(value, dict) else {}
 
+    #: The reader that answers for each ecosystem: npm and PyPI have their own; every other ecosystem is read by `MoreRegistries`.
+    CLIENTS: ClassVar[dict[str, str]] = {
+        "actions": "more",
+        "ansible": "more",
+        "bazel": "more",
+        "cargo": "more",
+        "cocoapods": "more",
+        "composer": "more",
+        "conan": "more",
+        "conda": "more",
+        "cran": "more",
+        "gomod": "more",
+        "gradle": "more",
+        "hackage": "more",
+        "helm": "more",
+        "hex": "more",
+        "homebrew": "more",
+        "image": "more",
+        "julia": "more",
+        "maven": "more",
+        "nix": "more",
+        "npm": "npm",
+        "nuget": "more",
+        "opam": "more",
+        "pub": "more",
+        "pypi": "pypi",
+        "rubygems": "more",
+        "swift": "more",
+        "terraform": "more",
+        "vcpkg": "more",
+        "vscode": "more",
+    }
+
     @staticmethod
     @functools.lru_cache(maxsize=2048)
     def _cached_facts(
         ecosystem: str, name: str, version: str | None, source: str | None = None
     ) -> PackageFacts:
-        if ecosystem == "pypi":
-            return RegistryClient._pypi(name, version)
-        if ecosystem == "npm":
-            return RegistryClient._npm(name, version)
-        from cordon_scanner.intel.registries.more_registries import MoreRegistries
         from cordon_scanner.intel.registries.registry_hosts import ALIASES
 
-        if ecosystem in ALIASES:
-            # crates.io, RubyGems, NuGet, the Go proxy and Maven Central (G5).
-            facts = (
-                MoreRegistries.facts(ecosystem, name, version, source)
-                if source
-                else MoreRegistries.facts(ecosystem, name, version)
-            )
-            if ecosystem in RegistryClient._ATTESTED_SEPARATELY and version and not facts.yanked:
-                # Sigstore bundles published through trusted publishing; absent (404) for most.
-                try:
-                    attested = RegistryClient.attestation_payload(ecosystem, name, version)
-                except RegistryError:
-                    attested = None
-                facts = dataclasses.replace(facts, attested=attested is not None)
-            return facts
-        raise RegistryError(f"no registry configured for {ecosystem}")
+        reader = RegistryClient.CLIENTS.get(ecosystem) or RegistryClient.CLIENTS.get(
+            ALIASES.get(ecosystem, "")
+        )
+        if reader is None:
+            raise RegistryError(f"no registry configured for {ecosystem}")
+        if reader == "more":
+            return RegistryClient._more(ecosystem, name, version, source)
+        return getattr(RegistryClient, f"_{reader}")(name, version)  # type: ignore[no-any-return]
+
+    @staticmethod
+    def _more(ecosystem: str, name: str, version: str | None, source: str | None) -> PackageFacts:
+        from cordon_scanner.intel.registries.more_registries import MoreRegistries
+
+        # crates.io, RubyGems, NuGet, the Go proxy, Maven Central and the rest (G5).
+        facts = (
+            MoreRegistries.facts(ecosystem, name, version, source)
+            if source
+            else MoreRegistries.facts(ecosystem, name, version)
+        )
+        if ecosystem in RegistryClient._ATTESTED_SEPARATELY and version and not facts.yanked:
+            # Sigstore bundles published through trusted publishing; absent (404) for most.
+            try:
+                attested = RegistryClient.attestation_payload(ecosystem, name, version)
+            except RegistryError:
+                attested = None
+            facts = dataclasses.replace(facts, attested=attested is not None)
+        return facts
 
     @staticmethod
     def facts(

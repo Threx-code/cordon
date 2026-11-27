@@ -20,8 +20,7 @@ from datetime import datetime
 from typing import Any, ClassVar, Final
 
 from cordon_scanner.intel.base import PackageArchive
-from cordon_scanner.intel.registries.registry_client import RegistryError
-from cordon_scanner.intel.registries.registry_request import RegistryRequest
+from cordon_scanner.intel.registries.registry_request import RegistryError, RegistryRequest
 
 API: Final = "https://open-vsx.org/api"
 FILES: Final = "https://openvsx.eclipsecontent.org"
@@ -75,7 +74,7 @@ class OpenVsx:
         return out
 
     @classmethod
-    def _on_file_host(cls, url: Any) -> str:
+    def on_file_host(cls, url: Any) -> str:
         """An API file link (`/api/<ns>/<ext>/<version>/file/<name>`) as the file host serves it,
         with the publisher's own spelling: the file host is case-sensitive, the API is not."""
         prefix = f"{API}/"
@@ -97,10 +96,10 @@ class OpenVsx:
             f"{API}/{namespace}/{extension}/{urllib.parse.quote(version, safe='')}"
         )
         files = RegistryHttp.mapping(document.get("files"))
-        published = RegistryHttp.text(cls._on_file_host(files.get("sha256"))).split()
+        published = RegistryHttp.text(cls.on_file_host(files.get("sha256"))).split()
         if not published or not re.fullmatch(r"[0-9a-fA-F]{64}", published[0]):
             raise RegistryError(f"Open VSX publishes no SHA-256 for {name}@{version}")
-        download = cls._on_file_host(files.get("download"))
+        download = cls.on_file_host(files.get("download"))
         data = RegistryRequest.fetch_bytes(download, lambda host: host in FILE_HOSTS)
         if hashlib.sha256(data).hexdigest() != published[0].lower():
             raise RegistryError(f"{name}@{version} does not match the SHA-256 Open VSX publishes")

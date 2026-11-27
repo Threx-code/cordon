@@ -283,7 +283,7 @@ class TestTheScanAsksThem:
 
         asked: list[str] = []
 
-        def facts(registry, ecosystem, name, version):
+        def facts(registry, ecosystem, name, version, source=None):
             asked.append(f"{registry.host} {name} {version}")
             return PackageFacts(name=name, version=version, digests=("sha512-" + "B" * 86 + "==",))
 
@@ -357,3 +357,29 @@ class TestChallengeFieldLinear:
         start = time.perf_counter()
         Challenge.FIELD.findall("a" * 2_000_000)
         assert time.perf_counter() - start < 3
+
+
+class TestBasicNeedsAUserAndAToken:
+    def test_a_basic_secret_with_no_colon_is_refused_naming_the_variable_and_never_the_value(
+        self,
+    ) -> None:
+        from cordon_scanner.intel.registries.registry_client import RegistryError
+
+        with pytest.raises(RegistryError) as raised:
+            PrivateRegistries._authorization("just-a-token-value", "basic", "ACME_TOKEN")
+        assert "basic: needs user:token in ACME_TOKEN" in str(raised.value)
+        assert "just-a-token-value" not in str(raised.value)
+
+    def test_the_stated_and_the_unstated_schemes_otherwise_send_what_they_always_did(self) -> None:
+        import base64
+
+        assert (
+            PrivateRegistries._authorization("u:t", "basic", "V")
+            == "Basic " + base64.b64encode(b"u:t").decode()
+        )
+        assert (
+            PrivateRegistries._authorization("u:t", "", "V")
+            == "Basic " + base64.b64encode(b"u:t").decode()
+        )
+        assert PrivateRegistries._authorization("tok", "", "V") == "Bearer tok"
+        assert PrivateRegistries._authorization("u:t", "bearer", "V") == "Bearer u:t"

@@ -38,14 +38,8 @@
  "src/cordon_scanner/engine/isolation/expander.py::accept": [
   "image"
  ],
- "src/cordon_scanner/engine/pipeline/archive_stages.py::dependencies": [
-  "openvsx"
- ],
  "src/cordon_scanner/engine/pipeline/graph.py::resolve_maven_ranges": [
   "maven"
- ],
- "src/cordon_scanner/engine/pipeline/history.py::history_identity": [
-  "openvsx"
  ],
  "src/cordon_scanner/engine/pipeline/hooks.py::extension_entries": [
   "vscode"
@@ -90,17 +84,8 @@
  "src/cordon_scanner/intel/registries/openvsx.py::timeline": [
   "npm"
  ],
- "src/cordon_scanner/intel/registries/private_registries.py::facts": [
-  "image",
-  "npm",
-  "pypi"
- ],
  "src/cordon_scanner/intel/registries/private_registries.py::matching": [
   "image"
- ],
- "src/cordon_scanner/intel/registries/registry_client.py::_cached_facts": [
-  "npm",
-  "pypi"
  ],
  "src/cordon_scanner/intel/registries/registry_client.py::attestation_payload": [
   "gradle",

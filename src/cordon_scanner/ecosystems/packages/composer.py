@@ -29,6 +29,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
@@ -322,6 +323,7 @@ class ComposerAuth:
 
 class ComposerEcosystem(BaseEcosystem):
     id = "composer"
+    own_name = OwnName(("composer.json",))
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         return name.split("/", 1)[0] if "/" in name else None

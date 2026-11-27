@@ -1,0 +1,6 @@
+image: gitpod/workspace-full
+vscode:
+  extensions:
+    - svelte.svelte-vscode
+    - bradlc.vscode-tailwindcss@0.6.11
+    - https://example.com/releases/download/v1/acme-tools.vsix

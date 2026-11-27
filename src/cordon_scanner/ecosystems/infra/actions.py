@@ -30,6 +30,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import NoOwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
@@ -421,6 +422,9 @@ class GitHubActionsEcosystem(BaseEcosystem):
     """The actions and reusable workflows a repository's CI runs."""
 
     id = "actions"
+    own_name = NoOwnName(
+        "an action is named by the repository it is published from (`owner/repo`), which no file of the action states; the `name:` in action.yml is a display title (captured: actions/checkout action.yml)"
+    )
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         return name.split("/", 1)[0] if "/" in name else None

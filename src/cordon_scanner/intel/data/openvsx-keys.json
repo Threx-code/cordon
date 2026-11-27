@@ -1,0 +1,10 @@
+{
+ "purpose": "The keys Open VSX signs extension packages (.sigzip: Ed25519 over the .vsix) with",
+ "keys": [
+  {
+   "id": "14ccb407-4e79-41ed-be5a-6d608325c45a",
+   "spki": "MCowBQYDK2VwAyEAje+vAaSS1zHV5WHCJSa5UXvxRo6+yerEU3IEmtuEuF4=",
+   "source": "https://open-vsx.org/api/-/public-key/14ccb407-4e79-41ed-be5a-6d608325c45a, read 2026-11-26; every extension sampled that day (8 of 8) named this key"
+  }
+ ]
+}
