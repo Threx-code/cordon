@@ -10,7 +10,6 @@ import hashlib
 import http.client
 import json
 import mmap
-import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -38,9 +37,7 @@ class HackageIndex:
     CLOSING: ClassVar[int] = 1024
     BLOCK: ClassVar[int] = 512
     CHUNK: ClassVar[int] = 1 << 20
-    NAME: ClassVar[re.Pattern[bytes]] = re.compile(
-        rb"([A-Za-z0-9][A-Za-z0-9-]*)/([0-9][0-9.]*)/package\.json"
-    )
+    MAX_ENTRY: ClassVar[int] = 1 << 20
 
     @classmethod
     def ranged(cls, start: int, end: int) -> Iterable[bytes]:
@@ -108,11 +105,12 @@ class HackageIndex:
         )
 
     @classmethod
-    def targets(
-        cls, path: Path, wanted: set[tuple[str, str]]
-    ) -> dict[tuple[str, str], dict[str, str]]:
-        """For each wanted (name, version), the `hashes` of its tarball from the last `package.json` the index holds for it."""
-        found: dict[tuple[str, str], dict[str, str]] = {}
+    def entries(
+        cls, path: Path, wanted: set[tuple[str, str]], leaf: str
+    ) -> dict[tuple[str, str], bytes]:
+        """For each wanted (name, version), the data of the last `<name>/<version>/<leaf>` entry of the index (`package.json`, or
+        `<name>.cabal`: each revision of a package's .cabal file is a later entry); `<name>` in `leaf` is the package's name."""
+        found: dict[tuple[str, str], bytes] = {}
         with (
             path.open("rb") as handle,
             mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ) as data,
@@ -132,14 +130,24 @@ class HackageIndex:
                         "the Hackage index holds an entry Cordon cannot read"
                     ) from exc
                 body = at + cls.BLOCK
-                matched = cls.NAME.fullmatch(name)
-                if matched and size <= 1 << 16:
-                    key = (matched.group(1).decode(), matched.group(2).decode())
-                    if key in wanted:
-                        entry = cls.hashes(bytes(data[body : body + size]), key)
-                        if entry:
-                            found[key] = entry
+                parts = name.decode("utf-8", "replace").split("/")
+                if len(parts) == 3 and size <= cls.MAX_ENTRY:
+                    key = (parts[0], parts[1])
+                    if key in wanted and parts[2] == leaf.replace("<name>", parts[0]):
+                        found[key] = bytes(data[body : body + size])
                 at = body + (size + cls.BLOCK - 1) // cls.BLOCK * cls.BLOCK
+        return found
+
+    @classmethod
+    def targets(
+        cls, path: Path, wanted: set[tuple[str, str]]
+    ) -> dict[tuple[str, str], dict[str, str]]:
+        """For each wanted (name, version), the `hashes` of its tarball from the last `package.json` the index holds for it."""
+        found: dict[tuple[str, str], dict[str, str]] = {}
+        for key, text in cls.entries(path, wanted, "package.json").items():
+            entry = cls.hashes(text, key)
+            if entry:
+                found[key] = entry
         return found
 
     @staticmethod

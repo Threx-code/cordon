@@ -38,6 +38,18 @@ class InstallGuardCommand:
     #: The executable each tool runs, where its name here differs (`bundle` is Cordon's own command).
     EXECUTABLES: ClassVar[dict[str, str]] = {"bundler": "bundle"}
 
+    #: What a person should know about one tool before using it guarded, shown in its help.
+    NOTES: ClassVar[dict[str, str]] = {
+        "cabal": (
+            "cabal builds from a private repository of only the scanned packages (cabal.project.freeze names them), so your own "
+            "cabal config and extra repositories are not used for a guarded install; a project that sets its own repositories is refused."
+        ),
+        "pod": (
+            "pod refuses often: any pod whose source is a bare git tag is refused (pin :commit), as is one from a podspec URL or "
+            "another spec repository; pod runs with --deployment."
+        ),
+    }
+
     @classmethod
     def add_parser(cls, sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
         for tool in cls.TOOLS:
@@ -50,6 +62,7 @@ class InstallGuardCommand:
                     "when nothing is malicious. Other subcommands run unchanged. Cordon's options go "
                     "first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token "
                     "URL=VAR, --cordon-no-cache."
+                    + (f" {cls.NOTES[tool]}" if tool in cls.NOTES else "")
                 ),
             )
             parser_.add_argument(

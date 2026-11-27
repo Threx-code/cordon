@@ -173,3 +173,74 @@ class TestTheFreeze:
     )
     def test_which_commands_download_packages(self, args: list[str], installs: bool) -> None:
         assert HackagePlanner.installs(args) is installs
+
+
+class TestTheRepositoryCabalBuildsFrom:
+    """A repository of only the scanned tarballs, each with its latest .cabal revision beside it. The real proof ran cabal 3.14 in
+    the `haskell` image (--network none): data-forced 0.3.0.0 built under GHC 9.6 with the revision beside it, was refused without it
+    (`base ^>=4.16.4.0` against base-4.18), and an unscanned dependency was `unknown package` at the solve."""
+
+    KEY = ("data-forced", "0.3.0.0")
+
+    def test_the_latest_revision_of_the_cabal_file_comes_from_the_index(self) -> None:
+        found = HackageIndex.entries(
+            CAPTURES / "01-index-revisions-slice.tar", {self.KEY}, "<name>.cabal"
+        )
+        text = found[self.KEY].decode()
+        assert "x-revision: 1" in text
+        assert "base >=4.16.4.0 && <4.20.0" in text
+
+    def test_each_scanned_tarball_is_copied_with_its_revision_beside_it(
+        self, tmp_path: Path
+    ) -> None:
+        from cordon_scanner.sources.install.managers.hackage_repository import HackageRepository
+        from cordon_scanner.sources.install.plan import InstallPlan, PackageFile
+
+        data = (CAPTURES / "data-forced-0.3.0.0.tar.gz").read_bytes()
+        file = PackageFile(
+            "hackage", "data-forced", "0.3.0.0", "https://hackage.haskell.org/x", "sha256",
+            hashlib.sha256(data).digest(), separator="-",
+        )  # fmt: skip
+        scanned = tmp_path / "files"
+        scanned.mkdir()
+        (scanned / file.filename).write_bytes(data)
+        revisions = HackageIndex.entries(
+            CAPTURES / "01-index-revisions-slice.tar", {self.KEY}, "<name>.cabal"
+        )
+        repository = tmp_path / "repository"
+        HackageRepository.build(InstallPlan("hackage", [file]), scanned, revisions, repository)
+        assert sorted(p.name for p in repository.iterdir()) == [
+            "data-forced-0.3.0.0.cabal",
+            "data-forced-0.3.0.0.tar.gz",
+        ]
+        assert (repository / "data-forced-0.3.0.0.tar.gz").read_bytes() == data
+        assert (repository / "data-forced-0.3.0.0.cabal").read_bytes() == revisions[self.KEY]
+        assert HackageRepository.config(repository) == (
+            f"repository cordon-scanned\n  url: file+noindex://{repository}\n"
+        )
+        assert HackageRepository.arguments(["build", "all"], tmp_path / "config") == [
+            f"--config-file={tmp_path / 'config'}",
+            "build",
+            "all",
+        ]
+
+    @pytest.mark.parametrize(
+        ("text", "word"),
+        [
+            ("repository mine\n  url: https://example.org/\n", "repository"),
+            ("active-repositories: :rest\n", "active-repositories"),
+        ],
+    )
+    def test_a_project_that_names_its_own_package_sources_is_refused(
+        self, text: str, word: str
+    ) -> None:
+        from cordon_scanner.sources.install.managers.hackage_repository import HackageRepository
+
+        with pytest.raises(InstallRefused, match=word):
+            HackageRepository.refuse_own_sources({"cabal.project": text}, ["build"])
+
+    def test_a_configuration_flag_is_refused(self) -> None:
+        from cordon_scanner.sources.install.managers.hackage_repository import HackageRepository
+
+        with pytest.raises(InstallRefused, match="--config-file"):
+            HackageRepository.refuse_own_sources({}, ["--config-file=/x", "build"])

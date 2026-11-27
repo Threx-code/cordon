@@ -4,10 +4,10 @@ Cabal compiles a package and runs its `Setup.hs` (arbitrary Haskell) as it build
 being got. `cabal.project.freeze` pins each package to a version; the SHA-256 of each release is in `01-index.tar`, which Hackage's TUF
 metadata signs (`hackage_trust.py`: root keys pinned as cabal pins them, timestamp, snapshot). The index is kept in the scanner's cache
 directory and brought up to date by fetching only its appended tail (`hackage_index.py`). A package the signed index holds no hash for is
-refused. `source-repository-package` (a git dependency) in `cabal.project` is refused: nothing signs it.
+refused. A project that sets its own `repository`, `active-repositories` or `source-repository-package` is refused.
 
-What this does not cover: a package the freeze does not pin is chosen by cabal's own solver when it runs, after the scan. Cabal's
-`--dry-run` plan would show them; reading it needs a cabal binary this is not yet tested with, so a freeze that is incomplete is not detected.
+Cabal then runs from a private repository of only the scanned tarballs (`hackage_repository.py`), so a package the freeze does not pin is
+`unknown package` at cabal's solve, never fetched. Cabal's own user configuration is not used for the run.
 """
 
 from __future__ import annotations
@@ -49,7 +49,6 @@ class HackagePlanner:
             "system-cxx-std-lib",
         }
     )
-    GIT: ClassVar[re.Pattern[str]] = re.compile(r"^\s*source-repository-package\b", re.MULTILINE)
 
     @classmethod
     def verb(cls, args: Sequence[str]) -> str:
@@ -75,14 +74,16 @@ class HackagePlanner:
                 "no cabal.project.freeze here: cabal would choose package versions and build them (running each Setup.hs) as it gets them. "
                 "Run `cabal freeze` where you trust the packages, then run this again"
             )
-        project_file = project / "cabal.project"
-        if project_file.is_file() and cls.GIT.search(
-            project_file.read_text(encoding="utf-8", errors="replace")
-        ):
-            raise InstallRefused(
-                "cabal.project has a source-repository-package: a git dependency no signed index holds a hash for. Cordon cannot "
-                "check it; vendor it into the project"
-            )
+        from cordon_scanner.sources.install.managers.hackage_repository import HackageRepository
+
+        HackageRepository.refuse_own_sources(
+            {
+                name: (project / name).read_text(encoding="utf-8", errors="replace")
+                for name in ("cabal.project", "cabal.project.local")
+                if (project / name).is_file()
+            },
+            args,
+        )
         return cls.files(freeze.read_text(encoding="utf-8", errors="replace"), hashes)
 
     @classmethod

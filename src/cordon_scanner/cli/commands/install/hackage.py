@@ -31,11 +31,13 @@ class HackageTools:
     def cabal(cabal: str, args: list[str], context: InstallContext) -> int:
         from cordon_scanner.sources.install.managers.hackage import HackagePlanner
         from cordon_scanner.sources.install.managers.hackage_index import HackageIndex
+        from cordon_scanner.sources.install.managers.hackage_repository import HackageRepository
         from cordon_scanner.sources.install.managers.hackage_trust import HackageTrust
         from cordon_scanner.sources.install.plan import PrivateDirectory
 
         project = Path.cwd()
         registries = context.registries
+        index: list[Path] = []
 
         def get(name: str) -> bytes:
             url = f"{HackageTools.ROOT}/{name}"
@@ -45,7 +47,8 @@ class HackageTools:
             facts = HackageTrust.index(
                 get("root.json"), get("timestamp.json"), get("snapshot.json"), now=datetime.now(UTC)
             )
-            return HackageIndex.targets(HackageIndex.current(HackageTools.cache(), facts), wanted)
+            index[:] = [HackageIndex.current(HackageTools.cache(), facts)]
+            return HackageIndex.targets(index[0], wanted)
 
         plan = HackagePlanner.plan(args, project, hashes)
         with PrivateDirectory.made("cordon-cabal-") as scratch:
@@ -54,7 +57,19 @@ class HackageTools:
             verdict = context.check(plan, files)
             if not verdict.ok:
                 return context.blocked(verdict)
-        return context.run([cabal, *args], project)
+            wanted = {(f.name, f.version) for f in plan.files}
+            repository = scratch / "repository"
+            HackageRepository.build(
+                plan, files, HackageIndex.entries(index[0], wanted, "<name>.cabal"), repository
+            )
+            config = scratch / "config"
+            config.write_text(HackageRepository.config(repository), encoding="utf-8")
+            updated = context.run(
+                [cabal, *HackageRepository.arguments(["update"], config)], project
+            )
+            if updated != 0:
+                return updated
+            return context.run([cabal, *HackageRepository.arguments(args, config)], project)
 
 
 __all__ = ["HackageTools"]

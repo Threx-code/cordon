@@ -924,6 +924,7 @@
   "sources/install/managers/cocoapods": "sources/install/managers/cocoapods",
   "sources/install/managers/hackage": "sources/install/managers/hackage",
   "sources/install/managers/hackage_index": "sources/install/managers/hackage_index",
+  "sources/install/managers/hackage_repository": "sources/install/managers/hackage_repository",
   "sources/install/managers/hackage_trust": "sources/install/managers/hackage_trust",
   "sources/install/managers/cran": "sources/install/managers/cran",
   "sources/install/managers/bazel": "sources/install/managers/bazel",
