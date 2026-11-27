@@ -20,6 +20,10 @@ class ArchiveDigest:
             return GoModuleHash.of_zip(data)
         if algorithm == "commit":
             return CommitArchive.of_zip(data)
+        if algorithm == "git-tree-sha1":
+            from cordon_scanner.intel.registries.archive_sources.git import GitTar
+
+            return bytes.fromhex(GitTar.tree_sha1(data))
         return hashlib.new(algorithm, data).digest()
 
 
