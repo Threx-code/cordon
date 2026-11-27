@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar
 from xml.sax.saxutils import escape
 
+from cordon_scanner.ecosystems.archive_shapes import NuGetArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -555,6 +556,7 @@ class NuGetEcosystem(BaseEcosystem):
         return bool(declared_spec) and not declared_spec.startswith("[")
 
     purl_type = "nuget"
+    published_archive = (NuGetArchive(),)
     manifest_globs: tuple[str, ...] = (
         "**/*.csproj",
         "**/*.fsproj",

@@ -22,6 +22,7 @@ import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import SwiftArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -342,6 +343,7 @@ class SwiftEcosystem(BaseEcosystem):
         return name.rsplit("/", 1)[0] if "/" in name else None
 
     purl_type = "swift"
+    published_archive = (SwiftArchive(),)
     manifest_globs: tuple[str, ...] = ("**/Package.swift",)
     lockfile_globs: tuple[str, ...] = ("**/Package.resolved",)
     registry_hosts: frozenset[str] = frozenset({"github.com", "gitlab.com", "bitbucket.org"})

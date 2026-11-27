@@ -20,6 +20,7 @@ import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import CondaArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -513,6 +514,7 @@ class CondaEcosystem(BaseEcosystem):
         return name.split("::", 1)[0] if "::" in name else None
 
     purl_type = "conda"
+    published_archive = (CondaArchive(),)
     manifest_globs: tuple[str, ...] = (
         "**/environment.yml",
         "**/environment.yaml",
@@ -528,6 +530,22 @@ class CondaEcosystem(BaseEcosystem):
     registry_hosts: frozenset[str] = frozenset(
         {"anaconda.org", "conda.anaconda.org", "repo.anaconda.com"}
     )
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """An environment file pinning these packages: `{path: content}`."""
+        deps = "".join(f"  - {name}={version}\n" for name, version in pins)
+        return {
+            "environment.yml": f"name: check\nchannels:\n  - conda-forge\ndependencies:\n{deps}"
+        }
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """An environment file naming these packages with no version: `{path: content}`."""
+        deps = "".join(f"  - {name}\n" for name in names)
+        return {
+            "environment.yml": f"name: check\nchannels:\n  - conda-forge\ndependencies:\n{deps}"
+        }
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()

@@ -22,6 +22,7 @@ import re
 from collections.abc import Collection, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import CranArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -504,6 +505,7 @@ class CranEcosystem(BaseEcosystem):
 
     id = "cran"
     purl_type = "cran"
+    published_archive = (CranArchive(),)
     manifest_globs: tuple[str, ...] = ("**/DESCRIPTION", "**/renv/settings.json", "**/PACKAGES")
     lockfile_globs: tuple[str, ...] = ("**/renv.lock",)
     registry_hosts: frozenset[str] = frozenset(
@@ -588,7 +590,7 @@ class CranEcosystem(BaseEcosystem):
     def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
         """A project naming these packages with no version: `{path: content}`."""
         return {
-            "DESCRIPTION": "Package: cordoncheck\nVersion: 0.0.0\nImports: "
+            "DESCRIPTION": "Package: cordoncheck\nVersion: 0.0.0\nLicense: Unlimited\nImports: "
             + ", ".join(names)
             + "\n"
         }

@@ -25,10 +25,11 @@ from __future__ import annotations
 import dataclasses
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import NoArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -713,6 +714,9 @@ class BazelEcosystem(BaseEcosystem):
 
     id = "bazel"
     purl_type = "bazel"
+    published_archive = NoArchive(
+        "the Bazel Central Registry holds only MODULE.bazel and a source.json naming the upstream project's own archive; the archive is whatever that project publishes (captured: bazel/source)"
+    )
     manifest_globs: tuple[str, ...] = (
         "**/MODULE.bazel",
         "**/WORKSPACE",
@@ -722,6 +726,19 @@ class BazelEcosystem(BaseEcosystem):
     )
     lockfile_globs: tuple[str, ...] = ("**/MODULE.bazel.lock",)
     registry_hosts: frozenset[str] = frozenset({"bcr.bazel.build", "registry.bazel.build"})
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A MODULE.bazel depending on these modules at these versions: `{path: content}`."""
+        deps = "".join(
+            f'bazel_dep(name = "{name}", version = "{version}")\n' for name, version in pins
+        )
+        return {"MODULE.bazel": f'module(name = "check", version = "0.0.0")\n{deps}'}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A Bazel module is depended on at a version."""
+        raise ValueError("a Bazel module needs a version: bazel_dep names one")
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()

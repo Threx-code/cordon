@@ -182,6 +182,12 @@ class More:
 
         return cls.ids(PackageUrl.ECOSYSTEMS.values())
 
+    @staticmethod
+    def sbom_ingest_reasons() -> dict[str, str]:
+        return {
+            "gradle": "Gradle builds Maven artifacts; SBOM tools write pkg:maven, ingested as maven, whose advisories gradle shares."
+        }
+
     @classmethod
     def mcp_packages(cls) -> frozenset[str]:
         from cordon_scanner.mcp.packages import ECOSYSTEMS
@@ -208,11 +214,9 @@ class More:
 
     @classmethod
     def subjects(cls) -> frozenset[str]:
-        from cordon_scanner.contracts.subjects import SubjectParts
+        from cordon_scanner.contracts.name_fold import NameFolds
 
-        return cls.ids([*SubjectParts.PURL_TYPES, *SubjectParts.PURL_TYPES.values()]) & (
-            ALL | {"vscode"}
-        )
+        return cls.ids(NameFolds.BY_ID) & (ALL | {"vscode"})
 
     @classmethod
     def own_name_findings(cls) -> frozenset[str]:
@@ -222,7 +226,35 @@ class More:
 
     @classmethod
     def package_format(cls) -> frozenset[str]:
-        return cls.ids(More.compared("cordon_scanner.engine.package_format", "of"))
+        from cordon_scanner.ecosystems.archive_shapes import NoArchive
+
+        return frozenset(
+            ecosystem.id
+            for ecosystem in EcosystemRegistry.all_ecosystems()
+            if not isinstance(ecosystem.published_archive, NoArchive)
+        )
+
+    @classmethod
+    def package_format_reasons(cls) -> dict[str, str]:
+        from cordon_scanner.ecosystems.archive_shapes import NoArchive
+
+        return {
+            ecosystem.id: ecosystem.published_archive.reason
+            for ecosystem in EcosystemRegistry.all_ecosystems()
+            if isinstance(ecosystem.published_archive, NoArchive)
+        }
+
+    @classmethod
+    def credential_homes(cls) -> frozenset[str]:
+        from cordon_scanner.analysis.shared.credential_homes import ECOSYSTEM_CREDENTIALS
+
+        return cls.ids(e for e, credential in ECOSYSTEM_CREDENTIALS.items() if credential.homes)
+
+    @classmethod
+    def credential_homes_reasons(cls) -> dict[str, str]:
+        from cordon_scanner.analysis.shared.credential_homes import ECOSYSTEM_CREDENTIALS
+
+        return {e: c.reason for e, c in ECOSYSTEM_CREDENTIALS.items() if not c.homes}
 
     @classmethod
     def private_registries(cls) -> frozenset[str]:
@@ -256,7 +288,7 @@ class Features:
         "package-URL scan targets": (More.package_url_targets, dict),
         "advisory-text symbols": (More.advisory_text, dict),
         "malware dataset": (More.malware_dataset, More.malware_dataset_reasons),
-        "SBOM package-URL ingest": (More.sbom_ingest, dict),
+        "SBOM package-URL ingest": (More.sbom_ingest, More.sbom_ingest_reasons),
         "MCP package check": (More.mcp_packages, dict),
         "name-signal readers": (More.name_signals, dict),
         "private registries": (More.private_registries, dict),
@@ -265,7 +297,8 @@ class Features:
         "device attestation splitters": (More.device_attestation, dict),
         "subject canonicalisation": (More.subjects, dict),
         "manifest findings (own name)": (More.own_name_findings, dict),
-        "package format sniffing": (More.package_format, dict),
+        "credential homes": (More.credential_homes, More.credential_homes_reasons),
+        "package format sniffing": (More.package_format, More.package_format_reasons),
     }
     #: Features being built now: expected to fail until they cover every ecosystem; the entry comes off when they do.
     BUILDING: ClassVar[frozenset[str]] = frozenset(
@@ -276,17 +309,13 @@ class Features:
             "registry facts client",
             "package-URL scan targets",
             "advisory-text symbols",
-            "SBOM package-URL ingest",
-            "MCP package check",
             "name-signal readers",
             "popular package lists",
             "private registries",
             "agent hook install recognition",
             "fixer (lockfile fix)",
             "device attestation splitters",
-            "subject canonicalisation",
             "manifest findings (own name)",
-            "package format sniffing",
         }
     )
 

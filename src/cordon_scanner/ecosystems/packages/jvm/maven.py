@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar
 from xml.sax.saxutils import escape
 
+from cordon_scanner.ecosystems.archive_shapes import MavenArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -553,6 +554,7 @@ class MavenEcosystem(BaseEcosystem):
         return version.upper().endswith("-SNAPSHOT")
 
     purl_type = "maven"
+    published_archive = (MavenArchive(),)
     manifest_globs: tuple[str, ...] = ("**/pom.xml", "**/.mvn/wrapper/maven-wrapper.properties")
     lockfile_globs: tuple[str, ...] = (
         "**/dependency-tree.txt",

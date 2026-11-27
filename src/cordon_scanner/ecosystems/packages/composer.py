@@ -21,6 +21,7 @@ import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import ComposerArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -327,6 +328,7 @@ class ComposerEcosystem(BaseEcosystem):
         return name.split("/", 1)[0] if "/" in name else None
 
     purl_type = "composer"
+    published_archive = (ComposerArchive(),)
     manifest_globs: tuple[str, ...] = ("**/composer.json", "**/composer.lock", "**/auth.json")
     lockfile_globs: tuple[str, ...] = ("**/composer.lock",)
     registry_hosts: frozenset[str] = frozenset(

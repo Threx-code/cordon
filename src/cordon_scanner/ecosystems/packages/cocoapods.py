@@ -15,8 +15,10 @@ The Podfile and podspecs are Ruby, read statically like a Gemfile (`ecosystems/r
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import NoArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -504,11 +506,27 @@ class PodfileLock:
 class CocoaPodsEcosystem(BaseEcosystem):
     id = "cocoapods"
     purl_type = "cocoapods"
+    published_archive = NoArchive(
+        "a pod is a podspec whose `source` names a git repository or an upstream archive; the spec repository publishes no archive of the pod (captured: cocoapods/podspec)"
+    )
     manifest_globs: tuple[str, ...] = ("**/Podfile", "**/*.podspec")
     lockfile_globs: tuple[str, ...] = ("**/Podfile.lock",)
     registry_hosts: frozenset[str] = frozenset(
         {"cdn.cocoapods.org", "trunk.cocoapods.org", "github.com/CocoaPods/Specs"}
     )
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A Podfile.lock resolving these pods: `{path: content}`."""
+        pods = "".join(f"  - {name} ({version})\n" for name, version in pins)
+        direct = "".join(f"  - {name}\n" for name, _ in pins)
+        return {"Podfile.lock": f"PODS:\n{pods}\nDEPENDENCIES:\n{direct}\nCOCOAPODS: 1.15.2\n"}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A Podfile naming these pods with no version: `{path: content}`."""
+        pods = "".join(f"  pod '{name}'\n" for name in names)
+        return {"Podfile": f"target 'Check' do\n{pods}end\n"}
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()

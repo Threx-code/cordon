@@ -6,6 +6,7 @@ import tomllib
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import CargoArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -27,6 +28,7 @@ class CargoEcosystem(BaseEcosystem):
     id = "cargo"
     bundle_keyword = "cargo"
     purl_type = "cargo"
+    published_archive = (CargoArchive(),)
     manifest_globs: tuple[str, ...] = ("**/Cargo.toml", "**/.cargo/config.toml", "**/.cargo/config")
     lockfile_globs: tuple[str, ...] = ("**/Cargo.lock",)
     registry_hosts: frozenset[str] = frozenset(

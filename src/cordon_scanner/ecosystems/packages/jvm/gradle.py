@@ -25,8 +25,10 @@ from __future__ import annotations
 import dataclasses
 import re
 import tomllib
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import SameArchiveAs
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -252,6 +254,7 @@ class GradleEcosystem(BaseEcosystem):
         return version.upper().endswith("-SNAPSHOT")
 
     purl_type = "maven"
+    published_archive = SameArchiveAs("maven")
     manifest_globs: tuple[str, ...] = (
         "**/build.gradle",
         "**/build.gradle.kts",
@@ -282,6 +285,24 @@ class GradleEcosystem(BaseEcosystem):
     """`gradle.lockfile` records versions, never hashes: Gradle keeps those in
     `gradle/verification-metadata.xml`, applied to the locked entries when the build has one."""
     integrity_companion = True
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A dependency lock pinning these `group:artifact` releases: `{path: content}`."""
+        header = (
+            "# This is a Gradle generated file for dependency locking.\n"
+            "# Manual edits can break the build and are not advised.\n"
+            "# This file is expected to be part of source control.\n"
+        )
+        rows = "".join(
+            f"{name}:{version}=compileClasspath,runtimeClasspath\n" for name, version in pins
+        )
+        return {"gradle.lockfile": f"{header}{rows}empty=\n"}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A Gradle dependency is written `group:artifact:version`."""
+        raise ValueError("a Gradle dependency needs a version: group:artifact:version")
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()

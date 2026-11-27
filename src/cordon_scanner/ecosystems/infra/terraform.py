@@ -26,9 +26,11 @@ from __future__ import annotations
 import dataclasses
 import json
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import ProviderArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -704,9 +706,29 @@ class TerraformEcosystem(BaseEcosystem):
         return parts[-2] if len(parts) >= 2 else None
 
     purl_type = "terraform"
+    published_archive = (ProviderArchive(),)
     manifest_globs: tuple[str, ...] = ("**/*.tf", "**/*.tf.json")
     lockfile_globs: tuple[str, ...] = ("**/.terraform.lock.hcl",)
     registry_hosts: frozenset[str] = frozenset({"registry.terraform.io", "registry.opentofu.org"})
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A dependency lock file pinning these providers: `{path: content}`."""
+        body = "".join(
+            f'provider "registry.terraform.io/{name}" {{\n  version     = "{version}"\n'
+            f'  constraints = "{version}"\n  hashes = [\n    "h1:{"0" * 44}",\n  ]\n}}\n\n'
+            for name, version in pins
+        )
+        return {".terraform.lock.hcl": body}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A configuration requiring these providers with no version: `{path: content}`."""
+        rows = "".join(
+            f'    {name.rsplit("/", 1)[-1]} = {{\n      source = "{name}"\n    }}\n'
+            for name in names
+        )
+        return {"main.tf": f"terraform {{\n  required_providers {{\n{rows}  }}\n}}\n"}
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()

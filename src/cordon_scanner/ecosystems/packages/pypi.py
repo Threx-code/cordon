@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.analysis.python.statements import PythonTwo
+from cordon_scanner.ecosystems.archive_shapes import PypiArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -131,6 +132,7 @@ class PypiEcosystem(PypiLockfiles, BaseEcosystem):
         return frozenset()
 
     purl_type = "pypi"
+    published_archive = (PypiArchive(),)
     manifest_globs: tuple[str, ...] = (
         "**/pyproject.toml",
         "**/setup.py",

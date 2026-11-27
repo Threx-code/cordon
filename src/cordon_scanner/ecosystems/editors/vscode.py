@@ -21,8 +21,11 @@ runtime dependency.
 
 from __future__ import annotations
 
+import json
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import VsixArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -80,6 +83,7 @@ class VsCodeEcosystem(BaseEcosystem):
     id = "vscode"
     bundle_keyword = "vscode"
     purl_type = "vscode-extension"
+    published_archive = (VsixArchive(),)
     manifest_globs: tuple[str, ...] = (
         "**/.vscode/extensions.json",
         "**/*.code-workspace",
@@ -103,6 +107,18 @@ class VsCodeEcosystem(BaseEcosystem):
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         return name.split(".", 1)[0] if "." in name else None
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A dev container installing these extensions at these versions: `{path: content}`."""
+        extensions = [f"{name}@{version}" for name, version in pins]
+        body = {"customizations": {"vscode": {"extensions": extensions}}}
+        return {".devcontainer/devcontainer.json": json.dumps(body)}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """The extensions a workspace recommends, with no version: `{path: content}`."""
+        return {".vscode/extensions.json": json.dumps({"recommendations": list(names)})}
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()

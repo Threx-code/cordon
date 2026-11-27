@@ -933,7 +933,7 @@ class Listed:
             "ecosystems.packages.pypi:declared_dependencies:1",
             "engine.inventory:_LineIndex.RUN",
             "engine.inventory:_LineIndex.TOKEN",
-            "engine.package_format:of:1",
+            "ecosystems.archive_shapes:matches:1",
             "engine.pipeline.ceilings:image_start_ceiling:1",
             "engine.pipeline.graph:configured_sources:1",
             "engine.pipeline.hooks:hook_command_scripts:1",

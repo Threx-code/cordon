@@ -22,6 +22,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import GemArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -640,6 +641,7 @@ class BundlerLock:
 class RubyGemsEcosystem(BaseEcosystem):
     id = "rubygems"
     purl_type = "gem"
+    published_archive = (GemArchive(),)
     manifest_globs: tuple[str, ...] = (
         "**/Gemfile",
         "**/gems.rb",

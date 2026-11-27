@@ -12,11 +12,9 @@ execute untrusted tooling against attacker-controlled metadata inside the tool
 whose entire purpose is avoiding that, and it would make results
 non-reproducible because a resolver consults a live registry.
 
-**Name normalisation is per-ecosystem.** Registries disagree about what makes
-two names the same: PyPI folds separators and case, npm folds case, Maven
-composes group and artifact, Go encodes capitals. Typosquat detection is
-meaningless without this, and it is where most tools generate their false
-positives.
+**Name normalisation is per-ecosystem.** Registries disagree about what makes two names the same: PyPI
+folds separators and case, npm folds case, Maven composes group and artifact, Go encodes capitals.
+Typosquat detection is meaningless without this, and it is where most tools generate their false positives.
 """
 
 from __future__ import annotations
@@ -26,6 +24,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from cordon_scanner.ecosystems.archive_shapes import PublishedArchive
 from cordon_scanner.foundation.dependencies import InstallTool
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Hook, Scope
@@ -758,6 +757,7 @@ class BaseEcosystem(
 
     id: str = "base"
     purl_type: str = "generic"
+    published_archive: PublishedArchive  # no default: each ecosystem states it
     manifest_globs: tuple[str, ...] = ()
     lockfile_globs: tuple[str, ...] = ()
     installed_with_package: tuple[str, ...] = ()
