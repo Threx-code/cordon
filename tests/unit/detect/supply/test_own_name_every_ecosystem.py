@@ -256,3 +256,43 @@ class TestASlipOfAPopularNameIsFoundInEveryEcosystem:
     ) -> None:
         case = next(c for c in CASES if c.ecosystem == "pub")
         assert self.found(case, monkeypatch, distribution="pub")[2][0].severity.name == "MEDIUM"
+
+
+class TestAnImageBlobIsParsedOnlyWhenItCanBeAConfig:
+    PATH = "blobs/sha256/" + "cd" * 32
+
+    @staticmethod
+    def read(raw: bytes) -> str | None:
+        image = EcosystemRegistry.get("image")
+        return image.own_name_of(
+            TestAnImageBlobIsParsedOnlyWhenItCanBeAConfig.PATH, FileContent.from_bytes("x", raw), []
+        )
+
+    def test_a_layer_sized_blob_is_not_parsed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from cordon_scanner.ecosystems.own_names import OwnNameReaders
+
+        config = next(c for c in CASES if c.ecosystem == "image").raw()
+        parsed: list[int] = []
+        monkeypatch.setattr(
+            OwnNameReaders, "json_object", staticmethod(lambda content: parsed.append(1) or {})
+        )
+        # Real config bytes, padded past 1 MiB: only its size says it is not one.
+        assert self.read(config + b" " * (1 << 20)) is None
+        assert parsed == []
+
+    def test_a_gzip_or_tar_layer_is_not_parsed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from cordon_scanner.ecosystems.own_names import OwnNameReaders
+
+        parsed: list[int] = []
+        monkeypatch.setattr(
+            OwnNameReaders, "json_object", staticmethod(lambda content: parsed.append(1) or {})
+        )
+        for layer in (
+            b"\x1f\x8b\x08\x00" + b"\0" * 4096,
+            b"etc/passwd".ljust(512, b"\0") + b"ustar",
+        ):
+            assert self.read(layer) is None
+        assert parsed == []
+
+    def test_the_real_config_is_still_read(self) -> None:
+        assert self.read(next(c for c in CASES if c.ecosystem == "image").raw()) == "Traefik"

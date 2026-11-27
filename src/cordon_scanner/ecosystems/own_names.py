@@ -132,11 +132,16 @@ class OwnNameReaders:
 
     #: What an image names itself in its config blob: the title its publisher gives it, else the repository it says it was
     #: built from (`org.opencontainers.image.title`, `.source`).
+    MAX_CONFIG_BLOB: ClassVar[int] = 1 << 20
     _IMAGE_NAME: ClassVar[re.Pattern[str]] = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 
     @staticmethod
     def image_config(path: str, content: FileContent) -> str | None:
-        """The name a published image's config blob gives itself; None for any other blob or file."""
+        """The name a published image's config blob gives itself; None for any other blob or file. Every layer of an image
+        sits beside its config as an extensionless blob, so a blob is parsed only when it is small and begins as JSON does. The
+        title is the publisher's own claim about the image, which is what a slip check compares."""
+        if content.size > OwnNameReaders.MAX_CONFIG_BLOB or content.raw[:64].lstrip()[:1] != b"{":
+            return None
         document = OwnNameReaders.json_object(content)
         settings = document.get("config")
         if "rootfs" not in document or not isinstance(settings, dict):
