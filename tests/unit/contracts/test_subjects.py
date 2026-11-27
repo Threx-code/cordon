@@ -63,8 +63,9 @@ class TestPackages:
             ID(SubjectKind.PACKAGE, {"ecosystem": "npm", "name": name, "namespace": "x/../y"})
 
 
-#: Every ecosystem, with a name written in mixed case with every separator, and the id it has always had (or, for
-#: the ecosystems that did not fold before, the id its own registry's rule gives).
+#: Every ecosystem, with a name written in mixed case with every separator, and the id it has always had: the eight
+#: registries that fold the case (npm, pypi, nuget, composer, golang, hex, swift, cocoapods) are the only ones whose ids
+#: ever did, and an id never changes.
 MIXED = "Ab_C.d-E"
 STORED_IDS: dict[str, str] = {
     "npm": "pkg:npm/ab_c.d-e",
@@ -79,15 +80,15 @@ STORED_IDS: dict[str, str] = {
     "rubygems": f"pkg:gem/{MIXED}",
     "maven": f"pkg:maven/{MIXED}",
     "gradle": f"pkg:gradle/{MIXED}",
-    "actions": "pkg:actions/ab_c.d-e",
-    "image": "pkg:image/ab_c.d-e",
-    "conda": "pkg:conda/ab_c.d-e",
-    "homebrew": "pkg:homebrew/ab_c.d-e",
-    "terraform": "pkg:terraform/ab_c.d-e",
-    "vcpkg": "pkg:vcpkg/ab_c.d-e",
-    "vscode": "pkg:vscode/ab_c.d-e",
-    "ansible": "pkg:ansible/ab_c.d-e",
-    "pub": "pkg:pub/ab_c.d-e",
+    "actions": f"pkg:actions/{MIXED}",
+    "image": f"pkg:image/{MIXED}",
+    "conda": f"pkg:conda/{MIXED}",
+    "homebrew": f"pkg:homebrew/{MIXED}",
+    "terraform": f"pkg:terraform/{MIXED}",
+    "vcpkg": f"pkg:vcpkg/{MIXED}",
+    "vscode": f"pkg:vscode/{MIXED}",
+    "ansible": f"pkg:ansible/{MIXED}",
+    "pub": f"pkg:pub/{MIXED}",
     "bazel": f"pkg:bazel/{MIXED}",
     "cran": f"pkg:cran/{MIXED}",
     "hackage": f"pkg:hackage/{MIXED}",

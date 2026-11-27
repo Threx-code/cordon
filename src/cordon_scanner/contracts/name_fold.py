@@ -43,24 +43,24 @@ class NameFolds:
         "swift": NameFold.LOWER,
         # https://guides.cocoapods.org/syntax/podspec.html#name (the stored id has always been lower case; kept)
         "cocoapods": NameFold.LOWER,
-        # https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsuses
-        "actions": NameFold.LOWER,
-        # https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pull (repository names are lower case)
-        "image": NameFold.LOWER,
-        # https://docs.conda.io/projects/conda-build/en/stable/resources/package-spec.html
-        "conda": NameFold.LOWER,
-        # https://docs.brew.sh/Formula-Cookbook#grab-the-url
-        "homebrew": NameFold.LOWER,
-        # https://developer.hashicorp.com/terraform/language/providers/requirements#source-addresses
-        "terraform": NameFold.LOWER,
-        # https://learn.microsoft.com/en-us/vcpkg/reference/vcpkg-json#name
-        "vcpkg": NameFold.LOWER,
-        # https://code.visualstudio.com/api/references/extension-manifest
-        "vscode": NameFold.LOWER,
-        # https://docs.ansible.com/ansible/latest/dev_guide/collections_galaxy_meta.html
-        "ansible": NameFold.LOWER,
-        # https://dart.dev/tools/pub/pubspec#name
-        "pub": NameFold.LOWER,
+        # https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsuses (the registry folds the case; the stored id has always kept it, and an id never changes)
+        "actions": NameFold.KEPT,
+        # https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pull (repository names are lower case) (the registry folds the case; the stored id has always kept it, and an id never changes)
+        "image": NameFold.KEPT,
+        # https://docs.conda.io/projects/conda-build/en/stable/resources/package-spec.html (the registry folds the case; the stored id has always kept it, and an id never changes)
+        "conda": NameFold.KEPT,
+        # https://docs.brew.sh/Formula-Cookbook#grab-the-url (the registry folds the case; the stored id has always kept it, and an id never changes)
+        "homebrew": NameFold.KEPT,
+        # https://developer.hashicorp.com/terraform/language/providers/requirements#source-addresses (the registry folds the case; the stored id has always kept it, and an id never changes)
+        "terraform": NameFold.KEPT,
+        # https://learn.microsoft.com/en-us/vcpkg/reference/vcpkg-json#name (the registry folds the case; the stored id has always kept it, and an id never changes)
+        "vcpkg": NameFold.KEPT,
+        # https://code.visualstudio.com/api/references/extension-manifest (the registry folds the case; the stored id has always kept it, and an id never changes)
+        "vscode": NameFold.KEPT,
+        # https://docs.ansible.com/ansible/latest/dev_guide/collections_galaxy_meta.html (the registry folds the case; the stored id has always kept it, and an id never changes)
+        "ansible": NameFold.KEPT,
+        # https://dart.dev/tools/pub/pubspec#name (the registry folds the case; the stored id has always kept it, and an id never changes)
+        "pub": NameFold.KEPT,
         # https://bazel.build/external/module#module_name
         "bazel": NameFold.KEPT,
         # https://cran.r-project.org/doc/manuals/r-release/R-exts.html#The-DESCRIPTION-file
@@ -90,10 +90,6 @@ class NameFolds:
     #: that host packages. A type no registry owns (`oci`: container images are folded by their own kind) keeps its case.
     BY_TYPE: ClassVar[dict[str, NameFold]] = {
         "golang": NameFold.LOWER,
-        "gem": NameFold.KEPT,
-        "brew": NameFold.LOWER,
-        "githubactions": NameFold.LOWER,
-        "vscode-extension": NameFold.LOWER,
         "github": NameFold.LOWER,
         "bitbucket": NameFold.LOWER,
     }
