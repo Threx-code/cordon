@@ -136,12 +136,28 @@ class VersionRanges:
         alternatives = re.split(r"\s{0,4}\|\|?\s{0,4}", re.sub(r"@[a-zA-Z]{1,16}", "", spec))
         out = []
         for alternative in alternatives:
-            tokens = re.sub(r"(<=|>=|<|>|=|\^|~|!=)\s{1,4}", r"\1", alternative).replace(",", " ")
-            out.append(" ".join(VersionRanges._composer_token(t) for t in tokens.split()))
+            text = re.sub(r"(<=|>=|<|>|=|\^|~|!=)\s{1,4}", r"\1", alternative).replace(",", " ")
+            tokens = text.split()
+            out.append(
+                " ".join(
+                    VersionRanges._composer_token(t, hyphen="-" in tokens[max(0, i - 1) : i + 2])
+                    for i, t in enumerate(tokens)
+                )
+            )
         return VersionRanges._npm_admits(" || ".join(out), version.lstrip("v"))
 
+    #: A comparator on a short version (`<=1.4`, `1.2`): Composer reads `1.4` as exactly 1.4.0.
+    _COMPOSER_SHORT: Final = re.compile(r"(<=|>=|<|>|=|!=)?v?(\d{1,9}(?:\.\d{1,9})?)")
+
     @staticmethod
-    def _composer_token(token: str) -> str:
+    def _composer_token(token: str, *, hyphen: bool = False) -> str:
+        """One Composer constraint as npm writes it: a short version padded to its exact release
+        (`<=1.4` is `<=1.4.0`), except in a hyphen range, whose short upper end is a wildcard in
+        Composer as in npm; `~1.2` as `>=1.2 <2`."""
+        short = VersionRanges._COMPOSER_SHORT.fullmatch(token)
+        if short and not hyphen:
+            pieces = short.group(2).split(".")
+            return (short.group(1) or "") + ".".join(pieces + ["0"] * (3 - len(pieces)))
         if not token.startswith("~") or token.startswith("~>"):
             return token
         base = token[1:].lstrip("v")
