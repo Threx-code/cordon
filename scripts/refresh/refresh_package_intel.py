@@ -1243,10 +1243,9 @@ class PackageIntelRefresh:
                 kept.append(name)
             elif squat is not None:
                 refused.append(f"{name} ~ {squat}")
-            elif accepted[
-                contested
-            ] <= downloads * CONTESTED_MAX_RATIO or PackageIntelRefresh._old_enough(
-                name, first_published, cutoff
+            elif contested is not None and (
+                accepted[contested] <= downloads * CONTESTED_MAX_RATIO
+                or PackageIntelRefresh._old_enough(name, first_published, cutoff)
             ):
                 accepted[name] = downloads
                 PackageIntelRefresh.index_neighbour(neighbours, name)

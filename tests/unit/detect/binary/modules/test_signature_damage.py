@@ -8,9 +8,9 @@ import json
 from typing import Any
 
 import pytest
-from support import ROOT
 
 from cordon_scanner.detect.binary.modules import signature as rs
+from support import ROOT
 
 DIR = ROOT / "tests" / "unit" / "data" / "rule_reference" / "modules"
 EXPECTED: dict[str, Any] = json.loads((DIR / "expected.json").read_text(encoding="utf-8"))
