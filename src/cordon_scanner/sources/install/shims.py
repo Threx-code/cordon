@@ -41,7 +41,7 @@ class Shims:
         "helm": "helm", "ansible-galaxy": "ansible", "mix": "hex",
         "docker": "image", "podman": "image",
         "code": "vscode", "codium": "vscode", "cursor": "vscode", "brew": "homebrew",
-        "bazel": "bazel", "bazelisk": "bazel", "julia": "julia", "nix": "nix", "swift": "swift", "Rscript": "cran", "R": "cran", "pod": "cocoapods", "cabal": "hackage",
+        "bazel": "bazel", "bazelisk": "bazel", "julia": "julia", "nix": "nix", "swift": "swift", "Rscript": "cran", "R": "cran", "pod": "cocoapods", "cabal": "hackage", "vcpkg": "vcpkg",
     }  # fmt: skip
 
     #: An ecosystem with no install tool, and why. Only where the thing itself does not exist.
