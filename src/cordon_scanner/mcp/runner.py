@@ -156,7 +156,7 @@ class Runner:
             kwargs: dict[str, Any] = {}
             if os.name == "posix":
                 kwargs["start_new_session"] = True
-            else:  # pragma: no cover - Windows
+            else:  # pragma: no cover - only Windows takes this branch
                 kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
             process = subprocess.Popen(  # noqa: S603 - our own interpreter and module, list form
                 self.command(args),
@@ -248,7 +248,7 @@ class Runner:
                 with contextlib.suppress(ProcessLookupError, PermissionError):
                     os.killpg(process.pid, signal.SIGKILL)
                 process.wait(timeout=5)
-        else:  # pragma: no cover - Windows
+        else:  # pragma: no cover - only Windows takes this branch
             # The scanner starts worker processes; ending only the parent would leave them
             # running. taskkill /T ends the tree, named by its absolute path, never searched for.
             taskkill = (

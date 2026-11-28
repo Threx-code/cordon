@@ -156,3 +156,7 @@ jobs:
           # The checkout's source only: a test that copies the package into a temporary directory
           # and runs it there is measured too, and that copy is gone by now ("No source for code").
           coverage report --omit='/tmp/*'
+          # Per file, untested lines may only fall: a file with more than its record, or a new file
+          # with any, fails (scripts/checks/coverage_floor.py).
+          coverage json --omit='/tmp/*' -o coverage.json
+          python scripts/checks/coverage_floor.py check coverage.json
