@@ -35,7 +35,11 @@ from cordon_scanner.detect.supply.advisories.findings import (
 )
 from cordon_scanner.detect.supply.advisories.rule_declarations import DECLARED_RULES
 from cordon_scanner.foundation import references
-from cordon_scanner.foundation.dependencies import OS_ECOSYSTEMS, RUNTIME_ECOSYSTEM
+from cordon_scanner.foundation.dependencies import (
+    OS_ECOSYSTEMS,
+    RUNTIME_ECOSYSTEM,
+    EcosystemFactsProvider,
+)
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -357,7 +361,8 @@ class AdvisoryDetector(BaseDetector):
             and not d.bundled
             and d.ecosystem
             and d.ecosystem not in OS_ECOSYSTEMS
-            and d.ecosystem not in ("image", RUNTIME_ECOSYSTEM)
+            and d.ecosystem != RUNTIME_ECOSYSTEM
+            and not EcosystemFactsProvider.traits().vulnerabilities_by_contents(d.ecosystem)
             and not self._database.covers(d.ecosystem)
         ]
         if not unchecked:
@@ -590,7 +595,9 @@ class AdvisoryDetector(BaseDetector):
         uncovered = sorted(
             e
             for e in scanned
-            if not self._database.covers(e) and e not in ("image", RUNTIME_ECOSYSTEM)
+            if not self._database.covers(e)
+            and e != RUNTIME_ECOSYSTEM
+            and not EcosystemFactsProvider.traits().vulnerabilities_by_contents(e)
         )
         if not uncovered:
             return None

@@ -128,7 +128,9 @@ class DependencyRecords:
             return "no_matching_advisory" if dependency.version else "skipped"
         if dependency.ecosystem == RUNTIME_ECOSYSTEM:
             return "unavailable_feed"
-        if dependency.ecosystem == "image" and not database.covers("image"):
+        if RegistryFacts.vulnerabilities_by_contents(dependency.ecosystem) and not database.covers(
+            dependency.ecosystem
+        ):
             # An image's vulnerabilities are its packages', reported by scanning the image.
             return "not_applicable"
         if not database.covers(dependency.ecosystem):

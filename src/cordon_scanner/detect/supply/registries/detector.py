@@ -292,7 +292,7 @@ class RegistryDetector(BaseDetector):
             and ImageEcosystem.is_reference(d.name, d.declared_spec)
             and (reference := ImageReference.parse(d.name)) is not None
             and not PublicRegistries.covers(reference.registry)
-            and PrivateRegistries.matching(configured, "image", d.name, None) is None
+            and PrivateRegistries.matching(configured, d.ecosystem, d.name, None) is None
         ]
         versions = EcosystemFactsProvider.versions()
         askable = [
@@ -557,7 +557,7 @@ class RegistryDetector(BaseDetector):
     ) -> Iterable[Finding]:
         from cordon_scanner.intel.base import PackageFacts
 
-        if not isinstance(observed, PackageFacts):  # pragma: no cover - defensive
+        if not isinstance(observed, PackageFacts):
             return
 
         unvetted = self._unvetted(dependency, observed)

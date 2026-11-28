@@ -586,6 +586,15 @@ class ImageEcosystem(BaseEcosystem):
     def pinned_by_digest(self) -> bool:
         return True
 
+    def vulnerabilities_by_contents(self) -> bool:
+        return True
+
+    def manifest_runs_at_build(self) -> bool:
+        return True
+
+    def name_carries_registry(self) -> bool:
+        return True
+
     purl_type = "docker"
     published_archive = (OciLayoutArchive(), DockerSaveArchive())
     mcp_launch = (

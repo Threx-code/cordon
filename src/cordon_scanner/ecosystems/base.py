@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from cordon_scanner.ecosystems.launchers import Declarations
 from cordon_scanner.ecosystems.own_names import OwnNameDefaults
+from cordon_scanner.ecosystems.ports import ImageName, ImageReferences
 from cordon_scanner.foundation.dependencies import InstallTool
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Hook, Scope
@@ -687,6 +688,25 @@ class PublishedCodeDefaults:
         return False
 
 
+class NatureDefaults:
+    """What kind of thing an ecosystem's dependency is, as one that is a package answers; an
+    ecosystem whose dependencies are not packages (container images) overrides what differs."""
+
+    def vulnerabilities_by_contents(self) -> bool:
+        """Whether a dependency's vulnerabilities are its contents' (an image's are its packages',
+        found by scanning the image), so no advisory feed names the dependency itself."""
+        return False
+
+    def manifest_runs_at_build(self) -> bool:
+        """Whether a manifest's steps run when somebody builds from it (a Dockerfile's RUN), never
+        when a package is installed, so it declares no install hook."""
+        return False
+
+    def name_carries_registry(self) -> bool:
+        """Whether a dependency's name begins with the host of the registry it comes from."""
+        return False
+
+
 class BaseEcosystem(
     NamingDefaults,
     VersionDefaults,
@@ -698,6 +718,7 @@ class BaseEcosystem(
     PackageEntryDefaults,
     PublishedCodeDefaults,
     OwnNameDefaults,
+    NatureDefaults,
     Declarations,
 ):
     """Shared behaviour. Implementing the protocol directly is equally valid."""
@@ -960,30 +981,6 @@ class BaseEcosystem(
                 )
 
 
-# Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine
-# each implementation typed by one of these, and the type checker proves the implementation
-# conforms, so the engine never sees a concrete adapter type.
-
-
-class ImageName(Protocol):
-    """What the engine uses of an `ImageReference` parsed from a name."""
-
-    @property
-    def digest(self) -> str | None: ...
-    @property
-    def familiar(self) -> str: ...
-    @property
-    def registry(self) -> str | None: ...
-    @property
-    def tag(self) -> str | None: ...
-
-
-class ImageReferences(Protocol):
-    """What the engine uses of the class `ImageReference`."""
-
-    def parse(self, text: str) -> ImageName | None: ...
-
-
 __all__ = [
     "BaseEcosystem",
     "DeclaredDependency",
@@ -995,6 +992,7 @@ __all__ = [
     "LockGraph",
     "Manifest",
     "NamingDefaults",
+    "NatureDefaults",
     "TraitDefaults",
     "VersionDefaults",
 ]

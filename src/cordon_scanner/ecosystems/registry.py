@@ -543,6 +543,18 @@ class RegistryFacts(RegistryPublishing):
         return RegistryFacts._of(ecosystem).has_install_scripts()
 
     @staticmethod
+    def vulnerabilities_by_contents(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).vulnerabilities_by_contents()
+
+    @staticmethod
+    def manifest_runs_at_build(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).manifest_runs_at_build()
+
+    @staticmethod
+    def name_carries_registry(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).name_carries_registry()
+
+    @staticmethod
     def has_scoped_names(ecosystem: str) -> bool:
         return RegistryFacts._of(ecosystem).has_scoped_names()
 
