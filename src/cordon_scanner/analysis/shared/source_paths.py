@@ -91,6 +91,18 @@ class RuleMaterialContent(Protocol):
 #: into a README leaks exactly as far as one in a settings file, and plenty have
 #: been. It stays in the report, below the severity that fails a build, with the
 #: caveat saying why.
+DOCUMENTATION_BUILD_CODE = (
+    # Sphinx runs a documentation folder's `conf.py` as Python on every build, and imports the
+    # extensions it names, conventionally kept in `_ext/`.
+    "**/docs/**/conf.py",
+    "**/doc/**/conf.py",
+    "**/documentation/**/conf.py",
+    "**/docs/**/_ext/**",
+    "**/doc/**/_ext/**",
+    "**/documentation/**/_ext/**",
+)
+"""Files under a documentation folder that a documentation build executes: graded as code, not prose."""
+
 DOCUMENTATION_PATHS = (
     "**/docs/**",
     "**/doc/**",
@@ -374,8 +386,12 @@ class SourcePaths:
 
     @staticmethod
     def is_documentation(path: str) -> bool:
-        """Whether a path holds prose written to be read rather than executed."""
-        return SourcePaths._names(path, DOCUMENTATION_PATHS)
+        """Whether a path holds prose written to be read rather than executed. Code a documentation build
+        runs is not: Sphinx executes `conf.py` and loads the extensions beside it on every build, in a
+        developer's checkout and in the CI job that publishes the docs, with that job's secrets."""
+        return SourcePaths._names(path, DOCUMENTATION_PATHS) and not SourcePaths._names(
+            path, DOCUMENTATION_BUILD_CODE
+        )
 
     @staticmethod
     def is_build_tooling(path: str) -> bool:
