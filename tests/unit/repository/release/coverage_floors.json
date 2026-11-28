@@ -537,7 +537,6 @@
  "src/cordon_scanner/intel/advisories/digest_feed.py": 2,
  "src/cordon_scanner/intel/advisories/exploited.py": 50,
  "src/cordon_scanner/intel/advisories/nvd.py": 8,
- "src/cordon_scanner/intel/advisories/nvd_import.py": 142,
  "src/cordon_scanner/intel/advisories/osv_delta.py": 13,
  "src/cordon_scanner/intel/advisories/osv_import.py": 28,
  "src/cordon_scanner/intel/advisories/ranges.py": 2,
