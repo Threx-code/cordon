@@ -1600,6 +1600,7 @@
   "test_remote_tarball.py": "detect/supply/manifests",
   "test_render_diff.py": "analysis/shared",
   "test_reporters.py": "report",
+  "test_provenance_reason.py": "report",
   "test_facts.py": "report",
   "test_facts_file_counts.py": "report",
   "test_facts_kind.py": "report",

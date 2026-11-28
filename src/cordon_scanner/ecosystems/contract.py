@@ -810,6 +810,7 @@ RECORD_FIELDS: Final = (
     "malware_status",
     "integrity_status",
     "provenance_status",
+    "provenance_reason",
     "licence_status",
     "findings",
 )

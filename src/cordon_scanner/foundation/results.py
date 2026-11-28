@@ -254,6 +254,7 @@ class Dependency:
     malware_status: str = "not_checked"
     integrity_status: str = "not_checked"
     provenance_status: str = "not_checked"
+    provenance_reason: str | None = None
     licence_status: str = "not_checked"
     """What each check concluded, never one boolean. "No vulnerability found" and "the check
     did not run" are different answers; see `core/inventory.py` for every value and its meaning."""
@@ -401,6 +402,7 @@ class Dependency:
             "malware_status": self.malware_status,
             "integrity_status": self.integrity_status,
             "provenance_status": self.provenance_status,
+            "provenance_reason": self.provenance_reason,
             "licence_status": self.licence_status,
             "findings": list(self.finding_ids),
             "overridden_by": self.forced_by,
