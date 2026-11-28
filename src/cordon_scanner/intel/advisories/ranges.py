@@ -37,7 +37,8 @@ class VersionRanges:
         syntax = VersionRanges.SYNTAX.get(ecosystem)
         if syntax is None:
             return False
-        admitted: bool = getattr(VersionRanges, syntax)(ecosystem, spec, version)
+        reader = getattr(VersionRanges, syntax, None) or getattr(ComparatorRanges, syntax)
+        admitted: bool = reader(ecosystem, spec, version)
         return admitted
 
     #: Each ecosystem's range syntax, by the method that reads it. A new syntax is an entry and a
@@ -144,151 +145,12 @@ class VersionRanges:
         if not token.startswith("~") or token.startswith("~>"):
             return token
         base = token[1:].lstrip("v")
-        upper = VersionRanges._pessimistic_upper(base)
+        upper = ComparatorRanges._pessimistic_upper(base)
         return f">={base} <{upper}-0" if upper else token
 
     @staticmethod
     def _caret_if_bare(part: str) -> str:
         return f"^{part}" if part[:1].isdigit() else part
-
-    # -- Comparator lists compared in the ecosystem's own order -----------------------------------
-
-    @staticmethod
-    def _pessimistic_syntax(ecosystem: str, spec: str, version: str) -> bool:
-        """RubyGems, Hex, CocoaPods and Terraform: requirements joined by `,` (Hex: `and`/`or`);
-        `~> 1.2` is `>= 1.2, < 2`, `~> 1.2.3` is `>= 1.2.3, < 1.3`; a bare version is exact."""
-        alternatives = re.split(r"\s{1,4}or\s{1,4}", spec)
-        return any(
-            VersionRanges._all_hold(
-                ecosystem, re.split(r"\s{0,4},\s{0,4}|\s{1,4}and\s{1,4}", alt), version
-            )
-            for alt in alternatives
-        )
-
-    @staticmethod
-    def _comparator_syntax(ecosystem: str, spec: str, version: str) -> bool:
-        """Ansible collections and R packages: comparators joined by `,` (R writes `(>= 1.2)`)."""
-        return VersionRanges._all_hold(ecosystem, spec.strip("() ").split(","), version)
-
-    @staticmethod
-    def _conda_syntax(ecosystem: str, spec: str, version: str) -> bool:
-        """conda: `|` between alternatives, `,` joining; `1.2.*`, and a bare or `=` version admits
-        its own later parts (`1.2` admits `1.2.5`)."""
-        return any(
-            VersionRanges._all_hold(ecosystem, alt.split(","), version, prefix_bare=True)
-            for alt in spec.split("|")
-        )
-
-    @staticmethod
-    def _hackage_syntax(ecosystem: str, spec: str, version: str) -> bool:
-        """Cabal: `&&` joining, `||` between alternatives, `==1.2.*`, and `^>=1.2.3`, which admits
-        up to the next major version as the PVP counts it (`<1.3`)."""
-        if spec.strip() in ("-any", "any"):
-            return True
-        return any(
-            VersionRanges._all_hold(ecosystem, alt.split("&&"), version) for alt in spec.split("||")
-        )
-
-    @staticmethod
-    def _opam_syntax(ecosystem: str, spec: str, version: str) -> bool:
-        """opam: `>= "1.2" & < "2.0"`, `|` between alternatives; quoted versions."""
-        if "(" in spec or "!" in spec.replace("!=", ""):
-            return False
-        text = spec.strip("{} ").replace('"', "")
-        return any(
-            VersionRanges._all_hold(ecosystem, alt.split("&"), version) for alt in text.split("|")
-        )
-
-    @staticmethod
-    def _swift_syntax(ecosystem: str, spec: str, version: str) -> bool:
-        """SwiftPM, as the manifest reader states a requirement: `>= 1.2.3, < next major`,
-        `>= 1.2.3, < next minor`, `>= 1.0.0, < 2.0.0`, a bare exact version, or `*`."""
-        found = re.fullmatch(r">=\s{0,4}(\S{1,80}),\s{0,4}<\s{0,4}next (major|minor)", spec)
-        if found:
-            tilde = found.group(2) == "minor"
-            return VersionRanges._npm_admits(f"{'~' if tilde else '^'}{found.group(1)}", version)
-        return VersionRanges._all_hold(ecosystem, spec.split(","), version)
-
-    @staticmethod
-    def _all_hold(
-        ecosystem: str, clauses: list[str], version: str, *, prefix_bare: bool = False
-    ) -> bool:
-        """Every comparator clause holds for `version` in the ecosystem's own version order; a
-        clause nobody can read answers False, as an unreadable range always does here."""
-        if not version or sum(len(c) for c in clauses) > 256:
-            return False
-        read = [c.strip() for c in clauses if c.strip()]
-        return bool(read) and all(
-            VersionRanges._clause_holds(ecosystem, c, version, prefix_bare) for c in read
-        )
-
-    _CLAUSE: Final = re.compile(
-        r"^(?P<op>\^>=|~>|===|==|!=|>=|<=|~=|>|<|=)?\s{0,4}(?P<v>[^\s,]{1,80})$"
-    )
-
-    @staticmethod
-    def _clause_holds(ecosystem: str, clause: str, version: str, prefix_bare: bool) -> bool:
-        match = VersionRanges._CLAUSE.match(clause)
-        if match is None:
-            return False
-        op, bound = match.group("op") or "", match.group("v")
-        if bound in ("*", "any"):
-            return op in ("", "==", "=", ">=")
-        if bound.endswith(".*") or (prefix_bare and op in ("", "=")):
-            prefix = bound.removesuffix(".*")
-            inside = version == prefix or version.startswith(prefix + ".")
-            return inside if op != "!=" else not inside
-        if op in ("~>", "~=", "^>="):
-            upper = VersionRanges._pessimistic_upper(bound, pvp=op == "^>=")
-            if upper is None:
-                return False
-            return (
-                VersionRanges._order(ecosystem, version, bound) >= 0
-                and VersionRanges._order(ecosystem, version, upper) < 0
-            )
-        order = VersionRanges._order(ecosystem, version, bound)
-        return {
-            "": order == 0,
-            "=": order == 0,
-            "==": order == 0,
-            "===": version == bound,
-            "!=": order != 0,
-            ">=": order >= 0,
-            "<=": order <= 0,
-            ">": order > 0,
-            "<": order < 0,
-        }[op]
-
-    @staticmethod
-    def _pessimistic_upper(bound: str, *, pvp: bool = False) -> str | None:
-        """The first version a pessimistic bound excludes: the last stated part dropped and the one
-        before it raised (`1.2.3` -> `1.3`, `1.2` -> `2`); the PVP's major is the first two parts."""
-        parts = re.match(r"\d{1,9}(?:\.\d{1,9}){0,8}", bound)
-        if parts is None:
-            return None
-        nums = [int(n) for n in parts.group(0).split(".")]
-        if pvp:
-            nums = [*nums, 0][:2]
-            return f"{nums[0]}.{nums[1] + 1}"
-        if len(nums) > 1:
-            nums = nums[:-1]
-        nums[-1] += 1
-        return ".".join(str(n) for n in nums)
-
-    @staticmethod
-    def _order(ecosystem: str, a: str, b: str) -> int:
-        """`Versions.compare`, with a SemVer scheme's short versions padded (`1.2` as `1.2.0`)."""
-        if Versions.SCHEMES.get(ecosystem) == "_semver":
-            a, b = VersionRanges._padded(a), VersionRanges._padded(b)
-        return Versions.compare(ecosystem, a, b)
-
-    @staticmethod
-    def _padded(text: str) -> str:
-        core = re.fullmatch(r"v?(\d{1,9}(?:\.\d{1,9})?)", text)
-        if core is None:
-            return text
-        pieces = core.group(1).split(".")
-        return ".".join(pieces + ["0"] * (3 - len(pieces)))
 
     # -- Maven, Gradle and NuGet intervals ---------------------------------------------------------
 
@@ -485,6 +347,150 @@ class VersionRanges:
         return True
 
 
+class ComparatorRanges:
+    """Range syntaxes that are lists of comparators, compared in the ecosystem's own version order:
+    the `~>` family, conda, Cabal, opam, R, Ansible and SwiftPM (`VersionRanges.SYNTAX` names them)."""
+
+    @staticmethod
+    def _pessimistic_syntax(ecosystem: str, spec: str, version: str) -> bool:
+        """RubyGems, Hex, CocoaPods and Terraform: requirements joined by `,` (Hex: `and`/`or`);
+        `~> 1.2` is `>= 1.2, < 2`, `~> 1.2.3` is `>= 1.2.3, < 1.3`; a bare version is exact."""
+        alternatives = re.split(r"\s{1,4}or\s{1,4}", spec)
+        return any(
+            ComparatorRanges._all_hold(
+                ecosystem, re.split(r"\s{0,4},\s{0,4}|\s{1,4}and\s{1,4}", alt), version
+            )
+            for alt in alternatives
+        )
+
+    @staticmethod
+    def _comparator_syntax(ecosystem: str, spec: str, version: str) -> bool:
+        """Ansible collections and R packages: comparators joined by `,` (R writes `(>= 1.2)`)."""
+        return ComparatorRanges._all_hold(ecosystem, spec.strip("() ").split(","), version)
+
+    @staticmethod
+    def _conda_syntax(ecosystem: str, spec: str, version: str) -> bool:
+        """conda: `|` between alternatives, `,` joining; `1.2.*`, and a bare or `=` version admits
+        its own later parts (`1.2` admits `1.2.5`)."""
+        return any(
+            ComparatorRanges._all_hold(ecosystem, alt.split(","), version, prefix_bare=True)
+            for alt in spec.split("|")
+        )
+
+    @staticmethod
+    def _hackage_syntax(ecosystem: str, spec: str, version: str) -> bool:
+        """Cabal: `&&` joining, `||` between alternatives, `==1.2.*`, and `^>=1.2.3`, which admits
+        up to the next major version as the PVP counts it (`<1.3`)."""
+        if spec.strip() in ("-any", "any"):
+            return True
+        return any(
+            ComparatorRanges._all_hold(ecosystem, alt.split("&&"), version)
+            for alt in spec.split("||")
+        )
+
+    @staticmethod
+    def _opam_syntax(ecosystem: str, spec: str, version: str) -> bool:
+        """opam: `>= "1.2" & < "2.0"`, `|` between alternatives; quoted versions."""
+        if "(" in spec or "!" in spec.replace("!=", ""):
+            return False
+        text = spec.strip("{} ").replace('"', "")
+        return any(
+            ComparatorRanges._all_hold(ecosystem, alt.split("&"), version)
+            for alt in text.split("|")
+        )
+
+    @staticmethod
+    def _swift_syntax(ecosystem: str, spec: str, version: str) -> bool:
+        """SwiftPM, as the manifest reader states a requirement: `>= 1.2.3, < next major`,
+        `>= 1.2.3, < next minor`, `>= 1.0.0, < 2.0.0`, a bare exact version, or `*`."""
+        found = re.fullmatch(r">=\s{0,4}(\S{1,80}),\s{0,4}<\s{0,4}next (major|minor)", spec)
+        if found:
+            tilde = found.group(2) == "minor"
+            return VersionRanges._npm_admits(f"{'~' if tilde else '^'}{found.group(1)}", version)
+        return ComparatorRanges._all_hold(ecosystem, spec.split(","), version)
+
+    @staticmethod
+    def _all_hold(
+        ecosystem: str, clauses: list[str], version: str, *, prefix_bare: bool = False
+    ) -> bool:
+        """Every comparator clause holds for `version` in the ecosystem's own version order; a
+        clause nobody can read answers False, as an unreadable range always does here."""
+        if not version or sum(len(c) for c in clauses) > 256:
+            return False
+        read = [c.strip() for c in clauses if c.strip()]
+        return bool(read) and all(
+            ComparatorRanges._clause_holds(ecosystem, c, version, prefix_bare) for c in read
+        )
+
+    _CLAUSE: Final = re.compile(
+        r"^(?P<op>\^>=|~>|===|==|!=|>=|<=|~=|>|<|=)?\s{0,4}(?P<v>[^\s,]{1,80})$"
+    )
+
+    @staticmethod
+    def _clause_holds(ecosystem: str, clause: str, version: str, prefix_bare: bool) -> bool:
+        match = ComparatorRanges._CLAUSE.match(clause)
+        if match is None:
+            return False
+        op, bound = match.group("op") or "", match.group("v")
+        if bound in ("*", "any"):
+            return op in ("", "==", "=", ">=")
+        if bound.endswith(".*") or (prefix_bare and op in ("", "=")):
+            prefix = bound.removesuffix(".*")
+            inside = version == prefix or version.startswith(prefix + ".")
+            return inside if op != "!=" else not inside
+        if op in ("~>", "~=", "^>="):
+            upper = ComparatorRanges._pessimistic_upper(bound, pvp=op == "^>=")
+            if upper is None:
+                return False
+            return (
+                ComparatorRanges._order(ecosystem, version, bound) >= 0
+                and ComparatorRanges._order(ecosystem, version, upper) < 0
+            )
+        order = ComparatorRanges._order(ecosystem, version, bound)
+        return {
+            "": order == 0,
+            "=": order == 0,
+            "==": order == 0,
+            "===": version == bound,
+            "!=": order != 0,
+            ">=": order >= 0,
+            "<=": order <= 0,
+            ">": order > 0,
+            "<": order < 0,
+        }[op]
+
+    @staticmethod
+    def _pessimistic_upper(bound: str, *, pvp: bool = False) -> str | None:
+        """The first version a pessimistic bound excludes: the last stated part dropped and the one
+        before it raised (`1.2.3` -> `1.3`, `1.2` -> `2`); the PVP's major is the first two parts."""
+        parts = re.match(r"\d{1,9}(?:\.\d{1,9}){0,8}", bound)
+        if parts is None:
+            return None
+        nums = [int(n) for n in parts.group(0).split(".")]
+        if pvp:
+            nums = [*nums, 0][:2]
+            return f"{nums[0]}.{nums[1] + 1}"
+        if len(nums) > 1:
+            nums = nums[:-1]
+        nums[-1] += 1
+        return ".".join(str(n) for n in nums)
+
+    @staticmethod
+    def _order(ecosystem: str, a: str, b: str) -> int:
+        """`Versions.compare`, with a SemVer scheme's short versions padded (`1.2` as `1.2.0`)."""
+        if Versions.SCHEMES.get(ecosystem) == "_semver":
+            a, b = ComparatorRanges._padded(a), ComparatorRanges._padded(b)
+        return Versions.compare(ecosystem, a, b)
+
+    @staticmethod
+    def _padded(text: str) -> str:
+        core = re.fullmatch(r"v?(\d{1,9}(?:\.\d{1,9})?)", text)
+        if core is None:
+            return text
+        pieces = core.group(1).split(".")
+        return ".".join(pieces + ["0"] * (3 - len(pieces)))
+
+
 # -- PEP 440 -----------------------------------------------------------------------------------
 
 _PEP440_CLAUSE: Final = re.compile(
@@ -492,4 +498,4 @@ _PEP440_CLAUSE: Final = re.compile(
 )
 
 
-__all__ = ["VersionRanges"]
+__all__ = ["ComparatorRanges", "VersionRanges"]

