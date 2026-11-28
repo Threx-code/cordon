@@ -91,3 +91,22 @@ class TestRealNeighboursStay:
             [("tqdm", 100_000_000), ("tdqm", 10)], {"tdqm": OLD}, "pypi"
         )
         assert refused == ["tdqm ~ tqdm"] and asked == []
+
+
+class TestTheRegistryIsAskedInItsOwnSpelling:
+    def test_a_lowered_name_is_asked_about_as_the_registry_spells_it(self, monkeypatch) -> None:
+        """Hackage's `HTTP` is listed as `http`; asking Hackage about `http` asks about nothing, and the name
+        would be refused as of unknown age."""
+        refresh = RefreshScript.module().PackageIntelRefresh
+        monkeypatch.setattr(refresh, "SPELLINGS", {})
+        assert refresh.spelt("HTTP") == "http"
+        from cordon_scanner.intel.registries.release_history import ReleaseHistory
+
+        asked: list[tuple[str, str]] = []
+        monkeypatch.setattr(
+            ReleaseHistory,
+            "first_published",
+            classmethod(lambda cls, ecosystem, name: asked.append((ecosystem, name)) or OLD),
+        )
+        assert refresh.first_published_of("hackage")("http") == OLD
+        assert asked == [("hackage", "HTTP")]

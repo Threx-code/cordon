@@ -507,7 +507,7 @@ class PackageIntelRefresh:
                     entry.get("downloadCount"),
                 )
                 if isinstance(namespace, str) and isinstance(name, str) and isinstance(count, int):
-                    names.append((f"{namespace}.{name}".lower(), count))
+                    names.append((PackageIntelRefresh.spelt(f"{namespace}.{name}"), count))
             if len(entries) < size:
                 break
         return names, source
@@ -542,7 +542,7 @@ class PackageIntelRefresh:
                 downloads = entry.get("downloads")
                 total = downloads.get("all") if isinstance(downloads, dict) else None
                 if isinstance(entry.get("name"), str) and isinstance(total, int):
-                    names.append((str(entry["name"]).lower(), total))
+                    names.append((PackageIntelRefresh.spelt(str(entry["name"])), total))
         return names, source
 
     @staticmethod
@@ -556,7 +556,7 @@ class PackageIntelRefresh:
         if not isinstance(payload, list):
             raise ValueError(f"{source} returned {type(payload).__name__}, expected a list")
         names = [
-            (str(entry["packageName"]).lower(), int(entry["downloads"]))
+            (PackageIntelRefresh.spelt(str(entry["packageName"])), int(entry["downloads"]))
             for entry in payload
             if isinstance(entry, dict)
             and isinstance(entry.get("packageName"), str)
@@ -584,7 +584,7 @@ class PackageIntelRefresh:
             for entry in entries:
                 if isinstance(entry, dict) and isinstance(entry.get("name"), str):
                     stars = int(entry.get("stars") or 0)
-                    name = str(entry["name"]).lower()
+                    name = PackageIntelRefresh.spelt(str(entry["name"]))
                     best[name] = max(best.get(name, 0), stars)
             if len(entries) < size:
                 break
@@ -612,7 +612,12 @@ class PackageIntelRefresh:
                     and isinstance(attributes.get("name"), str)
                     and isinstance(attributes.get("downloads"), int)
                 ):
-                    names.append((str(attributes["name"]).lower(), attributes["downloads"]))
+                    names.append(
+                        (
+                            PackageIntelRefresh.spelt(str(attributes["name"])),
+                            attributes["downloads"],
+                        )
+                    )
         return names, source
 
     @staticmethod
@@ -641,9 +646,9 @@ class PackageIntelRefresh:
         for row in csv.DictReader(io.StringIO(text)):
             name = by_uuid.get(row.get("package_uuid", ""))
             if name and row.get("status") in {"200", "302"}:
-                totals[name.lower()] = totals.get(name.lower(), 0) + int(
-                    row.get("request_count") or 0
-                )
+                totals[PackageIntelRefresh.spelt(name)] = totals.get(
+                    PackageIntelRefresh.spelt(name), 0
+                ) + int(row.get("request_count") or 0)
         return sorted(totals.items()), f"{registry}, {logs}"
 
     @staticmethod
@@ -672,7 +677,7 @@ class PackageIntelRefresh:
                 ):
                     names.append(
                         (
-                            f"{entry['namespace']}.{entry['name']}".lower(),
+                            PackageIntelRefresh.spelt(f"{entry['namespace']}.{entry['name']}"),
                             int(entry.get("download_count") or 0),
                         )
                     )
@@ -707,7 +712,9 @@ class PackageIntelRefresh:
         payload = PackageIntelRefresh.as_object(PackageIntelRefresh.paged(url), url)
         for entry in cast("list[Any]", payload.get("results") or []):
             if isinstance(entry, dict) and isinstance(entry.get("name"), str):
-                best[str(entry["name"]).lower()] = int(entry.get("pull_count") or 0)
+                best[PackageIntelRefresh.spelt(str(entry["name"]))] = int(
+                    entry.get("pull_count") or 0
+                )
         search = "https://hub.docker.com/v2/search/repositories/"
         for term in PackageIntelRefresh.SEARCH_TERMS:
             # Hub answers 403 past the first 200 results of a query, so two pages of 100.
@@ -719,7 +726,7 @@ class PackageIntelRefresh:
                     break
                 for entry in results:
                     if isinstance(entry, dict) and isinstance(entry.get("repo_name"), str):
-                        name = str(entry["repo_name"]).lower()
+                        name = PackageIntelRefresh.spelt(str(entry["repo_name"]))
                         best[name] = max(best.get(name, 0), int(entry.get("pull_count") or 0))
         return sorted(best.items()), f"{official}, {search}"
 
@@ -749,7 +756,7 @@ class PackageIntelRefresh:
                     module = item.get("modulePath")
                     counts = item.get("importedByCounts")
                     if isinstance(module, str) and module != "std" and isinstance(counts, dict):
-                        best[module.lower()] = max(
+                        best[PackageIntelRefresh.spelt(module)] = max(
                             best.get(module.lower(), 0), int(counts.get("modules") or 0)
                         )
                 token = str(payload.get("nextPageToken") or "")
@@ -781,7 +788,10 @@ class PackageIntelRefresh:
             for item in items:
                 if isinstance(item, dict) and isinstance(item.get("full_name"), str):
                     names.append(
-                        (str(item["full_name"]).lower(), int(item.get("stargazers_count") or 0))
+                        (
+                            PackageIntelRefresh.spelt(str(item["full_name"])),
+                            int(item.get("stargazers_count") or 0),
+                        )
                     )
         return names, source
 
@@ -959,7 +969,7 @@ class PackageIntelRefresh:
                 and isinstance(docs[0], dict)
                 and isinstance(docs[0].get("id"), str)
             ):
-                names.append(str(docs[0]["id"]).lower())
+                names.append(PackageIntelRefresh.spelt(str(docs[0]["id"])))
         return names, source, found, step
 
     @staticmethod
@@ -1120,13 +1130,26 @@ class PackageIntelRefresh:
                     scored[str(name)] = max(scored.get(str(name), 0), 1_000_000 - rank)
         return sorted(scored.items()), f"{source} (sort=popularity; score derived from rank)"
 
+    #: Each name as its registry spells it, keyed by the lowered name the lists hold. Hackage and CRAN names are
+    #: case-sensitive (`HTTP`, not `http`): asking a registry about the lowered name asks about nothing.
+    SPELLINGS: ClassVar[dict[str, str]] = {}
+
+    @staticmethod
+    def spelt(name: str) -> str:
+        """The lowered name a list holds, remembering how its registry spells it."""
+        lowered = name.lower()
+        PackageIntelRefresh.SPELLINGS.setdefault(lowered, name)
+        return lowered
+
     @staticmethod
     def first_published_of(ecosystem: str) -> Callable[[str], str]:
         """When the registry says each name was first published, read from its own release history."""
         sys.path.insert(0, str(ROOT / "src"))
         from cordon_scanner.intel.registries.release_history import ReleaseHistory
 
-        return lambda name: ReleaseHistory.first_published(ecosystem, name)
+        return lambda name: ReleaseHistory.first_published(
+            ecosystem, PackageIntelRefresh.SPELLINGS.get(name, name)
+        )
 
     @staticmethod
     def refuse_self_allowlisting(
