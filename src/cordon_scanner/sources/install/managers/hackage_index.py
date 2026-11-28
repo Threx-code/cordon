@@ -16,6 +16,7 @@ import urllib.request
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.sources.install.plan import InstallRefused
@@ -37,6 +38,8 @@ class HackageIndex:
     CLOSING: ClassVar[int] = 1024
     BLOCK: ClassVar[int] = 512
     CHUNK: ClassVar[int] = 1 << 20
+    #: Seconds for the whole of a range: the first fetch is the whole 1 GB index.
+    BUDGET: ClassVar[float] = 3600.0
     MAX_ENTRY: ClassVar[int] = 1 << 20
 
     @classmethod
@@ -56,7 +59,7 @@ class HackageIndex:
                         f"{parsed.netloc} did not serve the byte range of the index asked for ({response.status}, {stated[:60]!r})"
                     )
                 got = 0
-                while chunk := response.read(cls.CHUNK):
+                for chunk in Download.chunks(response, budget=cls.BUDGET, size=cls.CHUNK):
                     got += len(chunk)
                     if got > end - start:
                         raise InstallRefused("the index range was longer than the one asked for")

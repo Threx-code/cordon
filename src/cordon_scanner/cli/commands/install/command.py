@@ -97,21 +97,21 @@ class InstallGuardCommand:
     @classmethod
     def _table(cls) -> dict[str, tuple[Callable[[list[str]], bool], Callable[..., int]]]:
         """Each tool: which of its command lines install, and what checks them."""
-        from cordon_scanner.cli.commands.install.bazel import BazelTools
-        from cordon_scanner.cli.commands.install.cocoapods import CocoaPodsTools
         from cordon_scanner.cli.commands.install.composer import ComposerTools
-        from cordon_scanner.cli.commands.install.cran import CranTools
         from cordon_scanner.cli.commands.install.dotnet import DotnetTools
         from cordon_scanner.cli.commands.install.fetched import FetchedTools
-        from cordon_scanner.cli.commands.install.hackage import HackageTools
         from cordon_scanner.cli.commands.install.hex import HexTools
-        from cordon_scanner.cli.commands.install.julia import JuliaTools
+        from cordon_scanner.cli.commands.install.locked.bazel import BazelTools
+        from cordon_scanner.cli.commands.install.locked.cocoapods import CocoaPodsTools
+        from cordon_scanner.cli.commands.install.locked.cran import CranTools
+        from cordon_scanner.cli.commands.install.locked.hackage import HackageTools
+        from cordon_scanner.cli.commands.install.locked.julia import JuliaTools
+        from cordon_scanner.cli.commands.install.locked.nix import NixTools
+        from cordon_scanner.cli.commands.install.locked.swift import SwiftTools
         from cordon_scanner.cli.commands.install.maven import MavenTools
         from cordon_scanner.cli.commands.install.native import NativeTools
-        from cordon_scanner.cli.commands.install.nix import NixTools
         from cordon_scanner.cli.commands.install.node import NodeTools
         from cordon_scanner.cli.commands.install.python import PythonTools
-        from cordon_scanner.cli.commands.install.swift import SwiftTools
 
         return {
             "npm": (NodeTools.npm_installs, NodeTools.npm),

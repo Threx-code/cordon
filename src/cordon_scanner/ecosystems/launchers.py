@@ -21,11 +21,11 @@ class Launcher:
     commands: tuple[tuple[str, ...], ...]
     """The words that start such a command: `("npx",)`, `("pnpm", "dlx")`. The program is its last path part, lower case."""
     spec: str
-    """The kind of package spec the command names (`npm`, `pypi`, `image`, ...): `LaunchSpecs` reads, splits and judges it."""
+    """The kind of package spec the command names (`npm`, `pypi`, `image`, ...): `LaunchPackages`, `LaunchSpecs` and `LaunchPins` read, split and judge it."""
     page: str
     """The tool's own page that documents the command."""
     read: str = ""
-    """The `LaunchSpecs` reader of the words after the command, where it is not `<spec>_package`."""
+    """The `LaunchPackages` reader of the words after the command, where it is not `<spec>_package`."""
     skip: tuple[str, ...] = ()
     """Words that may follow a two-word command before the package (`uv tool run pkg`)."""
 

@@ -7,6 +7,7 @@ import tomllib
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
+from cordon_scanner.detect.agents.declared.docker_launch import DockerRuns
 from cordon_scanner.detect.agents.paths import MCP_PATHS
 from cordon_scanner.foundation.formats import jsonc
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
@@ -18,9 +19,9 @@ if TYPE_CHECKING:
 
 # -- A3: MCP launch commands -----------------------------------------------------------------
 class LaunchSpecs:
-    """How the words after a launch command read, by the kind of spec a launcher names (`Launcher.spec`): `<kind>_package(words)`
-    finds the package spec among them, `<kind>_split(spec)` reads its (name, version or None), `<kind>_pinned(spec)` says whether
-    it names one release. The declarations that use them are the adapters' `mcp_launch` (`ecosystems/launchers.py`)."""
+    """How a package spec in a launch command reads, by the kind of spec a launcher names (`Launcher.spec`): `<kind>_split(spec)` reads
+    its (name, version or None). `LaunchPackages` finds the spec among the words and `LaunchPins` says whether it names one release;
+    the declarations that use them are the adapters' `mcp_launch` (`ecosystems/launchers.py`)."""
 
     NPM_EXACT: ClassVar[re.Pattern[str]] = re.compile(r"\d+\.\d+\.\d+(?:[-+][\w.]+)?")
     PYPI_PIN: ClassVar[re.Pattern[str]] = re.compile(r"([\w.\-\[\],]+?)(?:==|@)(\d[\w.\-+]*)")
@@ -60,7 +61,84 @@ class LaunchSpecs:
     DENO_SPECIFIER: ClassVar[re.Pattern[str]] = re.compile(r"npm:(\S+)")
     SWIFT_EXACT: ClassVar[re.Pattern[str]] = re.compile(r"\d+\.\d+\.\d+(?:[-+][\w.]+)?")
 
-    # -- finding the package among the words -------------------------------------------------
+    @staticmethod
+    def npm_split(spec: str) -> tuple[str, str | None]:
+        head, _, version = spec[1:].partition("@") if spec.startswith("@") else spec.partition("@")
+        name = "@" + head if spec.startswith("@") else head
+        return name, version if LaunchSpecs.NPM_EXACT.fullmatch(version) else None
+
+    @staticmethod
+    def pypi_split(spec: str) -> tuple[str, str | None]:
+        match = LaunchSpecs.PYPI_SPLIT.fullmatch(spec)
+        if match:
+            return match.group(1), match.group(2)
+        return re.split(r"[\[=@<>~!]", spec, maxsplit=1)[0], None
+
+    @staticmethod
+    def image_split(spec: str) -> tuple[str, str | None]:
+        """`name@sha256:...` is a digest, `name:tag` a tag (a colon before the last `/` is a registry port)."""
+        if "@" in spec:
+            name, _, digest = spec.partition("@")
+            return name, digest or None
+        last = spec.rpartition("/")[2]
+        if ":" in last:
+            name, _, tag = spec.rpartition(":")
+            return name, tag or None
+        return spec, None
+
+    @staticmethod
+    def go_split(spec: str) -> tuple[str, str | None]:
+        name, _, version = spec.rpartition("@")
+        return name, version if LaunchSpecs.GO_EXACT.fullmatch(version) else None
+
+    @staticmethod
+    def nuget_split(spec: str) -> tuple[str, str | None]:
+        name, _, version = spec.partition("@")
+        return name, version if LaunchSpecs.NUGET_EXACT.fullmatch(version) else None
+
+    @staticmethod
+    def maven_split(spec: str) -> tuple[str, str | None]:
+        found = LaunchSpecs.GAV.fullmatch(spec)
+        if found is None:
+            return spec, None
+        version = found.group(3)
+        floating = (
+            version in ("RELEASE", "LATEST") or "+" in version or version.startswith(("[", "("))
+        )
+        return f"{found.group(1)}:{found.group(2)}", None if floating else version
+
+    @staticmethod
+    def gem_split(spec: str) -> tuple[str, str | None]:
+        name, _, requirement = spec.partition("@")
+        found = LaunchSpecs.GEM_EXACT.fullmatch(requirement.strip()) if requirement else None
+        return name, found.group(1) if found else None
+
+    @staticmethod
+    def nix_split(spec: str) -> tuple[str, str | None]:
+        """`github:owner/repo/<rev>#attr` to (`owner/repo`, rev); another reference keeps its text before `#` and `?`."""
+        reference = spec.partition("#")[0]
+        rev = LaunchSpecs.NIX_REV.search(reference)
+        scheme, _, rest = reference.partition(":")
+        if scheme in ("github", "gitlab", "sourcehut") and rest:
+            pieces = rest.partition("?")[0].split("/")
+            return "/".join(pieces[:2]), rev.group(1) if rev else None
+        return reference.partition("?")[0], rev.group(1) if rev else None
+
+    @staticmethod
+    def conda_split(spec: str) -> tuple[str, str | None]:
+        found = LaunchSpecs.CONDA_PIN.fullmatch(spec.strip())
+        if found:
+            return found.group(1), found.group(2)
+        return re.split(r"[=<>!~ ]", spec.strip(), maxsplit=1)[0], None
+
+    @staticmethod
+    def swift_split(spec: str) -> tuple[str, str | None]:
+        name, _, version = spec.partition("@")
+        return name, version if LaunchSpecs.SWIFT_EXACT.fullmatch(version) else None
+
+
+class LaunchPackages:
+    """`<kind>_package(words)`: the package spec among the words after a launch command (`Launcher.spec` names the kind)."""
 
     @staticmethod
     def _first_package(rest: list[str]) -> str | None:
@@ -85,11 +163,11 @@ class LaunchSpecs:
 
     @staticmethod
     def npm_package(rest: list[str]) -> str | None:
-        return LaunchSpecs._first_package(rest)
+        return LaunchPackages._first_package(rest)
 
     @staticmethod
     def pypi_package(rest: list[str]) -> str | None:
-        return LaunchSpecs._first_package(rest)
+        return LaunchPackages._first_package(rest)
 
     @staticmethod
     def deno_npm_package(rest: list[str]) -> str | None:
@@ -103,9 +181,7 @@ class LaunchSpecs:
     @staticmethod
     def image_package(rest: list[str]) -> str | None:
         """`docker run [options] IMAGE`: the image reference, for a command that runs one."""
-        from cordon_scanner.detect.agents.configuration import ServerExposure
-
-        launched = ServerExposure.docker_run(rest)
+        launched = DockerRuns.parse(rest)
         return launched.image if launched is not None and launched.image else None
 
     @staticmethod
@@ -227,84 +303,9 @@ class LaunchSpecs:
         """`mint run owner/repo@version`."""
         return next((a for a in rest if not a.startswith("-")), None)
 
-    # -- reading it ---------------------------------------------------------------------------
 
-    @staticmethod
-    def npm_split(spec: str) -> tuple[str, str | None]:
-        head, _, version = spec[1:].partition("@") if spec.startswith("@") else spec.partition("@")
-        name = "@" + head if spec.startswith("@") else head
-        return name, version if LaunchSpecs.NPM_EXACT.fullmatch(version) else None
-
-    @staticmethod
-    def pypi_split(spec: str) -> tuple[str, str | None]:
-        match = LaunchSpecs.PYPI_SPLIT.fullmatch(spec)
-        if match:
-            return match.group(1), match.group(2)
-        return re.split(r"[\[=@<>~!]", spec, maxsplit=1)[0], None
-
-    @staticmethod
-    def image_split(spec: str) -> tuple[str, str | None]:
-        """`name@sha256:...` is a digest, `name:tag` a tag (a colon before the last `/` is a registry port)."""
-        if "@" in spec:
-            name, _, digest = spec.partition("@")
-            return name, digest or None
-        last = spec.rpartition("/")[2]
-        if ":" in last:
-            name, _, tag = spec.rpartition(":")
-            return name, tag or None
-        return spec, None
-
-    @staticmethod
-    def go_split(spec: str) -> tuple[str, str | None]:
-        name, _, version = spec.rpartition("@")
-        return name, version if LaunchSpecs.GO_EXACT.fullmatch(version) else None
-
-    @staticmethod
-    def nuget_split(spec: str) -> tuple[str, str | None]:
-        name, _, version = spec.partition("@")
-        return name, version if LaunchSpecs.NUGET_EXACT.fullmatch(version) else None
-
-    @staticmethod
-    def maven_split(spec: str) -> tuple[str, str | None]:
-        found = LaunchSpecs.GAV.fullmatch(spec)
-        if found is None:
-            return spec, None
-        version = found.group(3)
-        floating = (
-            version in ("RELEASE", "LATEST") or "+" in version or version.startswith(("[", "("))
-        )
-        return f"{found.group(1)}:{found.group(2)}", None if floating else version
-
-    @staticmethod
-    def gem_split(spec: str) -> tuple[str, str | None]:
-        name, _, requirement = spec.partition("@")
-        found = LaunchSpecs.GEM_EXACT.fullmatch(requirement.strip()) if requirement else None
-        return name, found.group(1) if found else None
-
-    @staticmethod
-    def nix_split(spec: str) -> tuple[str, str | None]:
-        """`github:owner/repo/<rev>#attr` to (`owner/repo`, rev); another reference keeps its text before `#` and `?`."""
-        reference = spec.partition("#")[0]
-        rev = LaunchSpecs.NIX_REV.search(reference)
-        scheme, _, rest = reference.partition(":")
-        if scheme in ("github", "gitlab", "sourcehut") and rest:
-            pieces = rest.partition("?")[0].split("/")
-            return "/".join(pieces[:2]), rev.group(1) if rev else None
-        return reference.partition("?")[0], rev.group(1) if rev else None
-
-    @staticmethod
-    def conda_split(spec: str) -> tuple[str, str | None]:
-        found = LaunchSpecs.CONDA_PIN.fullmatch(spec.strip())
-        if found:
-            return found.group(1), found.group(2)
-        return re.split(r"[=<>!~ ]", spec.strip(), maxsplit=1)[0], None
-
-    @staticmethod
-    def swift_split(spec: str) -> tuple[str, str | None]:
-        name, _, version = spec.partition("@")
-        return name, version if LaunchSpecs.SWIFT_EXACT.fullmatch(version) else None
-
-    # -- whether it names one release -------------------------------------------------------------
+class LaunchPins:
+    """`<kind>_pinned(spec)`: whether a launch command's package spec names one release."""
 
     @staticmethod
     def npm_pinned(spec: str) -> bool:
@@ -428,12 +429,12 @@ class McpConfigs:
             return None
         ecosystem, launcher = found
         read: Callable[[list[str]], str | None] = getattr(
-            LaunchSpecs, launcher.read or f"{launcher.spec}_package"
+            LaunchPackages, launcher.read or f"{launcher.spec}_package"
         )
         package = read(rest)
         if not package:
             return None
-        pinned: Callable[[str], bool] = getattr(LaunchSpecs, f"{launcher.spec}_pinned")
+        pinned: Callable[[str], bool] = getattr(LaunchPins, f"{launcher.spec}_pinned")
         return ecosystem, package, pinned(package)
 
     @staticmethod
