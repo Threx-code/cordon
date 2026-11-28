@@ -562,3 +562,9 @@ class TestCompletion:
     def test_the_cli_prints_it(self, capsys) -> None:
         assert CommandLine.run(["completion", "bash"]) == 0
         assert "complete -F _cordon_scanner cordon-scanner" in capsys.readouterr().out
+
+
+class TestImagePackageUrl:
+    def test_an_invalid_image_reference_is_refused(self) -> None:
+        with pytest.raises(PackageTargetError, match="not a valid image reference"):
+            PackageTarget.parse("pkg:docker/UPPER/Case@1.0")

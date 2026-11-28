@@ -228,7 +228,7 @@ class WarmHelper:
         if threading.active_count() != 1:
             # Forking a process that runs threads can copy a held lock into the child. Refuse to
             # serve rather than risk it: the server runs every call cold instead.
-            return 1
+            return 1  # pragma: no cover - a helper thread cannot be arranged here
         protocol = sys.stdout
         cls.send(protocol, {"ready": True})
         children: dict[int, int] = {}
@@ -251,7 +251,9 @@ class WarmHelper:
                             continue
                         pid = os.fork()
                         if pid == 0:
-                            os._exit(cls.child(request))
+                            os._exit(
+                                cls.child(request)
+                            )  # pragma: no cover - the child exits before coverage saves
                         children[pid] = int(request["id"])
                         cls.send(protocol, {"id": request["id"], "pid": pid})
             else:
@@ -259,7 +261,9 @@ class WarmHelper:
             while children:
                 try:
                     pid, status = os.waitpid(-1, os.WNOHANG)
-                except ChildProcessError:
+                except (
+                    ChildProcessError
+                ):  # pragma: no cover - children reaped elsewhere cannot be provoked
                     children.clear()
                     break
                 if pid == 0:
