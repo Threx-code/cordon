@@ -93,13 +93,10 @@ class NvdImport:
     def verified(base: str, suffix: str) -> bytes:
         """`_verified`, up to three times: a transfer cut short (NVD's CDN does this) fails its
         digest or its decompression, and is fetched again; three failures fail the build."""
-        for attempt in range(3):
-            try:
+        for _ in range(2):
+            with contextlib.suppress(NvdImportError):
                 return NvdImport._verified(base, suffix)
-            except NvdImportError:
-                if attempt == 2:
-                    raise
-        raise AssertionError("unreachable")
+        return NvdImport._verified(base, suffix)
 
     @staticmethod
     def _verified(base: str, suffix: str) -> bytes:

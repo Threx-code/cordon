@@ -1549,6 +1549,7 @@
   "test_npm_podspecs.py": "ecosystems",
   "test_npm_payload_execution.py": "detect/code/capability",
   "test_nvd.py": "intel/advisories",
+  "test_nvd_import_feeds.py": "intel/advisories",
   "test_openpgp.py": "intel/provenance",
   "test_osv_delta.py": "intel/advisories",
   "test_osv_import.py": "intel/advisories",
