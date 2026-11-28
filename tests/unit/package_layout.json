@@ -1863,6 +1863,7 @@
   "test_network_failures.py": "foundation/network",
   "test_references_followed.py": "detect/supply",
   "test_scoped_taint_edges.py": "analysis/python/flows",
+  "test_python_two_reader_edges.py": "analysis/python/flows",
   "test_lockfile_guard_tools.py": "cli/install",
   "test_native_guard_tools.py": "cli/install",
   "test_python_guard_tools.py": "cli/install",
