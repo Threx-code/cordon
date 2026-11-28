@@ -11,17 +11,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Final
 
-from cordon_scanner.detect.agents.extensions import ExtensionNames
+from cordon_scanner.detect.agents.extensions import ExtensionNames, InstalledRules
 from cordon_scanner.detect.agents.mcp_servers.directive.rules import DirectiveRules
 from cordon_scanner.detect.agents.mcp_servers.lookalike_rules import LookalikeRules
 from cordon_scanner.detect.agents.mcp_servers.protocol.protocol_rules import ProtocolRules
 from cordon_scanner.detect.agents.mcp_servers.served_rules import ServedRules
 from cordon_scanner.foundation import references as ref
-from cordon_scanner.foundation.models import (
-    Category,
-    Confidence,
-    Severity,
-)
+from cordon_scanner.foundation.models import Category, Confidence, Severity
 
 # -- A6: agent actions in CI -----------------------------------------------------------------
 AGENT_ACTIONS: Final = {
@@ -987,7 +983,7 @@ class AutorunRules:
         }
 
 
-for _builder in (AutorunRules, LookalikeRules, ServedRules, DirectiveRules):
+for _builder in (AutorunRules, LookalikeRules, ServedRules, DirectiveRules, InstalledRules):
     RULES.update(_builder.build_rules(AgentRules._rule))
 
 __all__ = [

@@ -1169,6 +1169,7 @@ PROFILES: tuple[EcosystemProfile, ...] = (
         names=("acme.leftpad", "acme.is-number", "acme.msecs"),
         versions=("1.0.0", "1.3.0", "2.0.0"),
         write=Writers.vscode,
+        typosquat=("ms-python.python", "ms-pyhton.python", "ms-python.debugpy"),
         executable={
             # An extension's entry point runs in the editor when it activates, and its prepublish
             # script when it is packaged: never when a workspace naming it is scanned.

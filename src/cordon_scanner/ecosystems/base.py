@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from cordon_scanner.ecosystems.archive_shapes import PublishedArchive
+from cordon_scanner.ecosystems.own_names import OwnNameDefaults
 from cordon_scanner.foundation.dependencies import InstallTool
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Hook, Scope
@@ -696,6 +697,7 @@ class BaseEcosystem(
     ArchiveTraitDefaults,
     PackageEntryDefaults,
     PublishedCodeDefaults,
+    OwnNameDefaults,
 ):
     """Shared behaviour. Implementing the protocol directly is equally valid."""
 
@@ -956,8 +958,6 @@ class BaseEcosystem(
                     command=str(command),
                     ecosystem=self.id,
                 )
-
-    # -- the projects mcp writes for a package check (EcosystemProjects) ------------------------
 
 
 # Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine

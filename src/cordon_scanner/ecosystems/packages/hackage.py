@@ -41,6 +41,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.haskell.cabal import (
     GHC_PACKAGES,
     CabalDeps,
@@ -586,6 +587,7 @@ class HackageEcosystem(BaseEcosystem):
     """Haskell packages through Cabal and Stack."""
 
     id = "hackage"
+    own_name = OwnName(("*.cabal",))
     purl_type = "hackage"
     published_archive = (HackageArchive(),)
     manifest_globs: tuple[str, ...] = (

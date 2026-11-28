@@ -32,6 +32,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Scope
 
 if TYPE_CHECKING:
@@ -82,6 +83,12 @@ class VsCodeEcosystem(BaseEcosystem):
 
     id = "vscode"
     bundle_keyword = "vscode"
+    own_name = OwnName(
+        ("extension/package.json",),
+        readers=(("extension/package.json", "extension_manifest"),),
+        parsers=(("extension/package.json", "extension_package"),),
+        archives=(".vsix",),
+    )
     purl_type = "vscode-extension"
     published_archive = (VsixArchive(),)
     manifest_globs: tuple[str, ...] = (

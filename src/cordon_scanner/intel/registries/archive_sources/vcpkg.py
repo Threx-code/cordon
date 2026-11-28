@@ -38,12 +38,48 @@ class Portfile:
 
     @staticmethod
     def call(text: str, name: str) -> list[str]:
-        """The words between the parentheses of the first `name(...)` call, or [] when there is none."""
+        """The words between the parentheses of the first `name(...)` call, or [] when there is none. The call ends at its matching
+        `)`: parentheses inside an argument balance (CMake's own rule), a quoted string and a `#` comment may hold any."""
         start = text.find(f"{name}(")
         if start < 0:
             return []
-        end = text.find(")", start)
-        return text[start + len(name) + 1 : end].split() if end > start else []
+        position, depth, words, word = start + len(name) + 1, 1, [], []
+        quoted = False
+        while position < len(text):
+            char = text[position]
+            position += 1
+            if quoted:
+                if char == "\\" and position < len(text):
+                    word.append(text[position])
+                    position += 1
+                elif char == '"':
+                    quoted = False
+                else:
+                    word.append(char)
+                continue
+            if char == "#":
+                position = text.find("\n", position) if "\n" in text[position:] else len(text)
+                continue
+            if char == '"':
+                quoted = True
+                continue
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            if char.isspace() and depth == 1:
+                if word:
+                    words.append("".join(word))
+                    word = []
+                continue
+            word.append(char)
+        if depth != 0 or quoted:
+            return []
+        if word:
+            words.append("".join(word))
+        return words
 
     @staticmethod
     def values(words: list[str], keys: tuple[str, ...]) -> dict[str, list[str]]:

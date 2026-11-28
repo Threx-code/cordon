@@ -39,6 +39,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
@@ -869,6 +870,11 @@ class HomebrewEcosystem(BaseEcosystem):
         return NotRunAtInstall.spans(text) if path.endswith(".rb") else []
 
     id = "homebrew"
+    own_name = OwnName(
+        ("Formula/*.rb", "Formula/*/*.rb", ".brew/*.rb"),
+        readers=(("*.rb", "formula_stem"),),
+        parsers=(("*.rb", "formula_manifest"),),
+    )
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         # A formula from a named tap is recorded by its own name; its tap is the namespace its

@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-Every package ecosystem Cordon reads, 28 of them, and how to scan each one. The files,
+Every package ecosystem Cordon reads, 29 of them, and how to scan each one. The files,
 the checks and the commands below are rendered from the shipped code, so this page names
 exactly what a scan reads. The same facts as one table:
 [docs/07-ECOSYSTEMS.md](../docs/07-ECOSYSTEMS.md).
@@ -40,11 +40,14 @@ Roles and collections a playbook installs. Ecosystem id `ansible`.
 │                 agreement                                                  │
 │                 provenance: whether a build attestation exists, and        │
 │                 verifies                                                   │
+│                 a published package fetched by digest and compared with    │
+│                 the last release                                           │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```
 cordon-scanner scan .                      # every file above, in the project
+cordon-scanner scan pkg:ansible/<name>@<version> --online
 cordon-scanner deps .                      # every package found, with its findings
 ```
 
@@ -68,11 +71,14 @@ Modules from the Bazel Central Registry. Ecosystem id `bazel`.
 │                 agreement                                                  │
 │                 provenance: whether a build attestation exists, and        │
 │                 verifies                                                   │
+│                 a published package fetched by digest and compared with    │
+│                 the last release                                           │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```
 cordon-scanner scan .                      # every file above, in the project
+cordon-scanner scan pkg:bazel/<name>@<version> --online
 cordon-scanner deps .                      # every package found, with its findings
 ```
 
@@ -120,11 +126,14 @@ IOS and macOS pods. Ecosystem id `cocoapods`.
 │                 names                                                      │
 │ WITH --online   registry: withdrawn releases, version distance, hash       │
 │                 agreement                                                  │
+│                 a published package fetched by digest and compared with    │
+│                 the last release                                           │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```
 cordon-scanner scan .                      # every file above, in the project
+cordon-scanner scan pkg:cocoapods/<name>@<version> --online
 cordon-scanner deps .                      # every package found, with its findings
 ```
 
@@ -144,11 +153,14 @@ PHP packages from Packagist. Ecosystem id `composer`.
 │                 names                                                      │
 │ WITH --online   registry: withdrawn releases, version distance, hash       │
 │                 agreement                                                  │
+│                 a published package fetched by digest and compared with    │
+│                 the last release                                           │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```
 cordon-scanner scan .                      # every file above, in the project
+cordon-scanner scan pkg:composer/<name>@<version> --online
 cordon-scanner deps .                      # every package found, with its findings
 ```
 
@@ -170,11 +182,14 @@ C and C++ packages. Ecosystem id `conan`.
 │                 names                                                      │
 │ WITH --online   registry: withdrawn releases, version distance, hash       │
 │                 agreement                                                  │
+│                 a published package fetched by digest and compared with    │
+│                 the last release                                           │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```
 cordon-scanner scan .                      # every file above, in the project
+cordon-scanner scan pkg:conan/<name>@<version> --online
 cordon-scanner deps .                      # every package found, with its findings
 ```
 
@@ -196,11 +211,14 @@ Conda-forge and Anaconda packages. Ecosystem id `conda`.
 │                 names                                                      │
 │ WITH --online   registry: withdrawn releases, version distance, hash       │
 │                 agreement                                                  │
+│                 a published package fetched by digest and compared with    │
+│                 the last release                                           │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```
 cordon-scanner scan .                      # every file above, in the project
+cordon-scanner scan pkg:conda/<name>@<version> --online
 cordon-scanner deps .                      # every package found, with its findings
 ```
 
@@ -266,11 +284,46 @@ R packages, through renv. Ecosystem id `cran`.
 │                 names                                                      │
 │ WITH --online   registry: withdrawn releases, version distance, hash       │
 │                 agreement                                                  │
+│                 a published package fetched by digest and compared with    │
+│                 the last release                                           │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```
 cordon-scanner scan .                      # every file above, in the project
+cordon-scanner scan pkg:cran/<name>@<version> --online
+cordon-scanner deps .                      # every package found, with its findings
+```
+
+## Editor extensions
+
+The VS Code extensions a workspace recommends or pins, from Open VSX. Ecosystem id `vscode`.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ MANIFESTS       .vscode/extensions.json, *.code-workspace,                 │
+│                 .devcontainer/devcontainer.json,                           │
+│                 .devcontainer/*/devcontainer.json, .devcontainer.json,     │
+│                 .gitpod.yml, .gitpod.yaml, extension.vsixmanifest          │
+│ LOCKFILES       none                                                       │
+│                                                                            │
+│ OFFLINE         the dependency graph, lockfile integrity, licences,        │
+│                 install hooks                                              │
+│                 known-malicious and known-vulnerable releases, offline     │
+│                 typosquats and dependency confusion against its popular    │
+│                 names                                                      │
+│ WITH --online   registry: withdrawn releases, version distance, hash       │
+│                 agreement                                                  │
+│                 provenance: whether a build attestation exists, and        │
+│                 verifies                                                   │
+│                 a published package fetched by digest and compared with    │
+│                 the last release                                           │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+```
+cordon-scanner scan .                      # every file above, in the project
+cordon-scanner scan pkg:vscode-extension/<name>@<version> --online
 cordon-scanner deps .                      # every package found, with its findings
 ```
 
@@ -291,11 +344,16 @@ Workflows and the actions they use, pinned or not. Ecosystem id `actions`.
 │                 names                                                      │
 │ WITH --online   registry: withdrawn releases, version distance, hash       │
 │                 agreement                                                  │
+│                 provenance: whether a build attestation exists, and        │
+│                 verifies                                                   │
+│                 a published package fetched by digest and compared with    │
+│                 the last release                                           │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```
 cordon-scanner scan .                      # every file above, in the project
+cordon-scanner scan pkg:githubactions/<name>@<version> --online
 cordon-scanner deps .                      # every package found, with its findings
 ```
 
@@ -315,6 +373,8 @@ Go modules from the module proxy. Ecosystem id `gomod`.
 │                 names                                                      │
 │ WITH --online   registry: withdrawn releases, version distance, hash       │
 │                 agreement                                                  │
+│                 provenance: whether a build attestation exists, and        │
+│                 verifies                                                   │
 │                 a published package fetched by digest and compared with    │
 │                 the last release                                           │
 └────────────────────────────────────────────────────────────────────────────┘
@@ -372,11 +432,16 @@ Haskell packages, through cabal and stack. Ecosystem id `hackage`.
 │                 names                                                      │
 │ WITH --online   registry: withdrawn releases, version distance, hash       │
 │                 agreement                                                  │
+│                 provenance: whether a build attestation exists, and        │
+│                 verifies                                                   │
+│                 a published package fetched by digest and compared with    │
+│                 the last release                                           │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```
 cordon-scanner scan .                      # every file above, in the project
+cordon-scanner scan pkg:hackage/<name>@<version> --online
 cordon-scanner deps .                      # every package found, with its findings
 ```
 
@@ -399,11 +464,14 @@ Charts a chart depends on. Ecosystem id `helm`.
 │                 agreement                                                  │
 │                 provenance: whether a build attestation exists, and        │
 │                 verifies                                                   │
+│                 a published package fetched by digest and compared with    │
+│                 the last release                                           │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```
 cordon-scanner scan .                      # every file above, in the project
+cordon-scanner scan pkg:helm/<name>@<version> --online
 cordon-scanner deps .                      # every package found, with its findings
 ```
 
@@ -455,11 +523,14 @@ Formulae and casks in a Brewfile. Ecosystem id `homebrew`.
 │                 agreement                                                  │
 │                 provenance: whether a build attestation exists, and        │
 │                 verifies                                                   │
+│                 a published package fetched by digest and compared with    │
+│                 the last release                                           │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```
 cordon-scanner scan .                      # every file above, in the project
+cordon-scanner scan pkg:brew/<name>@<version> --online
 cordon-scanner deps .                      # every package found, with its findings
 ```
 
@@ -480,11 +551,14 @@ Packages from the General registry. Ecosystem id `julia`.
 │                 names                                                      │
 │ WITH --online   registry: withdrawn releases, version distance, hash       │
 │                 agreement                                                  │
+│                 a published package fetched by digest and compared with    │
+│                 the last release                                           │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```
 cordon-scanner scan .                      # every file above, in the project
+cordon-scanner scan pkg:julia/<name>@<version> --online
 cordon-scanner deps .                      # every package found, with its findings
 ```
 
@@ -533,11 +607,14 @@ Flake inputs. Ecosystem id `nix`.
 │                 OPERATIONAL.ADVISORY.NO_FEED.001                           │
 │                 typosquats and dependency confusion against its popular    │
 │                 names                                                      │
+│ WITH --online   a published package fetched by digest and compared with    │
+│                 the last release                                           │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```
 cordon-scanner scan .                      # every file above, in the project
+cordon-scanner scan pkg:nix/<name>@<version> --online
 cordon-scanner deps .                      # every package found, with its findings
 ```
 
@@ -590,6 +667,8 @@ cordon-scanner deps .                      # every package found, with its findi
 │                 names                                                      │
 │ WITH --online   registry: withdrawn releases, version distance, hash       │
 │                 agreement                                                  │
+│                 provenance: whether a build attestation exists, and        │
+│                 verifies                                                   │
 │                 a published package fetched by digest and compared with    │
 │                 the last release                                           │
 └────────────────────────────────────────────────────────────────────────────┘
@@ -618,11 +697,14 @@ OCaml packages. Ecosystem id `opam`.
 │                 names                                                      │
 │ WITH --online   registry: withdrawn releases, version distance, hash       │
 │                 agreement                                                  │
+│                 a published package fetched by digest and compared with    │
+│                 the last release                                           │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```
 cordon-scanner scan .                      # every file above, in the project
+cordon-scanner scan pkg:opam/<name>@<version> --online
 cordon-scanner deps .                      # every package found, with its findings
 ```
 
@@ -728,11 +810,14 @@ Swift Package Manager dependencies. Ecosystem id `swift`.
 │                 known-malicious and known-vulnerable releases, offline     │
 │                 typosquats and dependency confusion against its popular    │
 │                 names                                                      │
+│ WITH --online   a published package fetched by digest and compared with    │
+│                 the last release                                           │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```
 cordon-scanner scan .                      # every file above, in the project
+cordon-scanner scan pkg:swift/<name>@<version> --online
 cordon-scanner deps .                      # every package found, with its findings
 ```
 
@@ -755,11 +840,14 @@ Providers and their pinned hashes. Ecosystem id `terraform`.
 │                 agreement                                                  │
 │                 provenance: whether a build attestation exists, and        │
 │                 verifies                                                   │
+│                 a published package fetched by digest and compared with    │
+│                 the last release                                           │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```
 cordon-scanner scan .                      # every file above, in the project
+cordon-scanner scan pkg:terraform/<name>@<version> --online
 cordon-scanner deps .                      # every package found, with its findings
 ```
 
@@ -780,11 +868,14 @@ C and C++ ports. Ecosystem id `vcpkg`.
 │                 names                                                      │
 │ WITH --online   registry: withdrawn releases, version distance, hash       │
 │                 agreement                                                  │
+│                 a published package fetched by digest and compared with    │
+│                 the last release                                           │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```
 cordon-scanner scan .                      # every file above, in the project
+cordon-scanner scan pkg:vcpkg/<name>@<version> --online
 cordon-scanner deps .                      # every package found, with its findings
 ```
 ## Every language

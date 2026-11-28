@@ -5,6 +5,10 @@ Versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Editor extensions go by one ecosystem id, `vscode`, in release history.** The release-history baseline of an extension is kept under `vscode` (it was `openvsx`), and `History.history_identity` names `vscode`; `openvsx` is still read as an input spelling. A baseline stored under the old name is not found offline and is acquired again online. Subject ids (`ext:openvsx/...`) and the verdict model's area names are unchanged: they name the marketplace and the model's own vocabulary, not the ecosystem.
+
 ## [0.7.0] - unreleased
 
 Cordon offered to AI agents, and in both editor families. The work prepared as 0.6.1 ships here.

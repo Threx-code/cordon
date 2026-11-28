@@ -30,6 +30,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.hex_literals import ElixirLiterals
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -774,6 +775,11 @@ class HexEcosystem(BaseEcosystem):
     """Hex, through mix and rebar3."""
 
     id = "hex"
+    own_name = OwnName(
+        ("mix.exs", "metadata.config"),
+        readers=(("metadata.config", "hex_metadata"),),
+        parsers=(("metadata.config", "hex_manifest"),),
+    )
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         return name.split("/", 1)[0] if "/" in name else None

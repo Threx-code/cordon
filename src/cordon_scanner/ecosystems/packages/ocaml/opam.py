@@ -38,6 +38,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.ocaml.opam_syntax import (
     COMPILER_PACKAGES,
     Formula,
@@ -210,6 +211,7 @@ class OpamEcosystem(BaseEcosystem):
     """OCaml packages through opam and dune."""
 
     id = "opam"
+    own_name = OwnName(("*.opam", "opam"), readers=(("*.opam", "opam_name"), ("opam", "opam_name")))
     purl_type = "opam"
     published_archive = NoArchive(
         "an opam package's archive is the upstream project's own source tarball, named by the `url` in its opam file; no opam metadata is inside it (captured: opam cache-small)"

@@ -39,12 +39,12 @@ from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.intel.advisories.advisories import DIGESTS_NAME, AdvisoryFiles
 from cordon_scanner.intel.advisories.cve_list import CveList
 from cordon_scanner.intel.advisories.nvd import CPE_NAME, CVES_NAME, CpeRule
+from cordon_scanner.version import USER_AGENT
 
 CVE_FEED: Final = "https://nvd.nist.gov/feeds/json/cve/2.0/nvdcve-2.0-{year}"
 CPE_FEED: Final = "https://nvd.nist.gov/feeds/json/cpe/2.0/nvdcpe-2.0"
 FIRST_YEAR: Final = 2002
 MAX_FEED_BYTES: Final = 512 << 20
-AGENT: Final = "cordon-scanner (https://github.com/Threx-code/cordon)"
 _SEVERITIES: Final = ("cvssMetricV40", "cvssMetricV31", "cvssMetricV30", "cvssMetricV2")
 _BOUNDS: Final = (
     "versionStartIncluding",
@@ -72,7 +72,7 @@ class NvdImport:
     def _fetch(url: str) -> bytes:
         if not url.startswith("https://"):
             raise NvdImportError(f"refusing a non-HTTPS feed: {url}")
-        request = urllib.request.Request(url, headers={"User-Agent": AGENT})  # noqa: S310
+        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})  # noqa: S310
         try:
             with urllib.request.urlopen(request, timeout=300) as response:  # noqa: S310
                 body: bytes = Download.read(response, MAX_FEED_BYTES + 1)

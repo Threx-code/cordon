@@ -26,6 +26,7 @@ from cordon_scanner.ecosystems.base import (
     Manifest,
     ReleaseFile,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.python.lockfiles import PypiLockfiles
 from cordon_scanner.ecosystems.packages.python.requirements import (
     _NORMALIZE,
@@ -112,6 +113,7 @@ class PypiEcosystem(PypiLockfiles, BaseEcosystem):
 
     id = "pypi"
     bundle_keyword = "uv"
+    own_name = OwnName(("setup.py", "pyproject.toml", "setup.cfg"), blocks=True)
 
     _REQUIRES_DIST: ClassVar[re.Pattern[str]] = re.compile(
         r"(?m)^Requires-Dist:\s*([A-Za-z0-9][A-Za-z0-9._-]*)([^\n]*)$"

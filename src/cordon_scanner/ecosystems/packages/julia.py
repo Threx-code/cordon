@@ -35,6 +35,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Scope
 
 if TYPE_CHECKING:
@@ -477,6 +478,7 @@ class JuliaEcosystem(BaseEcosystem):
     """Julia packages through Pkg."""
 
     id = "julia"
+    own_name = OwnName(("Project.toml",))
     purl_type = "julia"
     published_archive = (JuliaArchive(),)
     manifest_globs: tuple[str, ...] = ("**/Project.toml", "**/JuliaProject.toml")

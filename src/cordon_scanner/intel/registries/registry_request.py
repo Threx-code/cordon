@@ -12,7 +12,9 @@ from collections.abc import Callable
 
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
+from cordon_scanner.foundation.network.pinned import PinnedHTTPS
 from cordon_scanner.foundation.network.redirects import NoRedirects
+from cordon_scanner.version import USER_AGENT
 
 TIMEOUT_SECONDS = 5.0
 
@@ -42,8 +44,6 @@ RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 """Statuses that mean "ask again". Everything else is a decision: a 404 is the
 registry saying it does not have the package, and asking twice does not help."""
 
-USER_AGENT = "cordon-scanner (+https://github.com/Threx-code/cordon)"
-
 
 class RegistryError(RuntimeError):
     """A question that could not be answered.
@@ -72,7 +72,7 @@ class RegistryRequest:
     hosts, over https, without redirects, bounded in size."""
 
     @staticmethod
-    def headers(url: str, allow: Callable[[str], bool]) -> dict[str, str]:
+    def headers(url: str, allow: Callable[[str], bool], *, public: bool = False) -> dict[str, str]:
         """The response headers of `HEAD url` (names lower-cased), from a host `allow` admits, https, no redirect."""
         parsed = urllib.parse.urlsplit(url)
         if parsed.scheme != "https" or not allow(parsed.hostname or ""):
@@ -81,7 +81,7 @@ class RegistryRequest:
             url, headers={"User-Agent": USER_AGENT}, method="HEAD"
         )
         try:
-            with urllib.request.build_opener(NoRedirects).open(
+            with urllib.request.build_opener(NoRedirects, PinnedHTTPS(public_only=public)).open(
                 request, timeout=TIMEOUT_SECONDS * 2
             ) as response:
                 return {k.lower(): str(v) for k, v in response.headers.items()}
@@ -94,9 +94,12 @@ class RegistryRequest:
             ) from exc
 
     @staticmethod
-    def fetch_bytes(url: str, allow: Callable[[str], bool], *, redirects: int = 0) -> bytes:
+    def fetch_bytes(
+        url: str, allow: Callable[[str], bool], *, redirects: int = 0, public: bool = False
+    ) -> bytes:
         """The bytes at `url`, from a host `allow` admits. `redirects` is how many redirects may be followed, each only to an https
-        address on a host `allow` admits (a registry that signs a storage URL answers with one); none by default."""
+        address on a host `allow` admits (a registry that signs a storage URL answers with one); none by default. With `public`,
+        the name is resolved once and every address it gives must be a public one (the connection goes to the address checked)."""
         for hop in range(redirects + 1):
             parsed = urllib.parse.urlsplit(url)
             if parsed.scheme != "https" or not allow(parsed.hostname or ""):
@@ -106,7 +109,7 @@ class RegistryRequest:
             request = urllib.request.Request(  # noqa: S310 - scheme and host checked above
                 url, headers={"User-Agent": USER_AGENT}, method="GET"
             )
-            opener = urllib.request.build_opener(NoRedirects)
+            opener = urllib.request.build_opener(NoRedirects, PinnedHTTPS(public_only=public))
             try:
                 with opener.open(request, timeout=TIMEOUT_SECONDS * 6) as response:
                     body = Download.read(response, MAX_ARCHIVE_BYTES + 1)
@@ -136,7 +139,6 @@ __all__ = [
     "RETRY_BACKOFF_SECONDS",
     "RETRY_STATUSES",
     "TIMEOUT_SECONDS",
-    "USER_AGENT",
     "PackageNotFound",
     "RegistryError",
     "RegistryRequest",

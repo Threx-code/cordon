@@ -38,6 +38,7 @@ from cordon_scanner.ecosystems.others import (
     RubyGemsEcosystem,
     SwiftEcosystem,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.cargo import CargoEcosystem
 from cordon_scanner.ecosystems.packages.go import GoEcosystem
 from cordon_scanner.ecosystems.packages.jvm.maven import MavenEcosystem
@@ -244,6 +245,9 @@ class EcosystemRegistry:
     )
 
     BY_ID: ClassVar[dict[str, Ecosystem]] = {eco.id: eco for eco in ECOSYSTEMS}
+    #: The editor extensions (VS Code Marketplace and Open VSX): published to registries of their own like a package,
+    #: yet not a package ecosystem the manifests and lockfiles registered above belong to.
+    EXTENSIONS: ClassVar[str] = "vscode"
 
     _MANIFEST_INDEX: ClassVar[_GlobIndex | None] = None
     _LOCKFILE_INDEX: ClassVar[_GlobIndex | None] = None
@@ -274,6 +278,35 @@ class EcosystemRegistry:
                 [(eco.id, eco.lockfile_globs) for eco in cls.ECOSYSTEMS]
             )
         return cls._LOCKFILE_INDEX
+
+    @classmethod
+    def own_name_ecosystems(cls, path: str, preferred: str | None = None) -> list[BaseEcosystem]:
+        """The ecosystems that state a package's own name in the file at `path` (`own_name`), the one named `preferred`
+        first, then the most specific pattern first: `extension/package.json` is an editor extension's, `package.json` npm's."""
+        found = []
+        for ecosystem in cls.ECOSYSTEMS:
+            if not isinstance(ecosystem, BaseEcosystem):
+                continue
+            declared = ecosystem.own_name
+            if isinstance(declared, OwnName) and (depth := declared.matches(path)):
+                found.append((ecosystem.id != preferred, -depth, ecosystem.id, ecosystem))
+        return [ecosystem for *_, ecosystem in sorted(found, key=lambda f: f[:3])]
+
+    @classmethod
+    def published_identity_ecosystem(cls, member: str, archive: str = "") -> str | None:
+        """The ecosystem whose published package has this archive member as the file that names it, at the package's root. An
+        ecosystem whose packages share their identity file with another's (a .vsix's `extension/package.json`) is asked only of
+        its own archives (`OwnName.archives`)."""
+        for ecosystem in cls.ECOSYSTEMS:
+            if isinstance(ecosystem, BaseEcosystem):
+                declared = ecosystem.own_name
+                if (
+                    isinstance(declared, OwnName)
+                    and declared.at_root(member)
+                    and (not declared.archives or archive.endswith(declared.archives))
+                ):
+                    return ecosystem.id
+        return None
 
     @staticmethod
     def manifest_ecosystem(path: str) -> str | None:

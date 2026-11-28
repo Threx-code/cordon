@@ -60,6 +60,7 @@ if TYPE_CHECKING:
     from cordon_scanner.detect.base import Unit
     from cordon_scanner.foundation.results import Dependency
     from cordon_scanner.intel.base import AttestationResult, Keyring, PackageFacts
+    from cordon_scanner.intel.provenance.bazel_provenance import ModuleCheck
 
 INVALID_RULE = "VULNERABLE.PROVENANCE.INVALID.001"
 UNVERIFIED_RULE = "POLICY.PROVENANCE.UNVERIFIED.001"
@@ -124,6 +125,20 @@ class ProvenanceDetector(BaseDetector):
             "terraform": lambda d: (
                 bool(d.version) and not d.resolved_from and d.name.count("/") == 1
             ),
+            # A module the checksum database records: a version from the public proxy, not a `replace` to a path or another module.
+            "gomod": lambda d: bool(d.version) and not (d.local or d.resolved_from),
+            # An Action `owner/repo@ref` of GitHub: a local `./path` or a docker:// reference is not a repository's release.
+            "actions": lambda d: (
+                bool(d.version)
+                and d.name.count("/") >= 1
+                and not d.name.startswith((".", "docker:"))
+            ),
+            # A package of nuget.org at a version: not a path, and not one a private feed served.
+            "nuget": lambda d: bool(d.version) and not (d.local or d.resolved_from),
+            # A package of hackage.haskell.org at a version, not a path or another repository's.
+            "hackage": lambda d: bool(d.version) and not (d.local or d.resolved_from),
+            # An extension pinned at a version (a devcontainer `publisher.name@version`): Open VSX signs each release.
+            "vscode": lambda d: bool(d.version) and not (d.local or d.resolved_from),
         }
     )
     #: The ecosystems whose provenance is not the registry's attestation, by their verifier.
@@ -134,6 +149,11 @@ class ProvenanceDetector(BaseDetector):
             "helm": "_verify_helm",
             "ansible": "_verify_ansible",
             "terraform": "_verify_terraform",
+            "gomod": "_verify_gomod",
+            "actions": "_verify_actions",
+            "nuget": "_verify_nuget",
+            "hackage": "_verify_hackage",
+            "vscode": "_verify_vscode",
         }
     )
     #: Where a publisher signs every artefact or none, so an unsigned one the project runs is the
@@ -606,6 +626,91 @@ class ProvenanceDetector(BaseDetector):
             return Path(path).expanduser().stat().st_mtime
         except OSError:
             return -1.0
+
+    def _verify_gomod(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
+        """A module's record in the Go checksum database, in the signed tree, against the `h1:` go.sum pins
+        (`intel/provenance/gosumdb`)."""
+        from cordon_scanner.intel.registry import GoSumdb
+
+        label = f"{dependency.name}@{dependency.version}"
+        check = GoSumdb.check(dependency.name, dependency.version or "", dependency.integrity)
+        if check.outcome in ("verified", "absent"):
+            ctx.checks.record(dependency.purl, "provenance", check.outcome)
+        elif check.outcome == "invalid":
+            ctx.checks.record(dependency.purl, "provenance", "invalid")
+            yield self._finding(
+                INVALID_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"the checksum database's record of {label} did not verify: {check.detail}",
+            )
+        else:
+            yield self._finding(
+                UNVERIFIED_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"{label}'s record in the checksum database could not be verified: {check.detail}",
+            )
+
+    def _verify_actions(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
+        """A GitHub Action's release attestation, signed by GitHub and checked against its own trusted root
+        (`intel/provenance/github_attestations`): the release of this repository at this tag or commit."""
+        from cordon_scanner.intel.registry import GitHubAttestations
+
+        check = GitHubAttestations.check(
+            dependency.name, dependency.version or "", dependency.integrity
+        )
+        return self._report(check, dependency, ctx, "release attestation")
+
+    def _verify_nuget(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
+        """A NuGet package's repository signature, checked against DigiCert's pinned roots and the time-stamp inside it
+        (`intel/provenance/nuget_signature`): the archive is what nuget.org signed."""
+        from cordon_scanner.intel.registry import NuGetSignature
+
+        check = NuGetSignature.check(
+            dependency.name, dependency.version or "", dependency.integrity
+        )
+        return self._report(check, dependency, ctx, "repository signature")
+
+    def _verify_hackage(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
+        """A Hackage package against Hackage's signed TUF metadata and index (`intel/provenance/releases/hackage_tuf`)."""
+        from cordon_scanner.intel.registry import HackageTuf
+
+        check = HackageTuf.check(dependency.name, dependency.version or "", dependency.integrity)
+        return self._report(check, dependency, ctx, "TUF target")
+
+    def _verify_vscode(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
+        """An extension release's package signature, checked against the pinned Open VSX key
+        (`intel/provenance/releases/openvsx_signature`)."""
+        from cordon_scanner.intel.registry import OpenVsxSignature
+
+        check = OpenVsxSignature.check(
+            dependency.name, dependency.version or "", dependency.integrity
+        )
+        return self._report(check, dependency, ctx, "package signature")
+
+    def _report(
+        self, check: ModuleCheck, dependency: Dependency, ctx: ScanContext, what: str
+    ) -> Iterable[Finding]:
+        """What a verifier's answer becomes: a recorded check, or the rule for a proof that failed or could not be made."""
+        label = f"{dependency.name}@{dependency.version}"
+        if check.outcome in ("verified", "absent"):
+            ctx.checks.record(dependency.purl, "provenance", check.outcome)
+        elif check.outcome == "invalid":
+            ctx.checks.record(dependency.purl, "provenance", "invalid")
+            yield self._finding(
+                INVALID_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"the {what} of {label} did not verify: {check.detail}",
+            )
+        else:
+            yield self._finding(
+                UNVERIFIED_RULE,
+                ctx,
+                dependency=dependency,
+                detail=f"the {what} of {label} could not be verified: {check.detail}",
+            )
 
     def _verify_bazel(self, dependency: Dependency, ctx: ScanContext) -> Iterable[Finding]:
         """A BCR module's attestations against what the lock pinned (`intel/bazel_provenance`)."""

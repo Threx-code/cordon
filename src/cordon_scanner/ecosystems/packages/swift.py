@@ -30,6 +30,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
@@ -338,6 +339,7 @@ class SwiftResolved:
 
 class SwiftEcosystem(BaseEcosystem):
     id = "swift"
+    own_name = OwnName(("Package.swift",))
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         return name.rsplit("/", 1)[0] if "/" in name else None

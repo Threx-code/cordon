@@ -29,6 +29,7 @@ from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.intel.advisories.advisories import Advisory
 from cordon_scanner.intel.advisories.versions import Versions
+from cordon_scanner.version import USER_AGENT
 
 HOST: Final = "codeload.github.com"
 
@@ -36,7 +37,6 @@ ARCHIVE_URL: Final = f"https://{HOST}/rubysec/ruby-advisory-db/tar.gz/refs/heads
 MAX_DOWNLOAD_BYTES: Final = 64 << 20
 MAX_FILE_BYTES: Final = 256 << 10
 TIMEOUT_SECONDS: Final = 120.0
-USER_AGENT: Final = "cordon-scanner advisory sync"
 
 _KEY: Final = re.compile(r"^(?P<key>[A-Za-z_][\w]{0,40}):[ \t]*(?P<value>.*)$")
 _ITEM: Final = re.compile(r"^[ \t]{0,8}-[ \t]+(?P<value>.*)$")

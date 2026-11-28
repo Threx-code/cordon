@@ -104,6 +104,18 @@ class Coverage:
         return frozenset(CONFUSABLE_ECOSYSTEMS)
 
     @staticmethod
+    def private_registries() -> frozenset[str]:
+        from cordon_scanner.intel.registries.private_registries import PrivateRegistries
+
+        return PrivateRegistries.supported()
+
+    @staticmethod
+    def confusable_reasons() -> Mapping[str, str]:
+        from cordon_scanner.detect.supply.registries.detector import NOT_CONFUSABLE
+
+        return NOT_CONFUSABLE
+
+    @staticmethod
     def release_compare() -> frozenset[str]:
         from cordon_scanner.cli.commands.review import COMPARABLE
 
@@ -153,9 +165,9 @@ class More:
 
     @classmethod
     def registry_facts(cls) -> frozenset[str]:
-        from cordon_scanner.intel.registries.registry_hosts import HOSTS
+        from cordon_scanner.intel.registries.registry_client import RegistryClient
 
-        return cls.ids(HOSTS)
+        return cls.ids(RegistryClient.CLIENTS)
 
     @classmethod
     def package_url_targets(cls) -> frozenset[str]:
@@ -163,29 +175,31 @@ class More:
 
         return cls.ids(PackageTarget.TYPES.values())
 
+    @staticmethod
+    def package_url_reasons() -> Mapping[str, str]:
+        from cordon_scanner.sources.package import PackageTarget
+
+        return PackageTarget.NOT_PURL_TYPES
+
     @classmethod
     def advisory_text(cls) -> frozenset[str]:
         from cordon_scanner.intel.advisories.advisory_text import AdvisoryTextSymbols
 
         return cls.ids(AdvisoryTextSymbols.APPLIES_TO)
 
+    @staticmethod
+    def advisory_text_reasons() -> dict[str, str]:
+        from cordon_scanner.intel.advisories.advisory_text import AdvisoryTextSymbols, NoSymbols
+
+        return {
+            e: r.reason for e, r in AdvisoryTextSymbols.RULES.items() if isinstance(r, NoSymbols)
+        }
+
     @classmethod
     def malware_dataset(cls) -> frozenset[str]:
-        from cordon_scanner.intel.malware.datadog_malware import DIRECTORIES
+        from cordon_scanner.intel.malware.malware_sources import MalwareSources
 
-        return cls.ids(DIRECTORIES)
-
-    @staticmethod
-    def malware_dataset_reasons() -> dict[str, str]:
-        """DataDog's dataset publishes samples for npm, PyPI and editor extensions only: for every other ecosystem
-        the dataset itself does not exist (its known malware comes from OSV's MAL- records, the advisory sources)."""
-        from cordon_scanner.intel.malware.datadog_malware import DIRECTORIES
-
-        return dict.fromkeys(
-            ALL - More.ids(DIRECTORIES),
-            "DataDog's malicious-packages dataset publishes no samples for this ecosystem; its known malware "
-            "comes from OSV's MAL- records through the advisory sources",
-        )
+        return cls.ids(MalwareSources.covered())
 
     @classmethod
     def sbom_ingest(cls) -> frozenset[str]:
@@ -230,10 +244,37 @@ class More:
         return cls.ids(NameFolds.BY_ID) & (ALL | {"vscode"})
 
     @classmethod
-    def own_name_findings(cls) -> frozenset[str]:
-        from cordon_scanner.detect.supply.manifests.identity_findings import IdentityFindings
+    def typosquat_targets(cls) -> frozenset[str]:
+        """The ecosystems the look-alike check has popular names to measure a slip against: the table it reads
+        (`PopularPackageNames.popular`), never a refreshed list, and never a `<ecosystem>.index.txt` sample."""
+        from cordon_scanner.intel.registry import PopularPackageNames
 
-        return cls.ids(IdentityFindings.OWN_NAME_MEASURED_ON)
+        return cls.ids(e for e in EcosystemRegistry.BY_ID if PopularPackageNames.popular(e))
+
+    @staticmethod
+    def typosquat_reasons() -> dict[str, str]:
+        """An ecosystem whose contract says look-alike names do not apply to it (UNI-13), with the contract's reason."""
+        from cordon_scanner.ecosystems.contract import CONTRACTS
+
+        return {c.id: c.not_applicable["UNI-13"] for c in CONTRACTS if "UNI-13" in c.not_applicable}
+
+    @classmethod
+    def own_name_findings(cls) -> frozenset[str]:
+        from cordon_scanner.ecosystems.own_names import OwnName
+
+        return cls.ids(
+            e.id for e in EcosystemRegistry.all_ecosystems() if isinstance(e.own_name, OwnName)
+        )
+
+    @classmethod
+    def own_name_reasons(cls) -> dict[str, str]:
+        from cordon_scanner.ecosystems.own_names import NoOwnName
+
+        return {
+            e.id: e.own_name.reason
+            for e in EcosystemRegistry.all_ecosystems()
+            if isinstance(e.own_name, NoOwnName)
+        }
 
     @classmethod
     def package_format(cls) -> frozenset[str]:
@@ -268,12 +309,39 @@ class More:
         return {e: c.reason for e, c in ECOSYSTEM_CREDENTIALS.items() if not c.homes}
 
     @classmethod
-    def private_registries(cls) -> frozenset[str]:
-        return cls.ids(More.compared("cordon_scanner.intel.registries.private_registries", "facts"))
+    def agent_hook(cls) -> frozenset[str]:
+        from cordon_scanner.cloud.agent.agent_hook import AgentCalls, NotInstalled
+
+        return cls.ids(
+            e for e, i in AgentCalls.INSTALLERS.items() if not isinstance(i, NotInstalled)
+        )
+
+    @staticmethod
+    def agent_hook_reasons() -> dict[str, str]:
+        from cordon_scanner.cloud.agent.agent_hook import AgentCalls, NotInstalled
+
+        return {
+            e: i.reason for e, i in AgentCalls.INSTALLERS.items() if isinstance(i, NotInstalled)
+        }
 
     @classmethod
-    def agent_hook(cls) -> frozenset[str]:
-        return cls.ids(More.compared("cordon_scanner.cloud.agent.agent_hook", "of"))
+    def install_guard(cls) -> frozenset[str]:
+        """Ecosystems with a shim whose every tool has a handler in the install command's table."""
+        from cordon_scanner.cli.commands.install.command import InstallGuardCommand
+        from cordon_scanner.sources.install.shims import Shims
+
+        handled = set(InstallGuardCommand._table())
+        by_ecosystem: dict[str, set[bool]] = {}
+        for tool, ecosystem in Shims.ECOSYSTEM.items():
+            command = Shims.COMMANDS.get(tool, tool)
+            by_ecosystem.setdefault(ecosystem, set()).add(command in handled)
+        return cls.ids(e for e, flags in by_ecosystem.items() if flags == {True})
+
+    @classmethod
+    def install_guard_reasons(cls) -> Mapping[str, str]:
+        from cordon_scanner.sources.install.shims import Shims
+
+        return Shims.NO_TOOL
 
 
 class Features:
@@ -292,23 +360,25 @@ class Features:
         "advisory sources (OSV or the upstream project)": (Coverage.advisory_sources, dict),
         "campaign fingerprints": (Coverage.campaign_fingerprints, dict),
         "the previous release from the registry archive": (Coverage.previous_release, dict),
-        "look-alike names": (Coverage.confusable_names, dict),
+        "look-alike names": (Coverage.confusable_names, Coverage.confusable_reasons),
         "old-versus-new release compare in the pre-merge gate": (Coverage.release_compare, dict),
         "archive fetch (digest verified)": (More.archive_fetch, dict),
         "release history (when each release was published)": (More.release_history, dict),
         "registry facts client": (More.registry_facts, dict),
-        "package-URL scan targets": (More.package_url_targets, dict),
-        "advisory-text symbols": (More.advisory_text, dict),
-        "malware dataset": (More.malware_dataset, More.malware_dataset_reasons),
+        "package-URL scan targets": (More.package_url_targets, More.package_url_reasons),
+        "advisory-text symbols": (More.advisory_text, More.advisory_text_reasons),
+        "malware dataset": (More.malware_dataset, dict),
         "SBOM package-URL ingest": (More.sbom_ingest, More.sbom_ingest_reasons),
         "MCP package check": (More.mcp_packages, dict),
+        "typosquat (look-alike names)": (More.typosquat_targets, More.typosquat_reasons),
         "name-signal readers": (More.name_signals, dict),
-        "private registries": (More.private_registries, dict),
-        "agent hook install recognition": (More.agent_hook, dict),
+        "private registries": (Coverage.private_registries, dict),
+        "agent hook install recognition": (More.agent_hook, More.agent_hook_reasons),
+        "install shims and planners": (More.install_guard, More.install_guard_reasons),
         "fixer (lockfile fix)": (More.fixer, dict),
         "device attestation splitters": (More.device_attestation, dict),
         "subject canonicalisation": (More.subjects, dict),
-        "manifest findings (own name)": (More.own_name_findings, dict),
+        "manifest findings (own name)": (More.own_name_findings, More.own_name_reasons),
         "credential homes": (More.credential_homes, More.credential_homes_reasons),
         "package format sniffing": (More.package_format, More.package_format_reasons),
     }
@@ -316,18 +386,11 @@ class Features:
     BUILDING: ClassVar[frozenset[str]] = frozenset(
         {
             # Not yet built for every ecosystem:
-            "provenance (signed build attestations)",
-            "look-alike names",
-            "registry facts client",
-            "package-URL scan targets",
-            "advisory-text symbols",
             "name-signal readers",
             "popular package lists",
-            "private registries",
-            "agent hook install recognition",
+            "install shims and planners",
             "fixer (lockfile fix)",
             "device attestation splitters",
-            "manifest findings (own name)",
         }
     )
 
@@ -375,10 +438,11 @@ class TestEveryFeatureCoversEveryEcosystem:
 
 
 class TestNoPhantomCoverage:
-    """A row may only count what production code uses. Every `Name.attr` (or upper-case table) a row's reader takes
-    from `cordon_scanner` must be referenced as code (a load, not a comment, docstring or its own definition) somewhere
-    in `src/`. A table read only by this guard made a feature look covered while nothing shipped used it (an SBOM
-    "served by" table, a credential table, both caught in review): this makes that a failure."""
+    """A row may only count what production code uses. Every `Name.attr` (or upper-case table) the reader of a row's
+    COVERED SET takes from `cordon_scanner` must be referenced as code (a load, not a comment, docstring or its own
+    definition) somewhere in `src/`. A table read only by this guard made a feature look covered while nothing shipped
+    used it (an SBOM "served by" table, caught in review): this makes that a failure. A row's reasons are not held
+    here: they document why something does not exist, which is not coverage."""
 
     @staticmethod
     def reads() -> set[tuple[str, str, str]]:
@@ -394,12 +458,23 @@ class TestNoPhantomCoverage:
                 / "test_every_feature_covers_every_ecosystem.py"
             ).read_text(encoding="utf-8")
         )
+        covered = {
+            value.elts[0].attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Dict)
+            for value in node.values
+            if isinstance(value, ast.Tuple)
+            and value.elts
+            and isinstance(value.elts[0], ast.Attribute)
+            and isinstance(value.elts[0].value, ast.Name)
+            and value.elts[0].value.id in ("Coverage", "More")
+        }
         readers = [
             m
             for c in tree.body
             if isinstance(c, ast.ClassDef) and c.name in ("Coverage", "More")
             for m in c.body
-            if isinstance(m, ast.FunctionDef)
+            if isinstance(m, ast.FunctionDef) and m.name in covered
         ]
         out: set[tuple[str, str, str]] = set()
         for reader in readers:
@@ -435,13 +510,7 @@ class TestNoPhantomCoverage:
 
     #: Read by a row and not yet by production, each being wired in now. An entry that production starts to use
     #: fails `test_what_is_being_wired_is_still_unwired` until it comes off; nothing is ever added here to pass.
-    BUILDING: ClassVar[frozenset[str]] = frozenset(
-        {
-            # The registries' own reasons for publishing no provenance: the report is to give the reason with an
-            # `unsupported` provenance status, so a user sees why, not only that.
-            "provenance_reasons: PROVENANCE_NOT_PUBLISHED",
-        }
-    )
+    BUILDING: ClassVar[frozenset[str]] = frozenset()
 
     def phantom(self) -> set[str]:
         reads = self.reads()
@@ -462,3 +531,40 @@ class TestNoPhantomCoverage:
     def test_what_is_being_wired_is_still_unwired(self) -> None:
         done = sorted(self.BUILDING - self.phantom())
         assert not done, "now used by production, take it off BUILDING: " + ", ".join(done)
+
+
+#: Ecosystems whose install shim and planner are still being built. A builder takes its cell off this
+#: list when its shim and planner land; a listed cell must still fail (strict), so none stays listed.
+INSTALL_PENDING = frozenset(
+    {
+        "bazel", "cocoapods", "conan", "cran", "gradle", "hackage",
+        "julia", "nix", "opam", "swift", "vcpkg",
+    }
+)  # fmt: skip
+
+
+class InstallCells:
+    @staticmethod
+    def params() -> list[object]:
+        return [
+            pytest.param(e, marks=[pytest.mark.xfail(strict=True, reason="being built")])
+            if e in INSTALL_PENDING
+            else pytest.param(e)
+            for e in sorted(ALL)
+        ]
+
+
+class TestInstallGuardCoversEachEcosystem:
+    """One cell per ecosystem for "install shims and planners", so an ecosystem finished early is
+    not hidden behind one still being built."""
+
+    @pytest.mark.parametrize("ecosystem", InstallCells.params())
+    def test_it_has_a_shim_with_a_planner_or_a_true_reason(self, ecosystem: str) -> None:
+        assert ecosystem in More.install_guard() or ecosystem in More.install_guard_reasons()
+
+    def test_a_pending_ecosystem_is_a_real_one(self) -> None:
+        assert INSTALL_PENDING <= ALL
+
+    def test_the_cells_are_exactly_what_the_feature_row_lacks(self) -> None:
+        lacking = ALL - More.install_guard() - set(More.install_guard_reasons())
+        assert lacking == INSTALL_PENDING

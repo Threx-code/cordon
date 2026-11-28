@@ -25,6 +25,7 @@ from cordon_scanner.ecosystems.base import (
     Manifest,
     ReleaseFile,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.javascript.conditions import NpmConditions
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Hook, Scope
@@ -175,6 +176,7 @@ class NpmEcosystem(NpmProjects, NpmPackageCode, BaseEcosystem):
 
     id = "npm"
     bundle_keyword = "npm"
+    own_name = OwnName(("package.json",), blocks=True)
 
     def declared_dependencies(self, files: Sequence[ReleaseFile]) -> frozenset[str]:
         """A published tarball's runtime dependencies: its package.json's, optional ones too."""

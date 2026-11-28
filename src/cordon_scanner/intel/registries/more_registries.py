@@ -27,6 +27,9 @@ from cordon_scanner.intel.base import PackageFacts
 from cordon_scanner.intel.registries.image_registries import ImageRegistries
 from cordon_scanner.intel.registries.infra_registries import InfraRegistries
 from cordon_scanner.intel.registries.package_registries import PackageRegistries
+from cordon_scanner.intel.registries.readers.nix_cache import NixCaches
+from cordon_scanner.intel.registries.readers.open_vsx import ExtensionRegistries
+from cordon_scanner.intel.registries.readers.swift import SwiftRegistries
 from cordon_scanner.intel.registries.registry_hosts import ALIASES
 from cordon_scanner.intel.registries.registry_request import RegistryError
 
@@ -68,6 +71,9 @@ class MoreRegistries:
             "bazel": InfraRegistries.bazel,
             "homebrew": InfraRegistries.homebrew,
             "image": ImageRegistries.image,
+            "swift": SwiftRegistries.swift,
+            "nix": NixCaches.nix,
+            "vscode": ExtensionRegistries.vscode,
         }.get(ALIASES.get(ecosystem, ""))
         if reader is None:
             raise RegistryError(f"no registry configured for {ecosystem}")

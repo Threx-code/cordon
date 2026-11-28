@@ -39,6 +39,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Scope
 
@@ -462,6 +463,11 @@ class AnsibleGalaxyEcosystem(BaseEcosystem):
     """Galaxy roles and collections, declared and installed."""
 
     id = "ansible"
+    own_name = OwnName(
+        ("MANIFEST.json",),
+        readers=(("MANIFEST.json", "collection_manifest"),),
+        parsers=(("MANIFEST.json", "collection_manifest_full"),),
+    )
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         return name.split(".", 1)[0] if "." in name else None

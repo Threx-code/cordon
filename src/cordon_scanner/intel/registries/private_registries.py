@@ -27,23 +27,28 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.intel.base import PrivateRegistry
 from cordon_scanner.intel.registries.challenge import Challenge
+from cordon_scanner.version import USER_AGENT
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    from cordon_scanner.intel.registries.private_route import Route
     from cordon_scanner.intel.registries.registry_client import PackageFacts
 
 MAX_BYTES: Final = 32 << 20
 
 
 class PrivateRegistries:
+    #: Ecosystems whose registry is its own address (a Helm chart repository), so the private registry stands for itself.
+    OWN_ADDRESS: ClassVar[frozenset[str]] = frozenset({"helm"})
+
     """The configured registries, and the questions put to them."""
 
     @staticmethod
@@ -55,7 +60,10 @@ class PrivateRegistries:
                 if not item:
                     continue
                 url, equals, variable = item.rpartition("=")
-                if not equals or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}", variable):
+                named = re.fullmatch(
+                    r"(?:(basic|bearer):)?([A-Za-z_][A-Za-z0-9_]{0,127})", variable
+                )
+                if not equals or not named:
                     # Not repeated: the commonest mistake is the token itself where its variable's
                     # name belongs, and an error message is the last place it should appear.
                     raise ValueError(
@@ -74,7 +82,9 @@ class PrivateRegistries:
                     )
                 out.append(
                     PrivateRegistry(
-                        f"https://{parsed.netloc.lower()}{parsed.path.rstrip('/')}", variable
+                        f"https://{parsed.netloc.lower()}{parsed.path.rstrip('/')}",
+                        named[2],
+                        named[1] or "",
                     )
                 )
         return tuple(out)
@@ -93,7 +103,7 @@ class PrivateRegistries:
         if ecosystem == "image":
             host = name.split("/", 1)[0].lower() if "/" in name else ""
             return next((r for r in configured if r.host == host), None)
-        reference = (resolved_from or "").removeprefix("registry:")
+        reference = (resolved_from or "").removeprefix("registry:").removeprefix("registry+")
         if not reference.startswith("https://"):
             return None
         parsed = urllib.parse.urlsplit(reference)
@@ -108,8 +118,17 @@ class PrivateRegistries:
         return value or None
 
     @staticmethod
-    def _authorization(credential: str) -> str:
-        if ":" in credential:
+    def _authorization(credential: str, scheme: str = "", variable: str = "") -> str:
+        """`Basic` or `Bearer` as the operator stated (`basic:VARIABLE`, `bearer:VARIABLE`); unstated, a secret with a
+        colon is `user:token` (Basic) and any other is a bearer token. `basic:` with a secret that has no colon is
+        refused, naming the variable (never its value): it would send the token alone and be answered with a 401."""
+        if scheme == "basic" and ":" not in credential:
+            from cordon_scanner.intel.registries.registry_client import RegistryError
+
+            raise RegistryError(
+                f"basic: needs user:token in {variable or 'the variable'}, and it holds no colon"
+            )
+        if scheme == "basic" or (scheme == "" and ":" in credential):
             import base64
 
             return "Basic " + base64.b64encode(credential.encode()).decode()
@@ -136,9 +155,10 @@ class PrivateRegistries:
         request = urllib.request.Request(  # noqa: S310 (https and the host checked above)
             url,
             headers={
-                "User-Agent": base.USER_AGENT,
+                "User-Agent": USER_AGENT,
                 "Accept": accept,
-                "Authorization": authorization or PrivateRegistries._authorization(credential),
+                "Authorization": authorization
+                or PrivateRegistries._authorization(credential, registry.scheme, registry.variable),
             },
         )
         opener = urllib.request.build_opener(NoRedirects)
@@ -161,21 +181,85 @@ class PrivateRegistries:
         return body
 
     @staticmethod
+    def supported() -> frozenset[str]:
+        """The ecosystems a private registry can be asked about: npm, Python and container images by their own
+        protocols, every other one through its public reader pointed at the private registry."""
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+        from cordon_scanner.intel.registries.registry_hosts import ALIASES
+
+        return frozenset(
+            e
+            for e in (*EcosystemRegistry.BY_ID, EcosystemRegistry.EXTENSIONS)
+            if e in ALIASES or hasattr(PrivateRegistries, f"_{e}")
+        )
+
+    @staticmethod
+    def origins(alias: str) -> dict[str, str]:
+        """The public origins the reader for `alias` asks, each with the path under the private registry's base that
+        answers it. A checksum database (`<alias>-sum`) is answered under `/sumdb/<its host>`, where a proxy that
+        mirrors it serves it; a private proxy that does not leaves the checksum unverifiable."""
+        from cordon_scanner.intel.registries.registry_hosts import HOSTS
+
+        found: dict[str, str] = {}
+        for key, origin in HOSTS.items():
+            if key == alias or key.startswith(alias + "-"):
+                under = (
+                    f"/sumdb/{urllib.parse.urlsplit(origin).netloc}" if key.endswith("-sum") else ""
+                )
+                found[origin.rstrip("/")] = under
+        return found
+
+    @staticmethod
+    def route(registry: PrivateRegistry, ecosystem: str, credential: str) -> Route:
+        """The route that points an ecosystem's public reader at this registry: a Helm chart's repository is its own
+        address, so the registry stands for itself; every other reader asks the public registry's origin, which the
+        private registry answers."""
+        from cordon_scanner.intel.registries.private_route import Route
+        from cordon_scanner.intel.registries.registry_hosts import ALIASES
+
+        alias = ALIASES.get(ecosystem, ecosystem)
+        origins = (
+            {f"https://{registry.host}": ""}
+            if alias in PrivateRegistries.OWN_ADDRESS
+            else PrivateRegistries.origins(alias)
+        )
+        return Route(
+            base=registry.base,
+            host=registry.host,
+            authorization=PrivateRegistries._authorization(
+                credential, registry.scheme, registry.variable
+            ),
+            origins=origins,
+            variable=registry.variable,
+        )
+
+    @staticmethod
     def facts(
-        registry: PrivateRegistry, ecosystem: str, name: str, version: str | None
+        registry: PrivateRegistry,
+        ecosystem: str,
+        name: str,
+        version: str | None,
+        source: str | None = None,
     ) -> PackageFacts:
+        from cordon_scanner.intel.registries.more_registries import MoreRegistries
+        from cordon_scanner.intel.registries.private_route import PrivateRoute
         from cordon_scanner.intel.registries.registry_client import RegistryError
+        from cordon_scanner.intel.registries.registry_hosts import ALIASES
 
         credential = PrivateRegistries.credential(registry)
         if credential is None:
             raise RegistryError(f"{registry.variable} is not set, so {registry.host} was not asked")
-        if ecosystem == "npm":
-            return PrivateRegistries._npm(registry, credential, name, version)
-        if ecosystem == "pypi":
-            return PrivateRegistries._pypi(registry, credential, name, version)
-        if ecosystem == "image":
-            return PrivateRegistries._image(registry, credential, name, version)
-        raise RegistryError(f"no private-registry protocol for {ecosystem} is spoken here")
+        own = getattr(PrivateRegistries, f"_{ecosystem}", None)
+        if own is not None:
+            facts: PackageFacts = own(registry, credential, name, version)
+            return facts
+        alias = ALIASES.get(ecosystem)
+        if alias is None:
+            raise RegistryError(
+                f"no private-registry reader for {ecosystem}: the scanner reads no registry for it, public or private"
+            )
+        with PrivateRoute.use(PrivateRegistries.route(registry, ecosystem, credential)):
+            return MoreRegistries.facts(ecosystem, name, version, source)
 
     @staticmethod
     def _npm(
@@ -330,10 +414,10 @@ class PrivateRegistries:
         from cordon_scanner.intel.registries import registry_request as base
         from cordon_scanner.intel.registries.registry_client import RegistryError
 
-        direct = PrivateRegistries._authorization(credential)
+        direct = PrivateRegistries._authorization(credential, registry.scheme, registry.variable)
         request = urllib.request.Request(
             f"https://{registry.host}/v2/",
-            headers={"User-Agent": base.USER_AGENT, "Authorization": direct},
+            headers={"User-Agent": USER_AGENT, "Authorization": direct},
         )
         try:
             with urllib.request.build_opener(NoRedirects).open(

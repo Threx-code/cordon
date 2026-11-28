@@ -1,0 +1,55 @@
+{
+ "meta": {
+  "count": 4739
+ },
+ "links": {
+  "first": "/api/v3/plugin/ansible/content/published/collections/index/?limit=3&offset=0",
+  "previous": null,
+  "next": "/api/v3/plugin/ansible/content/published/collections/index/?limit=3&offset=3",
+  "last": "/api/v3/plugin/ansible/content/published/collections/index/?limit=3&offset=4736"
+ },
+ "data": [
+  {
+   "href": "/api/content/published/v3/plugin/ansible/content/published/collections/index/peshev/docker/",
+   "namespace": "peshev",
+   "name": "docker",
+   "deprecated": false,
+   "versions_url": "/api/content/published/v3/plugin/ansible/content/published/collections/index/peshev/docker/versions/",
+   "highest_version": {
+    "href": "/api/content/published/v3/plugin/ansible/content/published/collections/index/peshev/docker/versions/0.0.5/",
+    "version": "0.0.5"
+   },
+   "created_at": "2026-11-27T16:23:01.928728Z",
+   "updated_at": "2026-11-27T16:28:58.150092Z",
+   "download_count": 8
+  },
+  {
+   "href": "/api/content/published/v3/plugin/ansible/content/published/collections/index/koichirok/postconf/",
+   "namespace": "koichirok",
+   "name": "postconf",
+   "deprecated": false,
+   "versions_url": "/api/content/published/v3/plugin/ansible/content/published/collections/index/koichirok/postconf/versions/",
+   "highest_version": {
+    "href": "/api/content/published/v3/plugin/ansible/content/published/collections/index/koichirok/postconf/versions/1.0.0/",
+    "version": "1.0.0"
+   },
+   "created_at": "2026-11-27T08:17:37.806332Z",
+   "updated_at": "2026-11-27T08:17:37.870227Z",
+   "download_count": 15
+  },
+  {
+   "href": "/api/content/published/v3/plugin/ansible/content/published/collections/index/consensus/matomo/",
+   "namespace": "consensus",
+   "name": "matomo",
+   "deprecated": false,
+   "versions_url": "/api/content/published/v3/plugin/ansible/content/published/collections/index/consensus/matomo/versions/",
+   "highest_version": {
+    "href": "/api/content/published/v3/plugin/ansible/content/published/collections/index/consensus/matomo/versions/0.0.1/",
+    "version": "0.0.1"
+   },
+   "created_at": "2026-11-26T22:37:27.066581Z",
+   "updated_at": "2026-11-26T22:37:27.151252Z",
+   "download_count": 16
+  }
+ ]
+}

@@ -1,0 +1,225 @@
+{
+  "name": "@cdxgen/cdxgen",
+  "version": "13.9.0",
+  "description": "Creates CycloneDX Software Bill of Materials (SBOM) from source or container image",
+  "keywords": [
+    "sbom",
+    "bom",
+    "inventory",
+    "spdx",
+    "package-url",
+    "purl",
+    "owasp",
+    "component",
+    "dependency",
+    "appsec",
+    "scrm"
+  ],
+  "homepage": "http://github.com/cdxgen/cdxgen",
+  "bugs": {
+    "url": "https://github.com/cdxgen/cdxgen/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cdxgen/cdxgen.git"
+  },
+  "license": "Apache-2.0",
+  "author": "Prabhu Subramanian <prabhu@appthreat.com>",
+  "contributors": [
+    {
+      "name": "Erlend Oftedal"
+    },
+    {
+      "name": "Steve Springett",
+      "email": "steve.springett@owasp.org",
+      "url": "https://about.me/stevespringett"
+    },
+    {
+      "name": "Prabhu Subramanian",
+      "url": "https://github.com/prabhu"
+    },
+    {
+      "name": "Adam Setch",
+      "url": "https://github.com/setchy"
+    },
+    {
+      "name": "Roland Asmann",
+      "url": "https://github.com/malice00"
+    }
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./lib/cli/index.js",
+      "types": "./types/lib/cli/index.d.ts",
+      "require": "./index.cjs"
+    },
+    "./evinser/*": {
+      "import": "./lib/evinser/*.js",
+      "types": "./types/lib/evinser/*.d.ts"
+    },
+    "./core/*": {
+      "import": "./lib/core/*.js",
+      "types": "./types/lib/core/*.d.ts"
+    },
+    "./ecosystems/*": {
+      "import": "./lib/ecosystems/*.js",
+      "types": "./types/lib/ecosystems/*.d.ts"
+    },
+    "./inventory/*": {
+      "import": "./lib/inventory/*.js",
+      "types": "./types/lib/inventory/*.d.ts"
+    },
+    "./helpers/*": {
+      "import": "./lib/helpers/*.js",
+      "types": "./types/lib/helpers/*.d.ts"
+    },
+    "./managers/*": {
+      "import": "./lib/managers/*.js",
+      "types": "./types/lib/managers/*.d.ts"
+    },
+    "./parsers/*": {
+      "import": "./lib/parsers/*.js",
+      "types": "./types/lib/parsers/*.d.ts"
+    },
+    "./stages/postgen/*": {
+      "import": "./lib/stages/postgen/*.js",
+      "types": "./types/lib/stages/postgen/*.d.ts"
+    },
+    "./stages/pregen/*": {
+      "import": "./lib/stages/pregen/*.js",
+      "types": "./types/lib/stages/pregen/*.d.ts"
+    }
+  },
+  "types": "./types/lib/cli/index.d.ts",
+  "bin": {
+    "aibom": "bin/cdxgen.js",
+    "cbom": "bin/cdxgen.js",
+    "cdx-audit": "bin/audit.js",
+    "cdx-convert": "bin/convert.js",
+    "cdx-validate": "bin/validate.js",
+    "cdx-verify": "bin/verify.js",
+    "cdx-sign": "bin/sign.js",
+    "cdxgen": "bin/cdxgen.js",
+    "cdxgen-secure": "bin/cdxgen-secure.js",
+    "cdxi": "bin/repl.js",
+    "evinse": "bin/evinse.js",
+    "hbom": "bin/hbom.js",
+    "obom": "bin/cdxgen.js",
+    "tracebom": "bin/tracebom.js",
+    "saasbom": "bin/cdxgen.js",
+    "spdxgen": "bin/cdxgen.js"
+  },
+  "files": [
+    "*.js",
+    "lib/**",
+    "bin/",
+    "!bin/*.poku.js",
+    "!lib/**/*.poku.js",
+    "!lib/third-party/arborist/snapshots/",
+    "data/",
+    "types/",
+    "!types/*.tsbuildinfo",
+    "index.cjs"
+  ],
+  "scripts": {
+    "check:agent-plugin": "node contrib/check-agent-plugin.js",
+    "check:boundaries": "node contrib/check-boundaries.js",
+    "check:lib-paths": "node contrib/check-lib-paths.js",
+    "check:validators": "node contrib/gen-validators.mjs --check",
+    "check:vendor-arborist": "node contrib/check-vendored-arborist.js",
+    "gen-types": "pnpm exec tsc",
+    "gen:validators": "node contrib/gen-validators.mjs",
+    "install:frozen": "pnpm install --config.strict-dep-builds=true --frozen-lockfile --package-import-method copy",
+    "install:prod": "pnpm install --config.strict-dep-builds=true --frozen-lockfile --package-import-method copy --prod",
+    "lint": "biome check --write",
+    "lint:check": "biome check",
+    "lint:errors": "biome check --diagnostic-level=error",
+    "test": "poku",
+    "test:bun": "node contrib/alt-runtime-tests.js bun",
+    "test:deno": "deno task test",
+    "test:deno:unit": "node contrib/alt-runtime-tests.js deno",
+    "test:golden": "node contrib/golden-runner.js && node contrib/mutation-tests.js && node contrib/shuffle-tests.js && node contrib/cassette-metadata-tests.js && node contrib/fetch-parity-test.js",
+    "test:rs-disable": "node contrib/rs-disable-golden-test.js",
+    "watch": "poku --watch"
+  },
+  "dependencies": {
+    "@babel/parser": "8.0.10",
+    "@babel/traverse": "8.0.10",
+    "@cdxgen/cdx-purl": "0.0.6",
+    "@isaacs/string-locale-compare": "1.1.0",
+    "@npmcli/fs": "6.0.0",
+    "@npmcli/map-workspaces": "6.0.0",
+    "@npmcli/name-from-folder": "5.0.0",
+    "@npmcli/package-json": "8.0.0",
+    "common-ancestor-path": "2.0.0",
+    "edn-data": "1.2.2",
+    "glob": "14.0.4",
+    "node-stream-zip": "1.16.0",
+    "npm-package-arg": "14.0.0",
+    "parse-conflict-json": "6.0.0",
+    "semver": "7.8.6",
+    "smol-toml": "1.9.1",
+    "tar": "7.5.22",
+    "treeverse": "3.0.0",
+    "undici": "8.12.4",
+    "walk-up-path": "4.0.0",
+    "yaml": "2.9.1",
+    "yargs": "18.2.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.6",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "esmock": "3.0.0",
+    "poku": "4.5.0",
+    "sinon": "22.1.0",
+    "typescript": "^7.0.2"
+  },
+  "optionalDependencies": {
+    "@appthreat/atom": "4.0.2",
+    "@appthreat/atom-parsetools": "2.0.0",
+    "@cdxgen/cdx-hbom": "0.8.0",
+    "@cdxgen/cdx-proto": "2.3.1",
+    "@cdxgen/cdxgen-plugins-bin": "4.4.0",
+    "@cdxgen/cdxgen-plugins-bin-darwin-amd64": "4.4.0",
+    "@cdxgen/cdxgen-plugins-bin-darwin-arm64": "4.4.0",
+    "@cdxgen/cdxgen-plugins-bin-linux-amd64": "4.4.0",
+    "@cdxgen/cdxgen-plugins-bin-linux-arm": "4.4.0",
+    "@cdxgen/cdxgen-plugins-bin-linux-arm64": "4.4.0",
+    "@cdxgen/cdxgen-plugins-bin-linux-ppc64": "4.4.0",
+    "@cdxgen/cdxgen-plugins-bin-linuxmusl-amd64": "4.4.0",
+    "@cdxgen/cdxgen-plugins-bin-linuxmusl-arm64": "4.4.0",
+    "@cdxgen/cdxgen-plugins-bin-windows-amd64": "4.4.0",
+    "@cdxgen/cdxgen-plugins-bin-windows-arm64": "4.4.0",
+    "@cdxgen/safer-exec": "1.3.0",
+    "body-parser": "2.4.0",
+    "compression": "1.8.2",
+    "connect": "3.7.0",
+    "jsonata": "2.2.2"
+  },
+  "packageManager": "pnpm@12.18.0+sha512.9d7882d5dc82147ecfc4e062aa34834e0ad0296710a1837a1115ae012127d36b7109e321ac1598a1dd0a65597681b1e99917e12ed0d749eae91187943363beb3",
+  "engines": {
+    "node": ">=24",
+    "pnpm": ">=12"
+  },
+  "devEngines": {
+    "runtime": [
+      {
+        "name": "node",
+        "version": ">=24",
+        "onFail": "ignore"
+      },
+      {
+        "name": "bun",
+        "version": "1.4.2",
+        "onFail": "ignore"
+      },
+      {
+        "name": "deno",
+        "version": "2.9.6",
+        "onFail": "ignore"
+      }
+    ]
+  }
+}

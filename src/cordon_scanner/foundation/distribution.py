@@ -40,6 +40,7 @@ from typing import ClassVar
 
 from cordon_scanner.foundation.errors import ConfigError
 from cordon_scanner.foundation.network.downloads import Download
+from cordon_scanner.version import USER_AGENT
 
 FETCH_TIMEOUT = 30
 MAX_POLICY_BYTES = 1024 * 1024
@@ -168,7 +169,7 @@ class PolicyDistribution:
     def _fetch(url: str) -> bytes:
         request = urllib.request.Request(  # noqa: S310 - scheme checked by the caller
             url,
-            headers={"User-Agent": "cordon-scanner"},
+            headers={"User-Agent": USER_AGENT},
             method="GET",
         )
         try:

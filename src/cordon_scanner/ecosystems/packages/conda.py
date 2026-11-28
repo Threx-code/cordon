@@ -29,6 +29,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Scope
 
@@ -509,6 +510,11 @@ class CondaEcosystem(BaseEcosystem):
     """Conda: environment files, recipes, conda-lock files and explicit exports."""
 
     id = "conda"
+    own_name = OwnName(
+        ("info/index.json",),
+        readers=(("info/index.json", "conda_index"),),
+        parsers=(("info/index.json", "conda_manifest"),),
+    )
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         return name.split("::", 1)[0] if "::" in name else None

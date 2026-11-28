@@ -682,6 +682,12 @@ Notification channels: send a test message to each.
 - `helm`: helm dependency build, scanned
 - `ansible-galaxy`: galaxy install, scanned
 - `mix`: mix deps.get from the lock
+- `docker`: docker pull/run/create, scanned
+- `podman`: podman pull/run/create, scanned
+- `code`: code --install-extension, from Open VSX
+- `codium`: codium --install-extension, scanned
+- `cursor`: cursor --install-extension, scanned
+- `brew`: brew install/upgrade, bottles scanned
 
 ## npm
 
@@ -956,6 +962,78 @@ Run mix, scanning every package before anything is installed.
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ arguments                 mix's own arguments                              │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## docker
+
+Run docker, scanning every package before anything is installed.
+
+`cordon-scanner docker ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 docker's own arguments                           │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## podman
+
+Run podman, scanning every package before anything is installed.
+
+`cordon-scanner podman ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 podman's own arguments                           │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## code
+
+Run code, scanning every package before anything is installed.
+
+`cordon-scanner code ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 code's own arguments                             │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## codium
+
+Run codium, scanning every package before anything is installed.
+
+`cordon-scanner codium ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 codium's own arguments                           │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## cursor
+
+Run cursor, scanning every package before anything is installed.
+
+`cordon-scanner cursor ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 cursor's own arguments                           │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## brew
+
+Run brew, scanning every package before anything is installed.
+
+`cordon-scanner brew ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 brew's own arguments                             │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1272,6 +1350,11 @@ This machine's AI agents and MCP servers, for an organisation's MDM (read-only, 
 │                           CORDON_DEVICE_TOKEN (one per laptop; a token     │
 │                           shared by a fleet is not supported)              │
 │ --url URL                 Cordon Cloud API base (with --signed)            │
+│ --verify-extensions       asks open-vsx.org about each installed extension │
+│                           of an editor that installs from it (VSCodium,    │
+│                           Cursor, Windsurf) and compares its files with    │
+│                           the package Open VSX signed; off by default, so  │
+│                           nothing is asked of any registry                 │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1280,6 +1363,11 @@ This machine's AI agents and MCP servers, for an organisation's MDM (read-only, 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ --url URL                 Cordon Cloud API base                            │
+│ --verify-extensions       asks open-vsx.org about each installed extension │
+│                           of an editor that installs from it (VSCodium,    │
+│                           Cursor, Windsurf) and compares its files with    │
+│                           the package Open VSX signed; off by default, so  │
+│                           nothing is asked of any registry                 │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 

@@ -27,7 +27,7 @@ from typing import Any, Final
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
-from cordon_scanner.version import __version__
+from cordon_scanner.version import USER_AGENT
 
 API: Final = "https://api.osv.dev/v1"
 
@@ -78,7 +78,7 @@ class OsvClient:
             data=json.dumps(body).encode(),
             headers={
                 "Content-Type": "application/json",
-                "User-Agent": f"cordon-scanner/{__version__}",
+                "User-Agent": USER_AGENT,
             },
             method="POST",
         )
@@ -88,7 +88,7 @@ class OsvClient:
     @staticmethod
     def _get(url: str) -> Any:
         request = urllib.request.Request(  # noqa: S310
-            url, headers={"User-Agent": f"cordon-scanner/{__version__}"}
+            url, headers={"User-Agent": USER_AGENT}
         )
         with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310
             return ScannedJson.loads(Download.read(response, MAX_BYTES))

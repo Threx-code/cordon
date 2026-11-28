@@ -15,6 +15,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 
 # Each `*Ecosystem` imported below from its own module (GitHub Actions, Bazel, CocoaPods, Composer,
 # Conan, Conda, CRAN, Gradle, Hex, NuGet, Pub, RubyGems, Swift) is re-exported where it always lived.
@@ -182,6 +183,7 @@ class GoModFile:
 class GoEcosystem(BaseEcosystem):
     id = "gomod"
     bundle_keyword = "go"
+    own_name = OwnName(("go.mod",))
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         return name.rsplit("/", 1)[0] if "/" in name else None

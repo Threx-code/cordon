@@ -21,6 +21,7 @@ from cordon_scanner.intel.advisories.upstream.base import (
 from cordon_scanner.intel.advisories.upstream.fetch import Fetch
 from cordon_scanner.intel.advisories.upstream.inference import Inference
 from cordon_scanner.intel.advisories.upstream.tags import TagInference
+from cordon_scanner.version import USER_AGENT
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -216,7 +217,7 @@ class NpmPodspec:
         if not url.startswith("https://"):
             raise ValueError("not an https tarball")
         request = urllib.request.Request(  # noqa: S310 - https, from the registry's own record
-            url, headers={"User-Agent": "cordon-scanner", "Accept-Encoding": "identity"}
+            url, headers={"User-Agent": USER_AGENT, "Accept-Encoding": "identity"}
         )
         with urllib.request.urlopen(request, timeout=120) as response:  # noqa: S310
             body: bytes = Download.read(response, NpmPodspec.MAX_TARBALL + 1)

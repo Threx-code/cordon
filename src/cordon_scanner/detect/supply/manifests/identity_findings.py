@@ -17,6 +17,8 @@ from cordon_scanner.detect.supply.manifests.rule_ids import (
     CONFUSION_RULE,
 )
 from cordon_scanner.detect.supply.manifests.scripts import ManifestScripts
+from cordon_scanner.ecosystems.base import BaseEcosystem
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.foundation.models import (
     Category,
@@ -39,8 +41,17 @@ class IdentityFindings:
     )
     """The manifest findings about a published package's name and version."""
 
-    OWN_NAME_MEASURED_ON: ClassVar[frozenset[str]] = frozenset({"pypi", "npm"})
-    """The published formats a package's own-name finding was measured on (review 98)."""
+    @staticmethod
+    def own_name_measured_on() -> frozenset[str]:
+        """The ecosystems whose published packages a package's own-name finding was measured on (review 98): the ones whose
+        adapter lets it block (`OwnName.blocks`)."""
+        return frozenset(
+            e.id
+            for e in EcosystemRegistry.all_ecosystems()
+            if isinstance(e, BaseEcosystem)
+            and isinstance(e.own_name, OwnName)
+            and e.own_name.blocks
+        )
 
     @classmethod
     def name_risk_findings(cls, unit: FileUnit, ctx: ScanContext) -> Iterable[Finding]:
@@ -96,10 +107,9 @@ class IdentityFindings:
         )
 
     @classmethod
-    def own_name_findings(
-        cls, manifest: Manifest, unit: FileUnit, ctx: ScanContext, ecosystem_id: str
-    ) -> Iterable[Finding]:
-        """A package whose own name is a slip of a popular one.
+    def own_name_findings(cls, unit: FileUnit, ctx: ScanContext) -> Iterable[Finding]:
+        """A package whose own name is a slip of a popular one, read from the file of its ecosystem that states the name
+        (`OwnName`): the first ecosystem that reads a name from the file speaks for the package.
 
         The dependency check asks this of what a project installs; a scanned package is asked
         of itself. `aiiohttp`, `cryptograohy` and `botocote` are published with nothing in
@@ -109,12 +119,17 @@ class IdentityFindings:
         from cordon_scanner.detect.supply.dependency import DependencyDetector
         from cordon_scanner.intel.registry import PopularPackageNames
 
-        if not manifest.name or "node_modules/" in f"/{unit.path}" or "site-packages/" in unit.path:
+        if "node_modules/" in f"/{unit.path}" or "site-packages/" in unit.path:
             return
-        ecosystem = EcosystemRegistry.get(ecosystem_id)
-        if ecosystem is None:
+        for ecosystem in EcosystemRegistry.own_name_ecosystems(unit.path, ctx.distribution):
+            own = ecosystem.own_name_of(unit.path, unit.content, ctx.tree_paths)
+            if own:
+                break
+        else:
             return
-        name = ecosystem.normalize_name(manifest.name)
+        ecosystem_id = ecosystem.id
+        named = own
+        name = ecosystem.normalize_name(own)
         if PopularPackageNames.is_known(ecosystem_id, name):
             return
         target = DependencyDetector._typosquat_target(ecosystem_id, name)
@@ -131,7 +146,7 @@ class IdentityFindings:
         # plyr, tsibble, pyaml, pytest, istio and the homebrew-core and vcpkg Go snapshots (17 of
         # 34,500 real packages, review 98): there the matched manifest is often not the package's.
         published = (
-            ctx.distribution in IdentityFindings.OWN_NAME_MEASURED_ON
+            ctx.distribution in IdentityFindings.own_name_measured_on()
             or sdist_root is not None
             or unit.path.rpartition("!")[2] == "package/package.json"
         )
@@ -152,14 +167,14 @@ class IdentityFindings:
             confidence=Confidence.MEDIUM,
             title="Package is named like a popular package",
             message=(
-                f"This package calls itself {manifest.name!r}, one slip from the widely used "
+                f"This package calls itself {named!r}, one slip from the widely used "
                 f"{target!r}, and is not itself an established package. A published package "
                 f"under a name like this collects the installs meant for the other."
             ),
             remediation=f"Install {target!r} if that is what was meant, and report this one.",
             unit=unit,
             ctx=ctx,
-            detail=f"{manifest.name} ~ {target}",
+            detail=f"{named} ~ {target}",
             capabilities=[],
             reasons=[f"one edit from {target}"]
             + (

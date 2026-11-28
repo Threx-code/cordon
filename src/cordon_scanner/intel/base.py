@@ -416,7 +416,12 @@ class PrivateRegistryQueries(Protocol):
         resolved_from: str | None,
     ) -> PrivateRegistry | None: ...
     def facts(
-        self, registry: PrivateRegistry, ecosystem: str, name: str, version: str | None
+        self,
+        registry: PrivateRegistry,
+        ecosystem: str,
+        name: str,
+        version: str | None,
+        source: str | None = None,
     ) -> PackageFacts: ...
 
 
@@ -448,6 +453,18 @@ class ModuleProvenance(Protocol):
     """Whether a Bazel module's published integrity matches its registry's."""
 
     def check(self, name: str, version: str, integrity: str | None) -> ModuleCheck: ...
+
+
+class ExtensionSignatures(ModuleProvenance, Protocol):
+    """Whether an editor extension's files are the ones its registry signed for the release."""
+
+    def compare(
+        self, name: str, version: str, files: Mapping[str, str], *, added: bool = True
+    ) -> ModuleCheck: ...
+
+    def signed_package(
+        self, name: str, version: str
+    ) -> tuple[bytes, dict[str, str]] | ModuleCheck: ...
 
 
 class ChartProvenance(Protocol):
@@ -724,6 +741,8 @@ class PrivateRegistry(NamedTuple):
     """`https://host[:port]/path`, without a trailing slash."""
     variable: str
     """The environment variable holding the token: `token` (bearer) or `user:token` (basic)."""
+    scheme: str = ""
+    """`basic` or `bearer` when the operator stated it; empty: a secret with a colon is `user:token` (basic)."""
 
     @property
     def host(self) -> str:
@@ -813,6 +832,7 @@ __all__ = [
     "BundledAdvisoryDatabase",
     "ChartProvenance",
     "DataFiles",
+    "ExtensionSignatures",
     "FeedError",
     "FeedStatus",
     "InstallerChecks",

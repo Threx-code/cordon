@@ -33,8 +33,8 @@ result that was never checked.
 
 | Ecosystem | Manifests | Lockfiles | Advisories | Typosquat | Registry | Provenance | Allowlist |
 |---|---|---|---|---|---|---|---|
-| `actions` | `.github/workflows/*.yml`, `.github/workflows/*.yaml`, `action.yml`, `action.yaml` | -- | yes | yes | yes | -- | 178 |
-| `ansible` | `requirements.yml`, `requirements.yaml`, `roles/requirements.yml`, `collections/requirements.yml`, `galaxy.yml`, `meta/main.yml`, `meta/runtime.yml`, `execution-environment.yml`, `execution-environment.yaml` | `ansible_collections/*/*/MANIFEST.json`, `meta/.galaxy_install_info` | upstream | yes | yes | yes | 43 |
+| `actions` | `.github/workflows/*.yml`, `.github/workflows/*.yaml`, `action.yml`, `action.yaml` | -- | yes | yes | yes | yes | 1,141 |
+| `ansible` | `requirements.yml`, `requirements.yaml`, `roles/requirements.yml`, `collections/requirements.yml`, `galaxy.yml`, `meta/main.yml`, `meta/runtime.yml`, `execution-environment.yml`, `execution-environment.yaml` | `ansible_collections/*/*/MANIFEST.json`, `meta/.galaxy_install_info` | upstream | yes | yes | yes | 2,226 |
 | `bazel` | `MODULE.bazel`, `WORKSPACE`, `WORKSPACE.bazel`, `WORKSPACE.bzlmod`, `BUILD.bazel` | `MODULE.bazel.lock` | upstream | yes | yes | yes | 54 |
 | `cargo` | `Cargo.toml`, `.cargo/config.toml`, `.cargo/config` | `Cargo.lock` | yes | yes | yes | -- | 19,999 |
 | `cocoapods` | `Podfile`, `*.podspec` | `Podfile.lock` | NVD, upstream | yes | yes | -- | 200 |
@@ -42,26 +42,26 @@ result that was never checked.
 | `conan` | `conanfile.txt`, `conanfile.py`, `profiles/default`, `conan/profiles/*`, `remotes.json`, `conanws.yml`, `conanws.yaml` | `conan.lock` | NVD, upstream | yes | yes | -- | 93 |
 | `conda` | `environment.yml`, `environment.yaml`, `meta.yaml`, `.condarc` | `conda-lock.yml`, `conda-lock.yaml`, `explicit*.txt`, `conda-*.lock` | NVD, upstream | yes | yes | -- | 120 |
 | `cran` | `DESCRIPTION`, `renv/settings.json`, `PACKAGES` | `renv.lock` | yes | yes | yes | -- | 3,808 |
-| `gomod` | `go.mod`, `go.work` | `go.mod`, `go.sum`, `go.work.sum`, `vendor/modules.txt` | yes | yes | yes | -- | 89 |
+| `gomod` | `go.mod`, `go.work` | `go.mod`, `go.sum`, `go.work.sum`, `vendor/modules.txt` | yes | yes | yes | yes | 2,046 |
 | `gradle` | `build.gradle`, `build.gradle.kts`, `settings.gradle`, `settings.gradle.kts`, `gradle/libs.versions.toml`, `gradle/wrapper/gradle-wrapper.properties` | `gradle.lockfile`, `buildscript-gradle.lockfile`, `settings-gradle.lockfile`, `gradle/dependency-locks/*.lockfile`, `gradle/verification-metadata.xml` | yes | yes | yes | yes | 110 |
-| `hackage` | `*.cabal`, `cabal.project`, `stack.yaml`, `package.yaml` | `cabal.project.freeze`, `stack.yaml.lock` | yes | yes | yes | -- | 48 |
-| `helm` | `Chart.yaml`, `Chart.lock`, `requirements.lock` | `Chart.lock`, `requirements.lock`, `charts/*.tgz` | upstream | yes | yes | yes | 57 |
-| `hex` | `mix.exs`, `rebar.config` | `mix.lock`, `rebar.lock` | yes | yes | yes | -- | 92 |
+| `hackage` | `*.cabal`, `cabal.project`, `stack.yaml`, `package.yaml` | `cabal.project.freeze`, `stack.yaml.lock` | yes | yes | yes | yes | 1,522 |
+| `helm` | `Chart.yaml`, `Chart.lock`, `requirements.lock` | `Chart.lock`, `requirements.lock`, `charts/*.tgz` | upstream | yes | yes | yes | 976 |
+| `hex` | `mix.exs`, `rebar.config` | `mix.lock`, `rebar.lock` | yes | yes | yes | -- | 5,996 |
 | `homebrew` | `Brewfile`, `.Brewfile`, `Brewfile.txt`, `Brewfile.local`, `Brewfile.symlink`, `*.Brewfile`, `Formula/*.rb`, `Casks/*.rb`, `Formula/*/*.rb`, `Casks/*/*.rb` | `Brewfile.lock.json`, `Cellar/*/*/INSTALL_RECEIPT.json` | NVD, upstream | yes | yes | yes | 4,578 |
-| `image` | `Dockerfile`, `Dockerfile.*`, `*.Dockerfile`, `*.dockerfile`, `Containerfile`, `Containerfile.*`, `compose.yaml`, `compose.yml`, `compose.*.yaml`, `compose.*.yml`, `docker-compose.yml`, `docker-compose.yaml`, `docker-compose.*.yml`, `docker-compose.*.yaml`, `k8s/**/*.yaml`, `k8s/**/*.yml`, `kubernetes/**/*.yaml`, `kubernetes/**/*.yml`, `kube/**/*.yaml`, `kube/**/*.yml`, `manifests/**/*.yaml`, `manifests/**/*.yml`, `deploy/**/*.yaml`, `deploy/**/*.yml`, `deployment/**/*.yaml`, `deployment/**/*.yml`, `deployments/**/*.yaml`, `deployments/**/*.yml`, `kustomize/**/*.yaml`, `kustomize/**/*.yml`, `overlays/**/*.yaml`, `overlays/**/*.yml`, `kustomization.yaml`, `kustomization.yml`, `deployment.yaml`, `deployment.yml`, `statefulset.yaml`, `statefulset.yml`, `daemonset.yaml`, `daemonset.yml`, `cronjob.yaml`, `cronjob.yml`, `job.yaml`, `job.yml`, `pod.yaml`, `pod.yml`, `*-deployment.yaml`, `*-deployment.yml`, `*-statefulset.yaml`, `*-statefulset.yml`, `*-daemonset.yaml`, `*-daemonset.yml`, `*-cronjob.yaml`, `*-cronjob.yml`, `*-job.yaml`, `*-job.yml`, `*-pod.yaml`, `*-pod.yml` | -- | upstream | -- | yes | yes | 70 |
-| `julia` | `Project.toml`, `JuliaProject.toml` | `Manifest.toml`, `JuliaManifest.toml`, `Manifest-v*.toml`, `Artifacts.toml` | yes | yes | yes | -- | 40 |
+| `image` | `Dockerfile`, `Dockerfile.*`, `*.Dockerfile`, `*.dockerfile`, `Containerfile`, `Containerfile.*`, `compose.yaml`, `compose.yml`, `compose.*.yaml`, `compose.*.yml`, `docker-compose.yml`, `docker-compose.yaml`, `docker-compose.*.yml`, `docker-compose.*.yaml`, `k8s/**/*.yaml`, `k8s/**/*.yml`, `kubernetes/**/*.yaml`, `kubernetes/**/*.yml`, `kube/**/*.yaml`, `kube/**/*.yml`, `manifests/**/*.yaml`, `manifests/**/*.yml`, `deploy/**/*.yaml`, `deploy/**/*.yml`, `deployment/**/*.yaml`, `deployment/**/*.yml`, `deployments/**/*.yaml`, `deployments/**/*.yml`, `kustomize/**/*.yaml`, `kustomize/**/*.yml`, `overlays/**/*.yaml`, `overlays/**/*.yml`, `kustomization.yaml`, `kustomization.yml`, `deployment.yaml`, `deployment.yml`, `statefulset.yaml`, `statefulset.yml`, `daemonset.yaml`, `daemonset.yml`, `cronjob.yaml`, `cronjob.yml`, `job.yaml`, `job.yml`, `pod.yaml`, `pod.yml`, `*-deployment.yaml`, `*-deployment.yml`, `*-statefulset.yaml`, `*-statefulset.yml`, `*-daemonset.yaml`, `*-daemonset.yml`, `*-cronjob.yaml`, `*-cronjob.yml`, `*-job.yaml`, `*-job.yml`, `*-pod.yaml`, `*-pod.yml` | -- | upstream | -- | yes | yes | 3,049 |
+| `julia` | `Project.toml`, `JuliaProject.toml` | `Manifest.toml`, `JuliaManifest.toml`, `Manifest-v*.toml`, `Artifacts.toml` | yes | yes | yes | -- | 7,175 |
 | `maven` | `pom.xml`, `.mvn/wrapper/maven-wrapper.properties` | `dependency-tree.txt`, `.mvn/checksums/*.sha1`, `.mvn/checksums/*.sha256`, `.mvn/checksums/*.sha512` | yes | yes | yes | yes | 110 |
 | `nix` | `flake.nix`, `default.nix`, `shell.nix` | `flake.lock` | upstream | yes | -- | -- | 23 |
 | `npm` | `package.json`, `deno.json`, `deno.jsonc` | `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `bun.lockb`, `deno.lock` | yes | yes | yes | yes | 17,356 |
-| `nuget` | `*.csproj`, `*.fsproj`, `*.vbproj`, `packages.config`, `Directory.Packages.props`, `Directory.Build.props`, `NuGet.Config`, `nuget.config`, `NuGet.config`, `obj/project.assets.json` | `packages.lock.json`, `project.assets.json` | yes | yes | yes | -- | 4,026 |
+| `nuget` | `*.csproj`, `*.fsproj`, `*.vbproj`, `packages.config`, `Directory.Packages.props`, `Directory.Build.props`, `NuGet.Config`, `nuget.config`, `NuGet.config`, `obj/project.assets.json` | `packages.lock.json`, `project.assets.json` | yes | yes | yes | yes | 4,026 |
 | `opam` | `*.opam`, `opam`, `dune-project`, `dune-workspace`, `dune.lock/lock.dune` | `*.opam.locked`, `dune.lock/*.pkg` | yes | yes | yes | -- | 34 |
 | `pub` | `pubspec.yaml` | `pubspec.lock`, `.dart_tool/package_config.json` | yes | yes | yes | -- | 7,359 |
 | `pypi` | `pyproject.toml`, `setup.py`, `setup.cfg`, `requirements*.txt`, `requirements/*.txt`, `requirements*.in`, `requirements/*.in`, `Pipfile` | `poetry.lock`, `Pipfile.lock`, `pdm.lock`, `uv.lock`, `requirements*.txt`, `requirements/*.txt` | yes | yes | yes | yes | 12,487 |
 | `rubygems` | `Gemfile`, `gems.rb`, `*.gemspec`, `.ruby-version` | `Gemfile.lock`, `gems.locked` | yes | yes | yes | yes | 2,847 |
 | `swift` | `Package.swift` | `Package.resolved` | yes | yes | -- | -- | 62 |
-| `terraform` | `*.tf`, `*.tf.json` | `.terraform.lock.hcl` | upstream | yes | yes | yes | 58 |
+| `terraform` | `*.tf`, `*.tf.json` | `.terraform.lock.hcl` | upstream | yes | yes | yes | 1,979 |
 | `vcpkg` | `vcpkg.json`, `vcpkg-configuration.json`, `vcpkg-lock.json` | `vcpkg-lock.json` | NVD, upstream | yes | yes | -- | 39 |
-| `vscode` | `.vscode/extensions.json`, `*.code-workspace`, `.devcontainer/devcontainer.json`, `.devcontainer/*/devcontainer.json`, `.devcontainer.json`, `.gitpod.yml`, `.gitpod.yaml`, `extension.vsixmanifest` | -- | yes | -- | -- | -- | 20 |
+| `vscode` | `.vscode/extensions.json`, `*.code-workspace`, `.devcontainer/devcontainer.json`, `.devcontainer/*/devcontainer.json`, `.devcontainer.json`, `.gitpod.yml`, `.gitpod.yaml`, `extension.vsixmanifest` | -- | yes | yes | yes | yes | 3,003 |
 
 ## What is not here
 

@@ -35,6 +35,7 @@ from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.intel.provenance import attest
+from cordon_scanner.version import USER_AGENT
 
 FORMULA_API: Final = "https://formulae.brew.sh/api/formula/{name}.json"
 
@@ -59,7 +60,7 @@ class BottleCheck:
 class HomebrewProvenance:
     @staticmethod
     def _get(url: str) -> Any:
-        headers = {"Accept": "application/json", "User-Agent": "cordon-scanner"}
+        headers = {"Accept": "application/json", "User-Agent": USER_AGENT}
         token = os.environ.get("GITHUB_TOKEN", "")
         if token and url.startswith("https://api.github.com/"):
             # GitHub's own token, to GitHub's own API: the unauthenticated limit is 60 an hour.

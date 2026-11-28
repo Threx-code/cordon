@@ -55,6 +55,96 @@ class PackageTarget:
         # `pkg:docker/ghcr.io/acme/app@sha256:...` (the registry host leads the name).
         "docker": "image",
         "oci": "image",
+        # The other registries: purl's own type where it has one, the name each registry's own tool uses where it has not.
+        "githubactions": "actions",
+        "ansible": "ansible",
+        "bazel": "bazel",
+        "cocoapods": "cocoapods",
+        "composer": "composer",
+        "conan": "conan",
+        "conda": "conda",
+        "cran": "cran",
+        "hackage": "hackage",
+        "helm": "helm",
+        "brew": "homebrew",
+        "julia": "julia",
+        "nix": "nix",
+        "opam": "opam",
+        "swift": "swift",
+        "terraform": "terraform",
+        "vcpkg": "vcpkg",
+        "vscode-extension": "vscode",
+    }
+    #: Ecosystems with no purl type of their own, and why: written, not skipped.
+    NOT_PURL_TYPES: ClassVar[dict[str, str]] = {
+        "gradle": (
+            "purl has no gradle type: a Gradle dependency is a Maven coordinate, scanned as pkg:maven/<group>/<artifact>@<version>, "
+            "which is the same archive from the same repository."
+        ),
+    }
+    #: How many `/` a package name may carry, by ecosystem (a purl namespace is one more segment of the name).
+    SEGMENTS: ClassVar[dict[str, int]] = {
+        "actions": 1,
+        "ansible": 1,
+        "bazel": 0,
+        "cargo": 0,
+        "cocoapods": 0,
+        "composer": 1,
+        "conan": 0,
+        "conda": 0,
+        "cran": 0,
+        "gomod": 16,
+        "gradle": 0,
+        "hackage": 0,
+        "helm": 1,
+        "hex": 0,
+        "homebrew": 0,
+        "image": 0,
+        "julia": 0,
+        "maven": 1,
+        "nix": 1,
+        "npm": 1,
+        "nuget": 0,
+        "opam": 0,
+        "pub": 0,
+        "pypi": 0,
+        "rubygems": 0,
+        "swift": 1,
+        "terraform": 1,
+        "vcpkg": 0,
+        "vscode": 1,
+    }
+    #: Ecosystems whose name is `namespace<sep>name`, where purl writes `namespace/name` (exactly one namespace is required); "" for the rest.
+    JOINED: ClassVar[dict[str, str]] = {
+        "actions": "",
+        "ansible": ".",
+        "bazel": "",
+        "cargo": "",
+        "cocoapods": "",
+        "composer": "",
+        "conan": "",
+        "conda": "",
+        "cran": "",
+        "gomod": "",
+        "gradle": "",
+        "hackage": "",
+        "helm": "",
+        "hex": "",
+        "homebrew": "",
+        "image": "",
+        "julia": "",
+        "maven": ":",
+        "nix": "",
+        "npm": "",
+        "nuget": "",
+        "opam": "",
+        "pub": "",
+        "pypi": "",
+        "rubygems": "",
+        "swift": "",
+        "terraform": "",
+        "vcpkg": "",
+        "vscode": ".",
     }
     _NAME: ClassVar[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9@._~+-][A-Za-z0-9@._~+/-]{0,213}$")
     _VERSION: ClassVar[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9._+~!-]{1,128}$")
@@ -98,15 +188,16 @@ class PackageTarget:
             # pkg:npm/%40scope/name decodes to @scope/name; pkg:npm/scope/name is the same package.
             name = f"@{name}"
         # A Go module path has as many segments as it has; a Maven purl's namespace is the group.
-        segments = {"npm": 1, "maven": 1, "gomod": 16}.get(ecosystem, 0)
+        segments = cls.SEGMENTS[ecosystem]
         if not name or not cls._NAME.match(name) or ".." in name or name.count("/") > segments:
             raise PackageTargetError(f"not a valid {ecosystem} package name: {name!r}")
-        if ecosystem == "maven":
+        joiner = cls.JOINED[ecosystem]
+        if joiner:
             if name.count("/") != 1:
                 raise PackageTargetError(
-                    f"a Maven package URL names group and artifact: pkg:maven/<group>/<artifact>@<version>, not {name!r}"
+                    f"a {ecosystem} package URL names namespace and name: pkg:{kind.lower()}/<namespace>/<name>@<version>, not {name!r}"
                 )
-            name = name.replace("/", ":")
+            name = name.replace("/", joiner)
         if version is not None and not cls._VERSION.match(version):
             raise PackageTargetError(f"not a valid version: {version!r}")
         return cls(ecosystem=ecosystem, name=name, version=version)
@@ -177,6 +268,8 @@ class PackageTarget:
         "hex": ".tar",
         "pub": ".tar.gz",
         "maven": ".jar",
+        "vscode": ".vsix",
+        "helm": ".tgz",
     }
 
     @classmethod

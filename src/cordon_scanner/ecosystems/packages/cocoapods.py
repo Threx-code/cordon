@@ -26,6 +26,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.rubygems import RubySource
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -505,6 +506,11 @@ class PodfileLock:
 
 class CocoaPodsEcosystem(BaseEcosystem):
     id = "cocoapods"
+    own_name = OwnName(
+        ("*.podspec", "*.podspec.json"),
+        readers=(("*.podspec.json", "podspec_json"),),
+        parsers=(("*.podspec.json", "podspec_json_manifest"),),
+    )
     purl_type = "cocoapods"
     published_archive = NoArchive(
         "a pod is a podspec whose `source` names a git repository or an upstream archive; the spec repository publishes no archive of the pod (captured: cocoapods/podspec)"

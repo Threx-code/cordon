@@ -34,6 +34,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
@@ -353,6 +354,7 @@ class VcpkgEcosystem(BaseEcosystem):
     """C and C++ ports through vcpkg's manifest mode."""
 
     id = "vcpkg"
+    own_name = OwnName(("vcpkg.json",))
     purl_type = "vcpkg"
     published_archive = NoArchive(
         "the vcpkg registry is a git repository of ports (a portfile.cmake and a vcpkg.json each) whose sources are the upstream project's own archive, named by the REF and SHA512 in the portfile (captured: vcpkg/portfile.cmake)"

@@ -175,7 +175,7 @@ class TestTheFetch:
     ) -> list[tuple[str, str, int]]:
         calls: list[tuple[str, str, int]] = []
 
-        def fetch_bytes(url: str, allow: Any, *, redirects: int = 0) -> bytes:
+        def fetch_bytes(url: str, allow: Any, *, redirects: int = 0, public: bool = False) -> bytes:
             calls.append((url, "ansible" if allow("galaxy.ansible.com") else "", redirects))
             return data
 
@@ -364,16 +364,15 @@ class TestThePreviousRelease:
 
 class TestTheTables:
     @pytest.mark.parametrize("source", ArchiveSources.SOURCES, ids=lambda s: s.ecosystem)
-    def test_a_source_admits_its_own_hosts_and_refuses_a_host_that_is_nowhere_near(
+    def test_a_source_admits_its_own_hosts_and_refuses_an_address_or_a_local_name(
         self, source: Any
     ) -> None:
         for host in source.HOSTS:
             assert source.allows(host)
-        assert (
-            not source.allows("evil.example.invalid")
-            and not source.allows("127.0.0.1")
-            and not source.allows("localhost")
-        )
+        for host in ("127.0.0.1", "localhost", "169.254.169.254", "printer.local", "intranet"):
+            assert not source.allows(host)
+        if not source.PUBLIC:
+            assert not source.allows("evil.example.invalid")
 
     def test_every_archive_ecosystem_is_compared_and_has_a_record_source(self) -> None:
         from cordon_scanner.cli.commands.review import COMPARABLE
@@ -709,35 +708,192 @@ class TestPublicHosts:
         ):
             assert not PublicHost.named(host), host
 
-    def test_a_dotted_name_is_public_when_every_address_it_resolves_to_is_global(
+    def test_a_dotted_public_looking_name_passes_the_name_check(self) -> None:
+        from cordon_scanner.intel.registries.archive_sources.hosts import PublicHost
+
+        for host in (
+            "github.com",
+            "objects.githubusercontent.com",
+            "a-b.example.org",
+            "GITHUB.COM",
+        ):
+            assert PublicHost.named(host), host
+
+
+class TestThePinnedConnection:
+    """One lookup, one connection: the addresses checked are the ones connected to, so a name that answers differently the second
+    time cannot turn the download on the network the scan runs in."""
+
+    class Resolver:
+        def __init__(self, *answers: list[str]) -> None:
+            self.answers, self.asked = list(answers), 0
+
+        def __call__(self, host: str, port: int) -> list[tuple[int, str]]:
+            self.asked += 1
+            return [(2, a) for a in self.answers[min(self.asked, len(self.answers)) - 1]]
+
+    @staticmethod
+    def connection(monkeypatch: pytest.MonkeyPatch, resolver: Any, *, public_only: bool) -> Any:
+        import socket
+
+        from cordon_scanner.foundation.network.pinned import Pinned, PinnedConnection
+
+        connected: list[Any] = []
+
+        class Socket:
+            def __init__(self, *_a: Any) -> None:
+                pass
+
+            def settimeout(self, _t: Any) -> None:
+                pass
+
+            def connect(self, target: Any) -> None:
+                connected.append(target)
+
+        class Context:
+            def wrap_socket(self, sock: Any, server_hostname: str) -> Any:
+                connected.append(("tls", server_hostname))
+                return sock
+
+        monkeypatch.setattr(Pinned, "addresses", staticmethod(resolver))
+        monkeypatch.setattr(socket, "socket", Socket)
+        connection = PinnedConnection("example.com", 443)
+        connection.public_only = public_only
+        connection._context = Context()  # type: ignore[assignment]
+        return connection, connected
+
+    def test_the_name_is_resolved_once_and_the_connection_goes_to_the_checked_address(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        resolver = self.Resolver(["140.82.112.3"], ["169.254.169.254"])
+        connection, connected = self.connection(monkeypatch, resolver, public_only=True)
+        connection.connect()
+        assert resolver.asked == 1
+        assert connected == [("140.82.112.3", 443), ("tls", "example.com")]
+
+    @pytest.mark.parametrize(
+        "private", ["169.254.169.254", "10.1.2.3", "127.0.0.1", "192.168.0.9", "::1", "fd00::1"]
+    )
+    def test_a_name_that_resolves_to_a_private_address_is_refused_before_any_connection(
+        self, monkeypatch: pytest.MonkeyPatch, private: str
+    ) -> None:
+        connection, connected = self.connection(
+            monkeypatch, self.Resolver([private]), public_only=True
+        )
+        with pytest.raises(OSError, match="not a public one"):
+            connection.connect()
+        assert connected == []
+
+    def test_one_private_address_among_public_ones_refuses_the_name(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        connection, connected = self.connection(
+            monkeypatch, self.Resolver(["140.82.112.3", "10.0.0.5"]), public_only=True
+        )
+        with pytest.raises(OSError, match="not a public one"):
+            connection.connect()
+        assert connected == []
+
+    def test_a_registry_on_a_list_is_not_held_to_the_public_rule(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        connection, connected = self.connection(
+            monkeypatch, self.Resolver(["10.1.2.3"]), public_only=False
+        )
+        connection.connect()
+        assert connected[0] == ("10.1.2.3", 443)
+
+    def test_a_socket_that_failed_to_connect_is_closed_before_the_next_address_is_tried(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         import socket
 
-        from cordon_scanner.intel.registries.archive_sources.hosts import PublicHost
+        closed: list[str] = []
+        attempts: list[str] = []
 
-        def resolves(*addresses: str) -> Any:
-            return lambda *_a, **_k: [(2, 1, 6, "", (a, 443)) for a in addresses]
+        class Socket:
+            def __init__(self, *_a: Any) -> None:
+                self.address = ""
 
-        monkeypatch.setattr(socket, "getaddrinfo", resolves("140.82.112.3"))
-        assert PublicHost.ok("github.com")
-        monkeypatch.setattr(socket, "getaddrinfo", resolves("140.82.112.3", "10.1.2.3"))
-        assert not PublicHost.ok("github.com")
-        monkeypatch.setattr(socket, "getaddrinfo", resolves("169.254.169.254"))
-        assert not PublicHost.ok("metadata.example.com")
+            def settimeout(self, _t: Any) -> None:
+                pass
 
-    def test_a_name_that_does_not_resolve_is_not_public(
+            def connect(self, target: Any) -> None:
+                self.address = target[0]
+                attempts.append(target[0])
+                if target[0] == "140.82.112.3":
+                    raise OSError("refused")
+
+            def close(self) -> None:
+                closed.append(self.address)
+
+        connection, _ = self.connection(
+            monkeypatch, self.Resolver(["140.82.112.3", "140.82.112.4"]), public_only=True
+        )
+        monkeypatch.setattr(socket, "socket", Socket)
+        connection.connect()
+        assert attempts == ["140.82.112.3", "140.82.112.4"] and closed == ["140.82.112.3"]
+
+    def test_through_a_proxy_a_name_that_must_be_public_is_refused_and_a_listed_registry_is_not(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import socket
+        from cordon_scanner.foundation.network.pinned import PinnedConnection
 
-        from cordon_scanner.intel.registries.archive_sources.hosts import PublicHost
+        refused, _ = self.connection(monkeypatch, self.Resolver(["140.82.112.3"]), public_only=True)
+        refused.set_tunnel("example.com", 443)
+        with pytest.raises(OSError, match="through a proxy"):
+            refused.connect()
 
-        def fail(*_a: Any, **_k: Any) -> Any:
-            raise OSError("no such host")
+        reached: list[str] = []
+        monkeypatch.setattr(
+            PinnedConnection.__mro__[1], "connect", lambda self: reached.append("standard")
+        )
+        listed, _ = self.connection(monkeypatch, self.Resolver(["140.82.112.3"]), public_only=False)
+        listed.set_tunnel("example.com", 443)
+        listed.connect()
+        assert reached == ["standard"]
 
-        monkeypatch.setattr(socket, "getaddrinfo", fail)
-        assert not PublicHost.ok("example.com")
+    def test_a_name_with_no_address_is_an_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        connection, _ = self.connection(monkeypatch, self.Resolver([]), public_only=True)
+        with pytest.raises(OSError, match="no address"):
+            connection.connect()
+
+    def test_the_sources_whose_host_no_list_can_hold_ask_for_the_public_rule(self) -> None:
+        pinned = {s.ecosystem for s in ArchiveSources.SOURCES if s.PUBLIC}
+        assert {"bazel", "opam", "conan", "vcpkg", "helm", "cocoapods"} <= pinned
+        assert not any(
+            s.PUBLIC
+            for s in ArchiveSources.SOURCES
+            if s.ecosystem in ("npm", "pypi", "cargo", "maven")
+        )
+
+    def test_the_download_passes_the_public_rule_to_the_connection(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        seen: list[bool] = []
+        monkeypatch.setattr(
+            RegistryRequest,
+            "fetch_bytes",
+            staticmethod(
+                lambda url, allow, *, redirects=0, public=False: seen.append(public) or b"x"
+            ),
+        )
+        ArchiveFetch.download(
+            ArchiveSources.of("bazel"),
+            Located("https://example.com/a", "a", (("sha256", "0" * 64),)),
+        )  # type: ignore[arg-type]
+        ArchiveFetch.download(
+            ArchiveSources.of("npm"),
+            Located("https://registry.npmjs.org/a", "a", (("sha256", "0" * 64),)),
+        )  # type: ignore[arg-type]
+        assert seen == [True, False]
+
+    def test_an_image_registry_is_pulled_through_the_pinned_opener(self) -> None:
+        from cordon_scanner.foundation.network.pinned import PinnedHTTPS
+        from cordon_scanner.intel.registries.registry_image import RegistryImage
+
+        handlers = RegistryImage("ghcr.io", "a/b", public_only=True).opener.handlers
+        assert any(isinstance(h, PinnedHTTPS) and h.public_only for h in handlers)
 
 
 HEX40 = "11bd71901bbe5b1630ceea73d27597364c9af683"
@@ -1133,17 +1289,14 @@ class TestHelmArchive:
 
         assert self.locate(stripped) is None and self.locate(oci) is None
 
-    def test_the_chart_repository_host_must_be_public(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        import socket
-
+    def test_the_chart_repository_host_must_be_a_public_name_and_is_connected_pinned(self) -> None:
         source = ArchiveSources.of("helm")
-        assert source is not None
-        monkeypatch.setattr(
-            socket, "getaddrinfo", lambda *_a, **_k: [(2, 1, 6, "", ("10.0.0.7", 443))]
+        assert source is not None and source.PUBLIC
+        assert (
+            source.allows("charts.jetstack.io")
+            and not source.allows("10.0.0.7")
+            and not source.allows("charts.corp")
         )
-        assert not source.allows("charts.jetstack.io")
 
     @pytest.mark.parametrize("name", ["", "a/b/c", "../x", "A/B", "a b"])
     def test_a_name_that_is_not_a_chart_asks_for_nothing(self, name: str) -> None:
@@ -1212,7 +1365,9 @@ class FakeRegistry:
         registry = self
 
         class Image:
-            def __init__(self, host: str | None, repository: str) -> None:
+            def __init__(
+                self, host: str | None, repository: str, *, public_only: bool = False
+            ) -> None:
                 registry.asked.append((host or "hub", repository))
 
             def manifest(self, reference: str) -> tuple[bytes, str]:
@@ -1338,21 +1493,14 @@ class TestImageArchive:
             archive is not None and archive.strength == "" and ("pull", reference) in registry.asked
         )
 
-    def test_another_registry_is_used_only_when_its_host_is_public(
+    def test_another_registry_is_used_only_when_its_name_could_be_public(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import socket
-
         registry = FakeRegistry()
         registry.install(monkeypatch)
-        monkeypatch.setattr(
-            socket, "getaddrinfo", lambda *_a, **_k: [(2, 1, 6, "", ("140.82.112.3", 443))]
-        )
         assert ArchiveSources.of("image").fetch("ghcr.io/org/app", "1.0") is not None  # type: ignore[union-attr]
-        monkeypatch.setattr(
-            socket, "getaddrinfo", lambda *_a, **_k: [(2, 1, 6, "", ("10.0.0.7", 443))]
-        )
-        assert ArchiveSources.of("image").fetch("registry.corp.example/org/app", "1.0") is None  # type: ignore[union-attr]
+        assert ArchiveSources.of("image").fetch("registry.corp/org/app", "1.0") is None  # type: ignore[union-attr]
+        assert ArchiveSources.of("image").fetch("10.0.0.7/org/app", "1.0") is None  # type: ignore[union-attr]
 
     @pytest.mark.parametrize(
         "name", ["", "localhost:5000/x", "127.0.0.1/x", "a//b", "A B", "../x", "a/" * 7 + "b"]
@@ -1841,3 +1989,147 @@ class TestNativeArchives:
         monkeypatch.setattr(RegistryRequest, "headers", staticmethod(lambda url, allow: {}))
         with pytest.raises(RegistryError, match="states no MD5"):
             ArchiveSources.of("hackage").fetch("tagged", "0.8.6")  # type: ignore[union-attr]
+
+
+class TestArchivesThatExpand:
+    """A small download must not become gigabytes in memory: what a tar or zip declares is held to a bound before it is read."""
+
+    @staticmethod
+    def gz(files: dict[str, bytes]) -> bytes:
+        import gzip
+        import io
+        import tarfile
+
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w") as archive:
+            for name, content in files.items():
+                info = tarfile.TarInfo(name)
+                info.size = len(content)
+                archive.addfile(info, io.BytesIO(content))
+        return gzip.compress(buffer.getvalue())
+
+    def test_a_small_archive_that_declares_more_than_the_bound_gives_no_tree(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from cordon_scanner.intel.registries.archive_sources.git import GitTar, Unpacked
+
+        data = self.gz({"zeros": b"\0" * (3 << 20)})
+        assert len(data) < 8 << 10 and GitTar.tree_sha1(data) != ""
+        monkeypatch.setattr(Unpacked, "LIMIT", 1 << 20)
+        monkeypatch.setattr(Unpacked, "FLOOR", 1 << 10)
+        assert GitTar.tree_sha1(data) == ""
+
+    def test_the_bound_is_twenty_times_the_download_up_to_the_ceiling_and_never_below_the_floor(
+        self,
+    ) -> None:
+        from cordon_scanner.intel.registries.archive_sources.git import Unpacked
+
+        assert Unpacked.bound(b"x" * 100) == Unpacked.FLOOR
+        assert Unpacked.bound(b"x" * (1 << 20)) == 20 << 20
+        assert Unpacked.bound(b"x" * (100 << 20)) == Unpacked.LIMIT
+
+    def test_a_zip_that_declares_more_than_the_bound_gives_no_h1(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import io
+        import zipfile
+
+        from cordon_scanner.intel.registries.archive_sources.git import GoZip, Unpacked
+
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("m@v1/big", b"\0" * (3 << 20))
+        assert GoZip.h1(buffer.getvalue()).startswith("h1:")
+        monkeypatch.setattr(Unpacked, "LIMIT", 1 << 20)
+        monkeypatch.setattr(Unpacked, "FLOOR", 1 << 10)
+        assert GoZip.h1(buffer.getvalue()) == ""
+
+    def test_the_commit_is_read_from_the_first_header_alone(self) -> None:
+        from cordon_scanner.intel.registries.archive_sources.git import GitTar
+
+        data = Archives.tarball({"a": b"x" * 1000}, comment=HEX40)
+        assert GitTar.commit(data) == HEX40 and GitTar.commit(data[:600]) in ("", HEX40)
+
+
+class TestJuliaOnARealPackage:
+    """The tarball the package server serves for ZipFile 0.7.0 holds the package's own files with no wrapping directory, and its
+    git tree hash is the `git-tree-sha1` General records for that version (both real, fetched 2026-11-26)."""
+
+    def test_the_real_tarball_hashes_to_the_tree_the_registry_records(self) -> None:
+        from cordon_scanner.intel.registries.archive_sources.git import GitTar
+
+        data = (DATA / "julia_zipfile_0.7.0.tgz").read_bytes()
+        source = ArchiveSources.of("julia")
+        assert source is not None
+        package, listing = source.documents("ZipFile", "0.7.0")
+        found = source.locate(
+            "ZipFile",
+            "0.7.0",
+            {
+                package.url: Fixtures.text("julia_package.toml"),
+                listing.url: Fixtures.text("julia_versions.toml"),
+            },
+        )
+        assert found is not None and found.digests == (
+            ("git-tree-sha1", "c191e56c849b1784cacbf7cd5e52cc672f1ae2db"),
+        )
+        assert GitTar.tree_sha1(data) == "c191e56c849b1784cacbf7cd5e52cc672f1ae2db"
+        assert ArchiveFetch.digest_ok(data, found.digests)
+
+    def test_a_tarball_with_one_file_changed_does_not_match(self) -> None:
+        import io
+        import tarfile
+
+        data = (DATA / "julia_zipfile_0.7.0.tgz").read_bytes()
+        out = io.BytesIO()
+        with (
+            tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as source,
+            tarfile.open(fileobj=out, mode="w:gz") as target,
+        ):
+            for member in source:
+                handle = source.extractfile(member) if member.isfile() else None
+                content = handle.read() if handle else b""
+                if member.name == "LICENSE.md":
+                    content += b" "
+                    member.size = len(content)
+                target.addfile(member, io.BytesIO(content) if member.isfile() else None)
+        assert not ArchiveFetch.digest_ok(
+            out.getvalue(), (("git-tree-sha1", "c191e56c849b1784cacbf7cd5e52cc672f1ae2db"),)
+        )
+
+
+class TestAPortfileWithParenthesesInIt:
+    def call(self, text: str) -> list[str]:
+        from cordon_scanner.intel.registries.archive_sources.vcpkg import Portfile
+
+        return Portfile.call(text, "vcpkg_from_github")
+
+    def test_a_patch_name_with_balanced_parentheses_does_not_end_the_call(self) -> None:
+        words = self.call(
+            "vcpkg_from_github(\n  REPO a/b\n  REF v1\n  SHA512 "
+            + "ab" * 64
+            + "\n  PATCHES fix(x).patch other.patch\n)\nlater()"
+        )
+        assert words[:4] == ["REPO", "a/b", "REF", "v1"] and words[-2:] == [
+            "fix(x).patch",
+            "other.patch",
+        ]
+
+    def test_a_comment_and_a_quoted_string_may_hold_a_parenthesis(self) -> None:
+        words = self.call('vcpkg_from_github(\n  REPO a/b # the (old) name\n  REF "v)1"\n)')
+        assert words == ["REPO", "a/b", "REF", "v)1"]
+
+    def test_a_call_that_is_never_closed_is_no_call(self) -> None:
+        assert self.call("vcpkg_from_github(REPO a/b") == []
+        assert self.call('vcpkg_from_github(REPO "a/b') == []
+
+    def test_the_archive_is_still_found_when_a_patch_name_has_parentheses(self) -> None:
+        source = ArchiveSources.of("vcpkg")
+        assert source is not None
+        text = (
+            base64.b64decode(Fixtures.load("vcpkg_blob_portfile.json")["content"])
+            .decode()
+            .replace("0001-no-version-script-on-ohos.patch", "fix(x).patch")
+        )
+        words = self.call(text)
+        assert "REPO" in words and "fix(x).patch" in words

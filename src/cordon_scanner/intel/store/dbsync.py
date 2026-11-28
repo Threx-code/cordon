@@ -39,6 +39,7 @@ from cordon_scanner.foundation.network.failures import NetworkFailure
 #: The release pipeline's Ed25519 public key, hex, 64 characters. Empty until a
 from cordon_scanner.foundation.paths import PackagePaths
 from cordon_scanner.intel.provenance import _ed25519
+from cordon_scanner.version import USER_AGENT
 
 #: maintainer pins it: bundle sync is an opt-in feature that cannot be safe
 #: without a key to verify against, so an unset key disables it with a clear
@@ -68,7 +69,6 @@ SIGNATURE_NAME = "cordon-advisories.tar.gz.sig"
 
 MAX_BUNDLE_BYTES = 256 << 20
 TIMEOUT_SECONDS = 60.0
-USER_AGENT = "cordon-scanner advisory-sync (+https://github.com/Threx-code/cordon)"
 
 
 class BundleError(Exception):

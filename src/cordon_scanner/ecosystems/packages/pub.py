@@ -30,6 +30,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -325,6 +326,7 @@ class PackageConfig:
 
 class PubEcosystem(BaseEcosystem):
     id = "pub"
+    own_name = OwnName(("pubspec.yaml",))
     purl_type = "pub"
     published_archive = (PubArchive(),)
     manifest_globs: tuple[str, ...] = ("**/pubspec.yaml",)
