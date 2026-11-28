@@ -30,7 +30,7 @@ class VcpkgVersions:
         if scheme == "version-string":
             return None
         if scheme == "version-date":
-            found = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})((?:\.\d+)*)", text)
+            found = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})((?:\.\d++)*+)", text)
             if not found:
                 return None
             rest = tuple(int(p) for p in found.group(4).split(".")[1:])

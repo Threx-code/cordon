@@ -379,6 +379,9 @@ class Shape:
        linear but no cheaper on a line that long than a quadratic one: `[^\\n]{1,2000}?`.
     4. A lookahead that reads on, reached from a repeat that gives back: each character given back runs
        it again, `cd\\s+(?!.*\\.\\.)`.
+    5. A repeat nested in a repeat: an unbounded, non-possessive repeat over a body that itself repeats
+       without bound, `(a+)+`, `[a-z0-9](?:[_.-]?[a-z0-9]+)*` -- the shape the rule-pack validator
+       refuses, so the two never disagree; a possessive outer repeat (`*+`) gives nothing back.
     The check over-reads (a tail that cannot fail makes rule 1 harmless); the ladder decides those.
     """
 
@@ -420,6 +423,13 @@ class Shape:
             if top and scanning:
                 self.start(path, found)
             for node in path:
+                if (
+                    str(node[0]) in ("MAX_REPEAT", "MIN_REPEAT")
+                    and Parsed.high(node) == Parsed.MAXREPEAT
+                    and self.unbounded_inside(Parsed.children(node))
+                    and "nested" not in found
+                ):
+                    found.append("nested")
                 if str(node[0]) in Parsed.REPEATS or str(node[0]) == "ATOMIC_GROUP":
                     self.check(Parsed.children(node), scanning, found, top=False)
                 elif str(node[0]) in ("ASSERT", "ASSERT_NOT"):
