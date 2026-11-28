@@ -229,7 +229,13 @@ class _Mapping:
         return bool(RealPackages.real_packages(ecosystem))
 
     def __iter__(self) -> Iterator[str]:
-        return iter({*_CURATED, *_SHARED_DATA})
+        """Every registered ecosystem with any established name, shipped or curated: an ecosystem whose
+        only list is the shipped file (pub, image) is one of them too."""
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+        return iter(
+            sorted(eco for eco in EcosystemRegistry.BY_ID if RealPackages.real_packages(eco))
+        )
 
 
 REAL_PACKAGES: Final = _Mapping()

@@ -55,7 +55,7 @@ import hashlib
 import json
 import re
 import threading
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar, Final, Protocol
@@ -930,19 +930,16 @@ class AdvisoryDatabase:
         one name. A caller holding the name as a package's own metadata spells it
         (`amino.fix`, `whatsfly_labfox`) missed the record under the normalised key: three
         known-malicious PyPI releases went unreported in the identity benchmark for exactly that.
+        Each ecosystem's own fold is the one its adapter declares (`normalize_name`), so a registry
+        that folds names is read the same way here as everywhere else.
         """
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
         lowered = name.strip().lower()
-        fold = NAME_FOLDS.get(ecosystem)
-        forms = [lowered, *(fold(lowered) if fold else ())]
+        adapter = EcosystemRegistry.BY_ID.get(ecosystem)
+        forms = [lowered, *((adapter.normalize_name(lowered),) if adapter else ())]
         return tuple(dict.fromkeys(forms))
 
-
-#: The other spellings a registry treats as the same name: PyPI folds runs of `-`, `_` and `.`
-#: to one `-` (PEP 503); crates.io treats `-` and `_` as one.
-NAME_FOLDS: Final[Mapping[str, Callable[[str], tuple[str, ...]]]] = {
-    "pypi": lambda name: (re.sub(r"[-_.]+", "-", name),),
-    "cargo": lambda name: (name.replace("_", "-"), name.replace("-", "_")),
-}
 
 NOT_MALWARE: Final = {
     "MAL-2023-462": (
