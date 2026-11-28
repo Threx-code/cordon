@@ -532,11 +532,13 @@ class AdvisoryDetector(BaseDetector):
         offline or when the registry cannot be read, so nothing is reported on a guess."""
         if ctx.offline:
             return frozenset()
-        from cordon_scanner.intel.registries.archive_sources.table import ArchiveSources
+        from cordon_scanner.intel.registry import ArchiveSources, RegistryError
 
         try:
             return frozenset(ArchiveSources.versions(dependency.ecosystem, dependency.name))
-        except Exception:  # noqa: BLE001 - any registry failure means "cannot tell", never a block
+        except (RegistryError, OSError, ValueError):
+            # S2: a registry that cannot be read leaves the offline answer, which already holds; the
+            # popular name's range is simply not reported, as it is in every offline scan.
             return frozenset()
 
     def _range_findings(
