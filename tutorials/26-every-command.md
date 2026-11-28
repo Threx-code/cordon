@@ -684,7 +684,7 @@ Notification channels: send a test message to each.
 - `code`: code extensions, from Open VSX
 - `codium`: codium extensions, scanned
 - `cursor`: cursor extensions, scanned
-- `brew`: brew install/upgrade, bottles scanned
+- `brew`: brew install, bottles scanned
 
 ## npm
 

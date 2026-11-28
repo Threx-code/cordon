@@ -580,7 +580,7 @@ class HelpScreen:
         "code": "code extensions, from Open VSX",
         "codium": "codium extensions, scanned",
         "cursor": "cursor extensions, scanned",
-        "brew": "brew install/upgrade, bottles scanned",
+        "brew": "brew install, bottles scanned",
         "sbom": "CycloneDX or SPDX SBOM",
         "report": "re-render a saved JSON result",
         "rules": "list, test and show the rules",
