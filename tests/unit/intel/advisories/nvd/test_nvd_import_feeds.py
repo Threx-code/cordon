@@ -71,17 +71,20 @@ class FeedHelpers:
         return {"cpe": {"cpeName": cpe, "refs": refs, **extra}}
 
 
-@pytest.fixture
-def feeds(monkeypatch: pytest.MonkeyPatch):
-    def install(pages: dict[str, bytes | Exception]) -> Feeds:
-        host = Feeds(pages)
-        monkeypatch.setattr(nvd_import.urllib.request, "urlopen", host.urlopen)
-        return host
+class UsesFeeds:
+    """NVD's host, served from a dict, for every test class below."""
 
-    return install
+    @pytest.fixture
+    def feeds(self, monkeypatch: pytest.MonkeyPatch):
+        def install(pages: dict[str, bytes | Exception]) -> Feeds:
+            host = Feeds(pages)
+            monkeypatch.setattr(nvd_import.urllib.request, "urlopen", host.urlopen)
+            return host
+
+        return install
 
 
-class TestAFeedIsCheckedBeforeItIsUsed:
+class TestAFeedIsCheckedBeforeItIsUsed(UsesFeeds):
     def test_a_cve_feed_matching_its_digest_is_read(self, feeds) -> None:
         body, meta = FeedHelpers.cve_feed({"id": "CVE-2024-1", "vulnStatus": "Analyzed"})
         feeds({f"{FeedHelpers.CVE}.meta": meta, f"{FeedHelpers.CVE}.json.gz": body})
@@ -158,7 +161,7 @@ class TestAFeedIsCheckedBeforeItIsUsed:
             NvdImport.verified(base, ".tar.gz")
 
 
-class TestTheProductIndex:
+class TestTheProductIndex(UsesFeeds):
     @pytest.fixture
     def dictionary(self, feeds):
         def install(*products: dict[str, Any]) -> None:
@@ -226,7 +229,7 @@ class TestTheProductIndex:
         assert NvdImport.index(named={"nowhere:else"}) == {}
 
 
-class TestBuildingFromTheFeeds:
+class TestBuildingFromTheFeeds(UsesFeeds):
     def test_a_build_reads_every_year_and_the_dictionary(self, feeds) -> None:
         cve = {
             "id": "CVE-2024-1",
@@ -295,7 +298,7 @@ class TestBuildingFromTheFeeds:
         assert seen and not seen[0].exists()
 
 
-class TestWritingTheFiles:
+class TestWritingTheFiles(UsesFeeds):
     def test_both_files_are_written_and_their_digests_recorded(self, tmp_path) -> None:
         built = NvdBuild(products={"a:b": []}, index={"b": []})
         (tmp_path / nvd_import.DIGESTS_NAME).write_text(
@@ -323,7 +326,7 @@ class TestWritingTheFiles:
         assert NvdImport.years().start == 2002
 
 
-class TestTheCveListFillsWhatNvdLeavesUnranged:
+class TestTheCveListFillsWhatNvdLeavesUnranged(UsesFeeds):
     @staticmethod
     def record(identifier: str, cpe: str, *, references=(), rating="HIGH") -> dict[str, Any]:
         return {

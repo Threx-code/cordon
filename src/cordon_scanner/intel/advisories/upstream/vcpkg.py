@@ -553,10 +553,7 @@ class VcpkgPorts:
     @staticmethod
     def _string_command(args: list[str | None], depth: int, values: dict[str, str | None]) -> None:
         """A portfile's string() command: the value it builds, kept in the variables it sets."""
-        first = args[0]
-        if first is None:  # the caller's test, restated for the type
-            return
-        operation = first.upper()
+        operation = str(args[0]).upper()
         if operation == "REPLACE" and len(args) >= 5 and args[3]:
             inputs = args[4:]
             known = not depth and None not in (args[1], args[2], *inputs)
