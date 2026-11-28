@@ -31,8 +31,9 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import ConsumerHooks
 from cordon_scanner.ecosystems.own_names import OwnName
-from cordon_scanner.foundation.models import Scope
+from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -616,7 +617,36 @@ class Fetchers:
                     note="looked up on NIX_PATH when evaluated: whatever that channel holds then, pinned to nothing",
                 )
             )
-        return Manifest(path=content.path, ecosystem=ecosystem, dependencies=tuple(declared))
+        return Manifest(
+            path=content.path,
+            ecosystem=ecosystem,
+            dependencies=tuple(declared),
+            hooks=tuple(Fetchers.phases(tokens, content.path, ecosystem)),
+        )
+
+    @staticmethod
+    def phases(tokens: list[Token], path: str, ecosystem: str) -> list[Hook]:
+        """The build phases a derivation spells as shell: `buildPhase = ''...'';`, `postInstall = "..."`. Each is a command the
+        build runs on the machine of whoever builds the package."""
+        out: list[Hook] = []
+        for index, token in enumerate(tokens[:-2]):
+            if (
+                token.kind == "ident"
+                and token.text.endswith(("Phase", "Install", "Build", "Configure", "Check"))
+                and tokens[index + 1].kind == "punct"
+                and tokens[index + 1].text == "="
+                and tokens[index + 2].kind in ("string", "template")
+            ):
+                out.append(
+                    Hook(
+                        kind="build",
+                        path=path,
+                        name=token.text,
+                        command=tokens[index + 2].text.strip()[:400],
+                        ecosystem=ecosystem,
+                    )
+                )
+        return out
 
     @staticmethod
     def dependency(fetcher: str, argument: dict[str, Any] | str) -> DeclaredDependency | None:
@@ -802,6 +832,7 @@ class NixEcosystem(BaseEcosystem):
     """Flake inputs and hand-pinned sources."""
 
     id = "nix"
+    consumer_hooks = ConsumerHooks(("*Phase", "*Install", "*Build", "*Configure", "*Check"))
     own_name = OwnName(
         ("package.nix",),
         readers=(("package.nix", "nix_pname"),),
@@ -812,7 +843,12 @@ class NixEcosystem(BaseEcosystem):
         return name.rsplit("/", 1)[0] if "/" in name else None
 
     purl_type = "nix"
-    manifest_globs: tuple[str, ...] = ("**/flake.nix", "**/default.nix", "**/shell.nix")
+    manifest_globs: tuple[str, ...] = (
+        "**/flake.nix",
+        "**/default.nix",
+        "**/shell.nix",
+        "**/package.nix",
+    )
     lockfile_globs: tuple[str, ...] = ("**/flake.lock",)
     registry_hosts: frozenset[str] = frozenset()
     registryless = True

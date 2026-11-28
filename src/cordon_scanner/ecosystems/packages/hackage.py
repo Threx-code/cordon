@@ -39,6 +39,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.haskell.cabal import (
     GHC_PACKAGES,
@@ -585,6 +586,9 @@ class HackageEcosystem(BaseEcosystem):
     """Haskell packages through Cabal and Stack."""
 
     id = "hackage"
+    consumer_hooks = NoConsumerHooks(
+        "a custom build is `Setup.hs`, a file the .cabal names, not a command string"
+    )
     own_name = OwnName(("*.cabal",))
     purl_type = "hackage"
     manifest_globs: tuple[str, ...] = (

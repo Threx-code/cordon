@@ -244,6 +244,26 @@ class More:
         return {c.id: c.not_applicable["UNI-13"] for c in CONTRACTS if "UNI-13" in c.not_applicable}
 
     @classmethod
+    def install_hook_shapes(cls) -> frozenset[str]:
+        from cordon_scanner.ecosystems.install_marks import ConsumerHooks
+
+        return cls.ids(
+            e.id
+            for e in EcosystemRegistry.all_ecosystems()
+            if isinstance(e.consumer_hooks, ConsumerHooks)
+        )
+
+    @staticmethod
+    def install_hook_reasons() -> dict[str, str]:
+        from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
+
+        return {
+            e.id: e.consumer_hooks.reason
+            for e in EcosystemRegistry.all_ecosystems()
+            if isinstance(e.consumer_hooks, NoConsumerHooks)
+        }
+
+    @classmethod
     def own_name_findings(cls) -> frozenset[str]:
         from cordon_scanner.ecosystems.own_names import OwnName
 
@@ -335,6 +355,10 @@ class Features:
         "device attestation splitters": (More.device_attestation, dict),
         "subject canonicalisation": (More.subjects, dict),
         "manifest findings (own name)": (More.own_name_findings, More.own_name_reasons),
+        "install-hook shapes (consumer-time commands)": (
+            More.install_hook_shapes,
+            More.install_hook_reasons,
+        ),
         "package format sniffing": (More.package_format, dict),
     }
     #: Features being built now: expected to fail until they cover every ecosystem; the entry comes off when they do.

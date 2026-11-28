@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from collections.abc import Collection
 
     from cordon_scanner.ecosystems.base import Manifest
+    from cordon_scanner.ecosystems.install_marks import ConsumerHooksDeclaration
     from cordon_scanner.foundation.content import FileContent
 
 
@@ -214,6 +215,7 @@ class OwnNameDefaults:
     read, which is the manifest's name unless the adapter's published file says it another way."""
 
     own_name: OwnNameDeclaration
+    consumer_hooks: ConsumerHooksDeclaration
 
     def parse_manifest(
         self, content: FileContent

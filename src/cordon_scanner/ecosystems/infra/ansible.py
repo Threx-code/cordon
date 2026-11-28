@@ -37,6 +37,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Scope
@@ -461,6 +462,9 @@ class AnsibleGalaxyEcosystem(BaseEcosystem):
     """Galaxy roles and collections, declared and installed."""
 
     id = "ansible"
+    consumer_hooks = NoConsumerHooks(
+        "installing a collection unpacks it; no command in it runs when ansible-galaxy installs it"
+    )
     own_name = OwnName(
         ("MANIFEST.json",),
         readers=(("MANIFEST.json", "collection_manifest"),),

@@ -30,6 +30,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -640,6 +641,9 @@ class BundlerLock:
 
 class RubyGemsEcosystem(BaseEcosystem):
     id = "rubygems"
+    consumer_hooks = NoConsumerHooks(
+        "a gemspec's `extensions` names files to build (extconf.rb), which are files of the gem and not command strings in the manifest"
+    )
     own_name = OwnName(("*.gemspec",))
     purl_type = "gem"
     manifest_globs: tuple[str, ...] = (

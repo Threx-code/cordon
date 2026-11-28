@@ -33,6 +33,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Scope
 
@@ -476,6 +477,9 @@ class JuliaEcosystem(BaseEcosystem):
     """Julia packages through Pkg."""
 
     id = "julia"
+    consumer_hooks = NoConsumerHooks(
+        "deps/build.jl is a file of the package, not a command string in Project.toml"
+    )
     own_name = OwnName(("Project.toml",))
     purl_type = "julia"
     manifest_globs: tuple[str, ...] = ("**/Project.toml", "**/JuliaProject.toml")

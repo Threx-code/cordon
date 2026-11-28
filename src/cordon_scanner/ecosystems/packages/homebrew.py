@@ -36,6 +36,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import ConsumerHooks
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -210,6 +211,35 @@ class Formula:
     }
 
     @staticmethod
+    def _def_hook(name: str, path: str, ecosystem: str) -> Hook:
+        """The `def install` / `def post_install` a formula runs when it is built."""
+        return Hook(
+            kind="build",
+            path=path,
+            name=f"formula {name}",
+            command=f"def {name}",
+            ecosystem=ecosystem,
+        )
+
+    @staticmethod
+    def _system_hook(
+        stripped: str, stack: list[str], last_def: str, path: str, ecosystem: str
+    ) -> Hook | None:
+        """A `system "cmd", args` call inside `def install` or `def post_install`: what `brew install` runs on the machine of
+        whoever installs the formula."""
+        call = re.match(r"^system\s(.*)", stripped)
+        if not call or "def" not in stack or last_def not in ("install", "post_install"):
+            return None
+        words = re.findall(r'"([^"\n]*)"', call.group(1))
+        return Hook(
+            kind="build",
+            path=path,
+            name="system",
+            command=" ".join(words)[:400],
+            ecosystem=ecosystem,
+        )
+
+    @staticmethod
     def parse(content: FileContent, ecosystem: str) -> Manifest:
         text = content.text
         declared_class = re.search(
@@ -227,6 +257,7 @@ class Formula:
         stack: list[str] = []
         pending: dict[str, str] = {}
         version: str | None = None
+        last_def = ""
         for _number, line in Ruby.lines(text):
             stripped = line.strip()
             opener = re.match(
@@ -238,16 +269,10 @@ class Formula:
                 stack.append(
                     f"{kind}:{opener.group(2) or ''}" if kind in ("resource", "patch") else kind
                 )
-                if kind == "def" and re.match(r"^def\s+(install|post_install)\b", stripped):
-                    hooks.append(
-                        Hook(
-                            kind="build",
-                            path=content.path,
-                            name=f"formula {stripped.split()[1]}",
-                            command=f"def {stripped.split()[1]}",
-                            ecosystem=ecosystem,
-                        )
-                    )
+                if kind == "def":
+                    last_def = stripped.split()[1].split("(")[0]
+                    if last_def in ("install", "post_install"):
+                        hooks.append(Formula._def_hook(last_def, content.path, ecosystem))
                 pending = {}
                 continue
             if Ruby.opens_block(stripped) and not stripped.startswith("class "):
@@ -261,6 +286,9 @@ class Formula:
                     pending = {}
                 continue
             if any(s in ("test", "livecheck", "def", "service") for s in stack):
+                hook = Formula._system_hook(stripped, stack, last_def, content.path, ecosystem)
+                if hook is not None:
+                    hooks.append(hook)
                 continue
             head = re.match(rf"^head\s+{STRING}", stripped) if not stack else None
             if head:
@@ -830,6 +858,7 @@ class HomebrewEcosystem(BaseEcosystem):
         return NotRunAtInstall.spans(text) if path.endswith(".rb") else []
 
     id = "homebrew"
+    consumer_hooks = ConsumerHooks(("system",))
     own_name = OwnName(
         ("Formula/*.rb", "Formula/*/*.rb", ".brew/*.rb"),
         readers=(("*.rb", "formula_stem"),),

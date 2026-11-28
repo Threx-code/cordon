@@ -36,9 +36,10 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import ConsumerHooks
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.collector import ScanCaches
-from cordon_scanner.foundation.models import Scope
+from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -563,7 +564,34 @@ class TerraformConfiguration:
             ecosystem=ecosystem,
             dependencies=tuple(declared),
             sources=tuple(sources),
+            hooks=tuple(TerraformConfiguration.provisioners(root, content.path, ecosystem)),
         )
+
+    @staticmethod
+    def provisioners(block: Block, path: str, ecosystem: str) -> list[Hook]:
+        """Each `provisioner "local-exec"` with a `command`, wherever it is nested: a command run on the machine that applies the
+        configuration, which for a module is the machine of whoever uses it. A command written as an expression (a reference to
+        another value) is surfaced as the expression's text."""
+        found: list[Hook] = []
+        for child in block.blocks:
+            command = child.attributes.get("command")
+            text = command if isinstance(command, str) else getattr(command, "text", None)
+            if (
+                child.type == "provisioner"
+                and child.labels[:1] == ["local-exec"]
+                and isinstance(text, str)
+            ):
+                found.append(
+                    Hook(
+                        kind="build",
+                        path=path,
+                        name="local-exec",
+                        command=text[:400],
+                        ecosystem=ecosystem,
+                    )
+                )
+            found.extend(TerraformConfiguration.provisioners(child, path, ecosystem))
+        return found
 
     @staticmethod
     def local_names(root: Block) -> tuple[set[str], set[str]]:
@@ -699,6 +727,7 @@ class TerraformEcosystem(BaseEcosystem):
     """Terraform providers and modules."""
 
     id = "terraform"
+    consumer_hooks = ConsumerHooks(("local-exec",))
     # A provider's release holds one binary, `terraform-provider-<type>_v<version>...`, which names the provider. A module is
     # named by the address it is published at (namespace/name/provider) and its .tf files declare no name: it has no file to read.
     own_name = OwnName(

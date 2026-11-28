@@ -29,6 +29,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Scope
 
@@ -79,6 +80,9 @@ class VsCodeEcosystem(BaseEcosystem):
     """Editor extensions, read from the files that name them."""
 
     id = "vscode"
+    consumer_hooks = NoConsumerHooks(
+        "the editor installs an extension without running a script of it; `vscode:prepublish` runs when its author packages it"
+    )
     own_name = OwnName(
         ("extension/package.json",),
         readers=(("extension/package.json", "extension_manifest"),),

@@ -29,6 +29,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Hook, Scope
@@ -325,6 +326,9 @@ class PackageConfig:
 
 class PubEcosystem(BaseEcosystem):
     id = "pub"
+    consumer_hooks = NoConsumerHooks(
+        "hook/build.dart is a file of the package, not a command string in pubspec.yaml"
+    )
     own_name = OwnName(("pubspec.yaml",))
     purl_type = "pub"
     manifest_globs: tuple[str, ...] = ("**/pubspec.yaml",)

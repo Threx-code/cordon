@@ -152,7 +152,13 @@ class LifecycleFindings:
     ) -> Iterator[Finding]:
         """The findings for one lifecycle hook: what its command runs, and whether that is install-time payload."""
         command = hook.command
-        if not command or HookKinds.action_step(hook):
+        if command and HookKinds.action_step(hook):
+            # A composite action's `run:` is graded as CI, not as install-time code (review 98); the install-hook shapes
+            # are read off it all the same, where the ecosystem declares those steps as consumer-time hooks.
+            programs = InlinePrograms.found(unit.path, hook.name, command)
+            yield from InstallHookShapes.findings(hook, command, programs, manifest, unit, ctx)
+            return
+        if not command:
             return
         loader = _REQUIRE_ONLY.match(command.strip())
         if loader:

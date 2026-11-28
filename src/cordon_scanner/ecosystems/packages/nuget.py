@@ -34,6 +34,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import ConsumerHooks
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.formats.safexml import Element, SafeXml, SafeXmlError
 from cordon_scanner.foundation.models import Hook, Scope
@@ -547,8 +548,33 @@ class NuGetAssets:
         return Manifest(path=content.path, ecosystem=ecosystem, hooks=hooks)
 
 
+class MSBuildTargets:
+    """A package's `build/<id>.targets`: MSBuild imports it into the build of every project that references the package, so an
+    `<Exec Command="...">` in it is a command run on the machine of whoever builds that project."""
+
+    @staticmethod
+    def parse(content: FileContent, ecosystem: str) -> Manifest:
+        try:
+            root = SafeXml.parse(content.text, source=content.path)
+        except SafeXmlError as exc:
+            return BaseEcosystem._err(content, ecosystem, f"not a readable MSBuild file: {exc}")
+        hooks = tuple(
+            Hook(
+                kind="build",
+                path=content.path,
+                name="Exec",
+                command=element.attributes.get("Command", "")[:400],
+                ecosystem=ecosystem,
+            )
+            for element in root.find_all("Target", "Exec")
+            if element.attributes.get("Command")
+        )
+        return Manifest(path=content.path, ecosystem=ecosystem, hooks=hooks)
+
+
 class NuGetEcosystem(BaseEcosystem):
     id = "nuget"
+    consumer_hooks = ConsumerHooks(("Exec",))
     own_name = OwnName(
         ("*.nuspec",),
         readers=(("*.nuspec", "nuspec_id"),),
@@ -572,6 +598,8 @@ class NuGetEcosystem(BaseEcosystem):
         "**/nuget.config",
         "**/NuGet.config",
         "**/obj/project.assets.json",
+        "**/build/*.targets",
+        "**/buildTransitive/*.targets",
     )
     lockfile_globs: tuple[str, ...] = ("**/packages.lock.json", "**/project.assets.json")
     registry_hosts: frozenset[str] = frozenset({"api.nuget.org", "nuget.org", "www.nuget.org"})
@@ -616,6 +644,8 @@ class NuGetEcosystem(BaseEcosystem):
             return PackagesConfig.parse(content, self.id)
         if lowered == "project.assets.json":
             return NuGetAssets.hooks(content, self.id)
+        if lowered.endswith(".targets"):
+            return MSBuildTargets.parse(content, self.id)
         try:
             own = MSBuildFile.read(content)
         except SafeXmlError as exc:

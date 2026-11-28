@@ -598,7 +598,7 @@ Flake inputs. Ecosystem id `nix`.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
-│ MANIFESTS       flake.nix, default.nix, shell.nix                          │
+│ MANIFESTS       flake.nix, default.nix, shell.nix, package.nix             │
 │ LOCKFILES       flake.lock                                                 │
 │                                                                            │
 │ OFFLINE         the dependency graph, lockfile integrity, licences,        │
@@ -657,7 +657,8 @@ cordon-scanner deps .                      # every package found, with its findi
 │ MANIFESTS       *.csproj, *.fsproj, *.vbproj, packages.config,             │
 │                 Directory.Packages.props, Directory.Build.props,           │
 │                 NuGet.Config, nuget.config, NuGet.config,                  │
-│                 obj/project.assets.json                                    │
+│                 obj/project.assets.json, build/*.targets,                  │
+│                 buildTransitive/*.targets                                  │
 │ LOCKFILES       packages.lock.json, project.assets.json                    │
 │                                                                            │
 │ OFFLINE         the dependency graph, lockfile integrity, licences,        │

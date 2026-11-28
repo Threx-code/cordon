@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from cordon_scanner.ecosystems.base import BaseEcosystem, Ecosystem, ReleaseFile
 from cordon_scanner.ecosystems.editors.vscode import VsCodeEcosystem
 from cordon_scanner.ecosystems.infra.infra import INFRA_ECOSYSTEMS
+from cordon_scanner.ecosystems.install_marks import ConsumerHooks
 from cordon_scanner.ecosystems.others import (
     BazelEcosystem,
     CocoaPodsEcosystem,
@@ -273,6 +274,13 @@ class EcosystemRegistry:
             if isinstance(declared, OwnName) and (depth := declared.matches(path)):
                 found.append((ecosystem.id != preferred, -depth, ecosystem.id, ecosystem))
         return [ecosystem for *_, ecosystem in sorted(found, key=lambda f: f[:3])]
+
+    @classmethod
+    def consumer_hooks(cls, ecosystem: str) -> ConsumerHooks | None:
+        """The hooks of `ecosystem` whose commands run when a dependency is installed, or None where it has none."""
+        adapter = cls.BY_ID.get(ecosystem)
+        declared = adapter.consumer_hooks if isinstance(adapter, BaseEcosystem) else None
+        return declared if isinstance(declared, ConsumerHooks) else None
 
     @classmethod
     def published_identity_ecosystem(cls, member: str, archive: str = "") -> str | None:

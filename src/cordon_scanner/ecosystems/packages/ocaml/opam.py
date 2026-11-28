@@ -36,6 +36,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import ConsumerHooks
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.ocaml.opam_syntax import (
     COMPILER_PACKAGES,
@@ -209,6 +210,7 @@ class OpamEcosystem(BaseEcosystem):
     """OCaml packages through opam and dune."""
 
     id = "opam"
+    consumer_hooks = ConsumerHooks(("opam build", "opam install"))
     own_name = OwnName(("*.opam", "opam"), readers=(("*.opam", "opam_name"), ("opam", "opam_name")))
     purl_type = "opam"
     manifest_globs: tuple[str, ...] = (

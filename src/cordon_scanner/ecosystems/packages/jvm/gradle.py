@@ -34,6 +34,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.jvm.maven import MavenEcosystem
 from cordon_scanner.foundation.formats.safexml import SafeXml, SafeXmlError
@@ -242,6 +243,9 @@ class GradleWrapper:
 
 class GradleEcosystem(BaseEcosystem):
     id = "gradle"
+    consumer_hooks = NoConsumerHooks(
+        "a build is Groovy or Kotlin code in its own scripts, not command strings, and a dependency's scripts never run when it is resolved"
+    )
     own_name = OwnName(
         ("settings.gradle", "settings.gradle.kts"),
         readers=(("settings.gradle", "gradle_root"), ("settings.gradle.kts", "gradle_root")),

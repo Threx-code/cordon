@@ -14,6 +14,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
 from cordon_scanner.ecosystems.own_names import OwnName
 
 # Each `*Ecosystem` imported below from its own module (GitHub Actions, Bazel, CocoaPods, Composer,
@@ -181,6 +182,9 @@ class GoModFile:
 
 class GoEcosystem(BaseEcosystem):
     id = "gomod"
+    consumer_hooks = NoConsumerHooks(
+        "go get and go build run no code of a dependency, and go.mod holds no command string"
+    )
     own_name = OwnName(("go.mod",))
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:

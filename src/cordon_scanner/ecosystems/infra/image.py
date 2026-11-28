@@ -39,6 +39,7 @@ from cordon_scanner.ecosystems.infra.references import (
     PublicRegistries,
     ReferenceGrammar,
 )
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Hook, Scope
@@ -571,6 +572,9 @@ class ImageEcosystem(BaseEcosystem):
     """Container images a build pulls, a Compose file runs, and a Kubernetes manifest deploys."""
 
     id = "image"
+    consumer_hooks = NoConsumerHooks(
+        "an image's build steps are its own Dockerfile's (the project's build); a pulled image runs nothing when it is pulled"
+    )
     own_name = OwnName(
         ("blobs/sha256/*", "?" * 64 + ".json"),
         readers=(("blobs/sha256/*", "image_config"), ("?" * 64 + ".json", "image_config")),

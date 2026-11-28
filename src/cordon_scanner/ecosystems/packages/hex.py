@@ -29,6 +29,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.hex_literals import ElixirLiterals
 from cordon_scanner.foundation.models import Hook, Scope
@@ -774,6 +775,9 @@ class HexEcosystem(BaseEcosystem):
     """Hex, through mix and rebar3."""
 
     id = "hex"
+    consumer_hooks = NoConsumerHooks(
+        "mix.exs and a dependency's compile steps are Elixir code, not command strings in a manifest field"
+    )
     own_name = OwnName(
         ("mix.exs", "metadata.config"),
         readers=(("metadata.config", "hex_metadata"),),

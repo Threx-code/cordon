@@ -31,7 +31,8 @@ from typing import TYPE_CHECKING, ClassVar, Final
 from cordon_scanner.detect.supply.manifests.findings import ManifestFinding
 from cordon_scanner.detect.supply.manifests.inline_shapes import InlineShapes
 from cordon_scanner.detect.supply.manifests.scripts import ManifestScripts
-from cordon_scanner.foundation.models import CONSUMER_TIME_HOOKS, Category, Confidence, Severity
+from cordon_scanner.ecosystems.registry import EcosystemRegistry
+from cordon_scanner.foundation.models import Category, Confidence, Severity
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -94,18 +95,19 @@ class InstallHookShapes:
         ctx: ScanContext,
     ) -> Iterator[Finding]:
         """The findings of one hook: nothing unless it is a consumer-time hook of a package."""
+        declared = EcosystemRegistry.consumer_hooks(manifest.ecosystem)
         if (
-            hook.name.lower() not in CONSUMER_TIME_HOOKS
-            or manifest.ecosystem not in cls.PACKAGE_ECOSYSTEMS
+            declared is None
+            or not declared.holds(hook.name)
             or cls._first_party(manifest, unit, ctx)
         ):
             return
         carried = [p for p in programs if not cls._guard(p, ctx) and not cls._closed_shape(p)]
         if carried:
-            yield cls._inline_finding(hook, command, unit, ctx)
+            yield cls._inline_finding(hook, command, unit, ctx, measured=declared.measured)
         missing = cls.unread_targets(command, unit.path, ctx.tree_paths)
         if missing:
-            yield cls._unread_finding(hook, command, missing, unit, ctx)
+            yield cls._unread_finding(hook, command, missing, unit, ctx, measured=declared.measured)
 
     @classmethod
     def _first_party(cls, manifest: Manifest, unit: FileUnit, ctx: ScanContext) -> bool:
@@ -179,11 +181,13 @@ class InstallHookShapes:
         return None
 
     @staticmethod
-    def _inline_finding(hook: Hook, command: str, unit: FileUnit, ctx: ScanContext) -> Finding:
+    def _inline_finding(
+        hook: Hook, command: str, unit: FileUnit, ctx: ScanContext, *, measured: bool = True
+    ) -> Finding:
         return ManifestFinding.finding(
             rule_id=INLINE_RULE,
             category=Category.SUSPICIOUS,
-            severity=Severity.HIGH,
+            severity=Severity.HIGH if measured else Severity.MEDIUM,
             confidence=Confidence.MEDIUM,
             title="Install hook carries its program inline",
             message=(
@@ -206,12 +210,18 @@ class InstallHookShapes:
 
     @staticmethod
     def _unread_finding(
-        hook: Hook, command: str, missing: list[str], unit: FileUnit, ctx: ScanContext
+        hook: Hook,
+        command: str,
+        missing: list[str],
+        unit: FileUnit,
+        ctx: ScanContext,
+        *,
+        measured: bool = True,
     ) -> Finding:
         return ManifestFinding.finding(
             rule_id=UNREAD_RULE,
             category=Category.SUSPICIOUS,
-            severity=Severity.HIGH,
+            severity=Severity.HIGH if measured else Severity.MEDIUM,
             confidence=Confidence.MEDIUM,
             title="Install hook runs a script this scan does not hold",
             message=(

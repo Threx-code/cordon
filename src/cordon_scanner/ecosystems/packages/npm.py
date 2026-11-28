@@ -24,6 +24,7 @@ from cordon_scanner.ecosystems.base import (
     Manifest,
     ReleaseFile,
 )
+from cordon_scanner.ecosystems.install_marks import ConsumerHooks
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.javascript.conditions import NpmConditions
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
@@ -174,6 +175,7 @@ class NpmEcosystem(NpmProjects, NpmPackageCode, BaseEcosystem):
         return str(value) if isinstance(value, str) and value else None
 
     id = "npm"
+    consumer_hooks = ConsumerHooks(("preinstall", "install", "postinstall"), measured=True)
     own_name = OwnName(("package.json",), blocks=True)
 
     def declared_dependencies(self, files: Sequence[ReleaseFile]) -> frozenset[str]:

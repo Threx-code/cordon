@@ -32,6 +32,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -352,6 +353,9 @@ class VcpkgEcosystem(BaseEcosystem):
     """C and C++ ports through vcpkg's manifest mode."""
 
     id = "vcpkg"
+    consumer_hooks = NoConsumerHooks(
+        "portfile.cmake is a file of the port, not a command string in vcpkg.json"
+    )
     own_name = OwnName(("vcpkg.json",))
     purl_type = "vcpkg"
     manifest_globs: tuple[str, ...] = (

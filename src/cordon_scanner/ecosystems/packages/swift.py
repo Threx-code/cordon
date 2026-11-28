@@ -29,6 +29,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -338,6 +339,9 @@ class SwiftResolved:
 
 class SwiftEcosystem(BaseEcosystem):
     id = "swift"
+    consumer_hooks = NoConsumerHooks(
+        "Package.swift is Swift code and plugins are targets, not command strings in a manifest field"
+    )
     own_name = OwnName(("Package.swift",))
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
