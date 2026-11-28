@@ -1,0 +1,30 @@
+---
+version: 2
+jobs:
+  build:
+    working_directory: ~/dropwizard
+    environment:
+      JAVA_OPTS: -Xms512m -Xmx2g -XX:+TieredCompilation -XX:TieredStopAtLevel=1
+    docker:
+      # yamllint disable-line rule:line-length
+      - image: cimg/openjdk:25.0.5@sha256:914115543960af0c61ed0837a30c5af4d6ff1e2148e7699bdb882799a32ac72d
+    steps:
+      - checkout
+      - restore_cache:
+          key: dropwizard-{{ checksum "pom.xml" }}
+      - run: ./mvnw --no-transfer-progress -V -B -ff
+          -Dsurefire.rerunFailingTestsCount=1 install
+      - save_cache:
+          paths:
+            - ~/.m2
+          key: dropwizard-{{ checksum "pom.xml" }}
+      - run:
+          name: Save test results
+          command: |
+            mkdir -p ~/junit/
+            mv ~/dropwizard/*/target/surefire-reports/*.xml ~/junit/
+          when: always
+      - store_test_results:
+          path: ~/junit
+      - store_artifacts:
+          path: ~/junit

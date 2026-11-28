@@ -246,7 +246,13 @@ The images a Dockerfile, compose file or workload runs. Ecosystem id `image`.
 │                 *-deployment.yml, *-statefulset.yaml, *-statefulset.yml,   │
 │                 *-daemonset.yaml, *-daemonset.yml, *-cronjob.yaml,         │
 │                 *-cronjob.yml, *-job.yaml, *-job.yml, *-pod.yaml,          │
-│                 *-pod.yml                                                  │
+│                 *-pod.yml, .gitlab-ci.yml, .gitlab-ci.yaml, Jenkinsfile,   │
+│                 Jenkinsfile.*, azure-pipelines.yml, azure-pipelines.yaml,  │
+│                 .azure-pipelines/*.yml, .circleci/config.yml,              │
+│                 .circleci/config.yaml, bitbucket-pipelines.yml,            │
+│                 .buildkite/*.yml, .buildkite/*.yaml, cloudbuild.yaml,      │
+│                 cloudbuild.yml, .drone.yml, .woodpecker.yml, *.k8s.yaml,   │
+│                 helm/**/*.yaml, charts/**/*.yaml, base/**/*.yaml           │
 │ LOCKFILES       none                                                       │
 │                                                                            │
 │ OFFLINE         the dependency graph, lockfile integrity, licences,        │

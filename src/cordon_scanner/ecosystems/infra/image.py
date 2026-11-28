@@ -32,6 +32,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.infra.ci_images import CiFiles, CiImages
 from cordon_scanner.ecosystems.infra.references import (
     HUB_HOSTS,
     ImageReference,
@@ -637,6 +638,8 @@ class ImageEcosystem(BaseEcosystem):
             for kind in ("deployment", "statefulset", "daemonset", "cronjob", "job", "pod")
             for suffix in ("yaml", "yml")
         ),
+        # CI pipeline files and chart folders: `CiFiles.KINDS` says which reader takes which.
+        *CiFiles.globs(),
     )
     lockfile_globs: tuple[str, ...] = ()
     registry_hosts: frozenset[str] = HUB_HOSTS
@@ -678,7 +681,10 @@ class ImageEcosystem(BaseEcosystem):
 
         if ImageEcosystem.is_compose(content.path):
             return Compose.parse(content, self.id, {})
-        if ImageEcosystem.is_kubernetes(content.path):
+        ci = CiFiles.reader(content.path)
+        if ci is not None and ci != "kubernetes":
+            return CiImages.parse(content, self.id, ci)
+        if ImageEcosystem.is_kubernetes(content.path) or ci == "kubernetes":
             return Kubernetes.parse(content, self.id)
         return Dockerfile.parse(content, self.id)
 
@@ -686,6 +692,9 @@ class ImageEcosystem(BaseEcosystem):
         """A Compose file with the `.env` beside it, which Compose reads for `${VAR}`."""
         from cordon_scanner.ecosystems.infra.compose import Compose
 
+        ci = CiFiles.reader(content.path)
+        if ci is not None and ci != "kubernetes":
+            return CiImages.parse(content, self.id, ci)
         if ImageEcosystem.is_kubernetes(content.path):
             return Kubernetes.parse(content, self.id)
         if not ImageEcosystem.is_compose(content.path):
