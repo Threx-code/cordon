@@ -414,7 +414,7 @@ class DeviceInventory:
         findings.extend(DeviceInventory.extension_findings(installed))
         not_verified: list[dict[str, str]] | None = None
         if verify_extensions:
-            from cordon_scanner.cloud.extension_integrity import InstalledExtensions
+            from cordon_scanner.cloud.extensions.extension_integrity import InstalledExtensions
 
             findings.extend(InstalledExtensions.findings(DeviceInventory.installed_folders(home)))
             not_verified = InstalledExtensions.not_verified(installed)

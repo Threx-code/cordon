@@ -159,7 +159,7 @@ class ExtensionNames:
 
 
 class InstalledRules:
-    """The rule for an extension installed on a machine (`cloud/extension_integrity.py`)."""
+    """The rule for an extension installed on a machine (`cloud/extensions/extension_integrity.py`)."""
 
     @staticmethod
     def build_rules(rule: Callable[..., Any]) -> dict[str, Any]:

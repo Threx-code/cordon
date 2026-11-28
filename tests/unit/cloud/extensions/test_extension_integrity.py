@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from cordon_scanner.cloud.device import DeviceInventory
-from cordon_scanner.cloud.extension_integrity import InstalledExtensions
+from cordon_scanner.cloud.extensions.extension_integrity import InstalledExtensions
 from cordon_scanner.intel.provenance.releases.openvsx_signature import OpenVsxSignature
 from support import ROOT
 
