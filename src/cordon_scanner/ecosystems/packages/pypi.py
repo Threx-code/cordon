@@ -25,7 +25,7 @@ from cordon_scanner.ecosystems.base import (
     Manifest,
     ReleaseFile,
 )
-from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, PrivateMark
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.python.lockfiles import PypiLockfiles
 from cordon_scanner.ecosystems.packages.python.requirements import (
@@ -115,6 +115,7 @@ class PypiEcosystem(PypiLockfiles, BaseEcosystem):
     consumer_hooks = NoConsumerHooks(
         "setup.py is a file the build backend runs; no command string in the package's metadata is run at install"
     )
+    private_mark = PrivateMark(("pyproject.toml", "setup.cfg", "setup.py"), "classifier")
     own_name = OwnName(("setup.py", "pyproject.toml", "setup.cfg"), blocks=True)
 
     _REQUIRES_DIST: ClassVar[re.Pattern[str]] = re.compile(

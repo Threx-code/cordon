@@ -29,7 +29,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
-from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -507,6 +507,9 @@ class CranEcosystem(BaseEcosystem):
     id = "cran"
     consumer_hooks = NoConsumerHooks(
         "`configure` and `cleanup` are files of the package, not command strings in its DESCRIPTION"
+    )
+    private_mark = NoPrivateMark(
+        "a CRAN package is submitted through a web form; DESCRIPTION has no field that marks it unpublishable"
     )
     own_name = OwnName(("DESCRIPTION",))
     purl_type = "cran"

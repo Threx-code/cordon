@@ -34,7 +34,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
-from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.jvm.maven import MavenEcosystem
 from cordon_scanner.foundation.formats.safexml import SafeXml, SafeXmlError
@@ -245,6 +245,9 @@ class GradleEcosystem(BaseEcosystem):
     id = "gradle"
     consumer_hooks = NoConsumerHooks(
         "a build is Groovy or Kotlin code in its own scripts, not command strings, and a dependency's scripts never run when it is resolved"
+    )
+    private_mark = NoPrivateMark(
+        "a Gradle project is published only when a publishing plugin is applied; the build scripts have no flag that marks a project unpublishable"
     )
     own_name = OwnName(
         ("settings.gradle", "settings.gradle.kts"),

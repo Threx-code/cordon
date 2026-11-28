@@ -29,7 +29,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
-from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Scope
 
@@ -82,6 +82,9 @@ class VsCodeEcosystem(BaseEcosystem):
     id = "vscode"
     consumer_hooks = NoConsumerHooks(
         "the editor installs an extension without running a script of it; `vscode:prepublish` runs when its author packages it"
+    )
+    private_mark = NoPrivateMark(
+        "an extension's manifest is a package.json, read as npm's own: its `private` flag is npm's mark, not a mark of the editor ecosystem"
     )
     own_name = OwnName(
         ("extension/package.json",),

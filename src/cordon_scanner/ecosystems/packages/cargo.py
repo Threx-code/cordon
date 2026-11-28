@@ -14,7 +14,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
-from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, PrivateMark
 from cordon_scanner.ecosystems.own_names import OwnName
 
 # Each `*Ecosystem` imported below from its own module (GitHub Actions, Bazel, CocoaPods, Composer,
@@ -30,6 +30,7 @@ class CargoEcosystem(BaseEcosystem):
     consumer_hooks = NoConsumerHooks(
         "a build script is a file the manifest names (`build.rs`), never a command string in the manifest"
     )
+    private_mark = PrivateMark(("Cargo.toml",), "cargo")
     own_name = OwnName(("Cargo.toml",))
     purl_type = "cargo"
     manifest_globs: tuple[str, ...] = ("**/Cargo.toml", "**/.cargo/config.toml", "**/.cargo/config")

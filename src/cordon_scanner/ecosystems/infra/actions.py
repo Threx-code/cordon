@@ -30,7 +30,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
-from cordon_scanner.ecosystems.install_marks import ConsumerHooks
+from cordon_scanner.ecosystems.install_marks import ConsumerHooks, NoPrivateMark
 from cordon_scanner.ecosystems.own_names import NoOwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -424,6 +424,9 @@ class GitHubActionsEcosystem(BaseEcosystem):
 
     id = "actions"
     consumer_hooks = ConsumerHooks(("steps-*",))
+    private_mark = NoPrivateMark(
+        "an action is published by pushing its repository; no field of action.yml marks it unpublishable"
+    )
     own_name = NoOwnName(
         "an action is named by the repository it is published from (`owner/repo`), which no file of the action states; the `name:` in action.yml is a display title (captured: actions/checkout action.yml)"
     )

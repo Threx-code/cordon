@@ -39,7 +39,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
-from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.haskell.cabal import (
     GHC_PACKAGES,
@@ -588,6 +588,9 @@ class HackageEcosystem(BaseEcosystem):
     id = "hackage"
     consumer_hooks = NoConsumerHooks(
         "a custom build is `Setup.hs`, a file the .cabal names, not a command string"
+    )
+    private_mark = NoPrivateMark(
+        "a package is published only by `cabal upload`; a .cabal file has no field that marks it unpublishable"
     )
     own_name = OwnName(("*.cabal",))
     purl_type = "hackage"

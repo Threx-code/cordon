@@ -36,7 +36,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
-from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -716,6 +716,9 @@ class BazelEcosystem(BaseEcosystem):
     id = "bazel"
     consumer_hooks = NoConsumerHooks(
         "a module's install-time code is Starlark in its own files (repository rules, module extensions); MODULE.bazel holds no command string"
+    )
+    private_mark = NoPrivateMark(
+        "a module enters the Bazel Central Registry only by a pull request to it; MODULE.bazel has no field that marks it unpublishable"
     )
     own_name = OwnName(("MODULE.bazel",))
     purl_type = "bazel"

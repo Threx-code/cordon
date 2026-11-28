@@ -14,7 +14,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
-from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
 from cordon_scanner.ecosystems.own_names import OwnName
 
 # Each `*Ecosystem` imported below from its own module (GitHub Actions, Bazel, CocoaPods, Composer,
@@ -184,6 +184,9 @@ class GoEcosystem(BaseEcosystem):
     id = "gomod"
     consumer_hooks = NoConsumerHooks(
         "go get and go build run no code of a dependency, and go.mod holds no command string"
+    )
+    private_mark = NoPrivateMark(
+        "a Go module is published by pushing a git tag; go.mod has no field that marks it unpublishable (`retract` withdraws a version after it is published)"
     )
     own_name = OwnName(("go.mod",))
 

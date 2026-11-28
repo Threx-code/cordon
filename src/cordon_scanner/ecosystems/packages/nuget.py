@@ -34,7 +34,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
-from cordon_scanner.ecosystems.install_marks import ConsumerHooks
+from cordon_scanner.ecosystems.install_marks import ConsumerHooks, PrivateMark
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.formats.safexml import Element, SafeXml, SafeXmlError
 from cordon_scanner.foundation.models import Hook, Scope
@@ -575,6 +575,7 @@ class MSBuildTargets:
 class NuGetEcosystem(BaseEcosystem):
     id = "nuget"
     consumer_hooks = ConsumerHooks(("Exec",))
+    private_mark = PrivateMark(("*.csproj", "*.fsproj", "*.vbproj"), "nuget")
     own_name = OwnName(
         ("*.nuspec",),
         readers=(("*.nuspec", "nuspec_id"),),

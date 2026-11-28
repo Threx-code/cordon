@@ -29,7 +29,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
-from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -341,6 +341,9 @@ class SwiftEcosystem(BaseEcosystem):
     id = "swift"
     consumer_hooks = NoConsumerHooks(
         "Package.swift is Swift code and plugins are targets, not command strings in a manifest field"
+    )
+    private_mark = NoPrivateMark(
+        "a Swift package is published by pushing a git tag; Package.swift has no field that marks it unpublishable"
     )
     own_name = OwnName(("Package.swift",))
 

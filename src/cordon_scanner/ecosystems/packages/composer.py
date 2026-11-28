@@ -29,7 +29,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
-from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -326,6 +326,9 @@ class ComposerEcosystem(BaseEcosystem):
     id = "composer"
     consumer_hooks = NoConsumerHooks(
         "Composer runs only the root package's scripts; the `scripts` of a dependency never run when it is installed"
+    )
+    private_mark = NoPrivateMark(
+        "Packagist lists a repository only when someone submits it; composer.json has no flag that marks a package unpublishable"
     )
     own_name = OwnName(("composer.json",))
 

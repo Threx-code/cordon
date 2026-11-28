@@ -24,7 +24,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
-from cordon_scanner.ecosystems.install_marks import ConsumerHooks
+from cordon_scanner.ecosystems.install_marks import ConsumerHooks, NoPrivateMark
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.rubygems import RubySource
 from cordon_scanner.foundation.models import Hook, Scope
@@ -506,6 +506,9 @@ class PodfileLock:
 class CocoaPodsEcosystem(BaseEcosystem):
     id = "cocoapods"
     consumer_hooks = ConsumerHooks(("prepare_command",))
+    private_mark = NoPrivateMark(
+        "a pod is published only by `pod trunk push`; a podspec has no field that marks it unpublishable"
+    )
     own_name = OwnName(
         ("*.podspec", "*.podspec.json"),
         readers=(("*.podspec.json", "podspec_json"),),

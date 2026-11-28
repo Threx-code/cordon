@@ -1158,6 +1158,7 @@
   "test_campaign_sibling.py": "detect/supply",
   "test_campaign_sibling_every_ecosystem.py": "detect/supply",
   "test_consumer_hooks_every_ecosystem.py": "detect/supply",
+  "test_private_marks_every_ecosystem.py": "detect/supply",
   "test_attack_coverage.py": "bench",
   "test_attest.py": "intel/provenance",
   "test_attestation.py": "detect/supply",

@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import posixpath
 import re
-from typing import TYPE_CHECKING, ClassVar, Final
+from typing import TYPE_CHECKING, Final
 
 from cordon_scanner.detect.supply.manifests.findings import ManifestFinding
 from cordon_scanner.detect.supply.manifests.inline_shapes import InlineShapes
@@ -82,8 +82,6 @@ _NODE_RESOLVED: Final = (".js", ".cjs", ".mjs", ".ts", "/index.js")
 class InstallHookShapes:
     """The two hook shapes, as findings of the manifest detector."""
 
-    PACKAGE_ECOSYSTEMS: ClassVar[frozenset[str]] = frozenset({"npm"})
-
     @classmethod
     def findings(
         cls,
@@ -113,9 +111,8 @@ class InstallHookShapes:
     def _first_party(cls, manifest: Manifest, unit: FileUnit, ctx: ScanContext) -> bool:
         """Whether the manifest is the scanned project's own: the same test the install-script grading uses."""
         return ManifestScripts._is_first_party(unit.path, ctx) or (
-            manifest.ecosystem in cls.PACKAGE_ECOSYSTEMS
-            and not ManifestScripts._is_vendored(unit.path)
-            and ManifestScripts.unpublishable(unit)
+            not ManifestScripts._is_vendored(unit.path)
+            and EcosystemRegistry.unpublishable(manifest.ecosystem, unit.path, unit.content)
         )
 
     @staticmethod

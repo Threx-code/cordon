@@ -33,7 +33,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
-from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Scope
 
@@ -479,6 +479,9 @@ class JuliaEcosystem(BaseEcosystem):
     id = "julia"
     consumer_hooks = NoConsumerHooks(
         "deps/build.jl is a file of the package, not a command string in Project.toml"
+    )
+    private_mark = NoPrivateMark(
+        "a Julia package is registered only by a pull request to a registry; Project.toml has no field that marks it unpublishable"
     )
     own_name = OwnName(("Project.toml",))
     purl_type = "julia"

@@ -36,7 +36,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
-from cordon_scanner.ecosystems.install_marks import ConsumerHooks
+from cordon_scanner.ecosystems.install_marks import ConsumerHooks, NoPrivateMark
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -859,6 +859,9 @@ class HomebrewEcosystem(BaseEcosystem):
 
     id = "homebrew"
     consumer_hooks = ConsumerHooks(("system",))
+    private_mark = NoPrivateMark(
+        "a formula is published by a pull request to its tap; the formula has no field that marks it unpublishable"
+    )
     own_name = OwnName(
         ("Formula/*.rb", "Formula/*/*.rb", ".brew/*.rb"),
         readers=(("*.rb", "formula_stem"),),

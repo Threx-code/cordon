@@ -28,7 +28,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
-from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Scope
@@ -512,6 +512,9 @@ class CondaEcosystem(BaseEcosystem):
     id = "conda"
     consumer_hooks = NoConsumerHooks(
         "pre-link and post-link scripts are files of the package, not command strings in its metadata"
+    )
+    private_mark = NoPrivateMark(
+        "a package is uploaded only by `anaconda upload` or a channel's own tooling; its recipe has no flag that marks it unpublishable"
     )
     own_name = OwnName(
         ("info/index.json",),

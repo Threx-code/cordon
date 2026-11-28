@@ -34,7 +34,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
-from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Scope
@@ -297,6 +297,9 @@ class HelmEcosystem(BaseEcosystem):
     id = "helm"
     consumer_hooks = NoConsumerHooks(
         "a chart's hooks are Kubernetes resources the cluster runs, not commands run on the machine that installs it"
+    )
+    private_mark = NoPrivateMark(
+        "a chart is published only by pushing it to a repository; Chart.yaml has no field that marks it unpublishable (`type: library` marks it not installable, not unpublishable)"
     )
     own_name = OwnName(("Chart.yaml",))
     purl_type = "helm"

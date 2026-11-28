@@ -30,7 +30,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
-from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -643,6 +643,9 @@ class RubyGemsEcosystem(BaseEcosystem):
     id = "rubygems"
     consumer_hooks = NoConsumerHooks(
         "a gemspec's `extensions` names files to build (extconf.rb), which are files of the gem and not command strings in the manifest"
+    )
+    private_mark = NoPrivateMark(
+        "a gem is published only by `gem push`; a gemspec has no flag that marks it unpublishable (`allowed_push_host` only names where it may be pushed)"
     )
     own_name = OwnName(("*.gemspec",))
     purl_type = "gem"

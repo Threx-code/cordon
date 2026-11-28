@@ -264,6 +264,26 @@ class More:
         }
 
     @classmethod
+    def private_marks(cls) -> frozenset[str]:
+        from cordon_scanner.ecosystems.install_marks import PrivateMark
+
+        return cls.ids(
+            e.id
+            for e in EcosystemRegistry.all_ecosystems()
+            if isinstance(e.private_mark, PrivateMark)
+        )
+
+    @staticmethod
+    def private_mark_reasons() -> dict[str, str]:
+        from cordon_scanner.ecosystems.install_marks import NoPrivateMark
+
+        return {
+            e.id: e.private_mark.reason
+            for e in EcosystemRegistry.all_ecosystems()
+            if isinstance(e.private_mark, NoPrivateMark)
+        }
+
+    @classmethod
     def own_name_findings(cls) -> frozenset[str]:
         from cordon_scanner.ecosystems.own_names import OwnName
 
@@ -355,6 +375,7 @@ class Features:
         "device attestation splitters": (More.device_attestation, dict),
         "subject canonicalisation": (More.subjects, dict),
         "manifest findings (own name)": (More.own_name_findings, More.own_name_reasons),
+        "unpublishable mark of a manifest": (More.private_marks, More.private_mark_reasons),
         "install-hook shapes (consumer-time commands)": (
             More.install_hook_shapes,
             More.install_hook_reasons,

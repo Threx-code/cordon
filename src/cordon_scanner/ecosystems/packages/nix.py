@@ -31,7 +31,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
-from cordon_scanner.ecosystems.install_marks import ConsumerHooks
+from cordon_scanner.ecosystems.install_marks import ConsumerHooks, NoPrivateMark
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -833,6 +833,9 @@ class NixEcosystem(BaseEcosystem):
 
     id = "nix"
     consumer_hooks = ConsumerHooks(("*Phase", "*Install", "*Build", "*Configure", "*Check"))
+    private_mark = NoPrivateMark(
+        "a Nix package is published by a pull request to its repository; nothing in it marks it unpublishable"
+    )
     own_name = OwnName(
         ("package.nix",),
         readers=(("package.nix", "nix_pname"),),

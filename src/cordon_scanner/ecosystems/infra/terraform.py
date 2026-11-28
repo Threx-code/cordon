@@ -36,7 +36,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
-from cordon_scanner.ecosystems.install_marks import ConsumerHooks
+from cordon_scanner.ecosystems.install_marks import ConsumerHooks, NoPrivateMark
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.collector import ScanCaches
 from cordon_scanner.foundation.models import Hook, Scope
@@ -728,6 +728,9 @@ class TerraformEcosystem(BaseEcosystem):
 
     id = "terraform"
     consumer_hooks = ConsumerHooks(("local-exec",))
+    private_mark = NoPrivateMark(
+        "a module is published by pushing a tag to a repository the registry follows; no .tf block marks it unpublishable"
+    )
     # A provider's release holds one binary, `terraform-provider-<type>_v<version>...`, which names the provider. A module is
     # named by the address it is published at (namespace/name/provider) and its .tf files declare no name: it has no file to read.
     own_name = OwnName(

@@ -32,7 +32,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
-from cordon_scanner.ecosystems.install_marks import NoConsumerHooks
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -355,6 +355,9 @@ class VcpkgEcosystem(BaseEcosystem):
     id = "vcpkg"
     consumer_hooks = NoConsumerHooks(
         "portfile.cmake is a file of the port, not a command string in vcpkg.json"
+    )
+    private_mark = NoPrivateMark(
+        "a port is published by a pull request to a registry; vcpkg.json has no field that marks it unpublishable"
     )
     own_name = OwnName(("vcpkg.json",))
     purl_type = "vcpkg"

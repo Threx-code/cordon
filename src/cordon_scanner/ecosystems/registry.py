@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from cordon_scanner.ecosystems.base import BaseEcosystem, Ecosystem, ReleaseFile
 from cordon_scanner.ecosystems.editors.vscode import VsCodeEcosystem
 from cordon_scanner.ecosystems.infra.infra import INFRA_ECOSYSTEMS
-from cordon_scanner.ecosystems.install_marks import ConsumerHooks
+from cordon_scanner.ecosystems.install_marks import ConsumerHooks, PrivateMark
 from cordon_scanner.ecosystems.others import (
     BazelEcosystem,
     CocoaPodsEcosystem,
@@ -48,6 +48,7 @@ if TYPE_CHECKING:
 
     from cordon_scanner.ecosystems.base import ImageReferences
     from cordon_scanner.ecosystems.infra import image as _ecosystems_infra_image
+    from cordon_scanner.foundation.content import FileContent
     from cordon_scanner.foundation.dependencies import InstalledEcosystemFacts, InstallTool
 
     ImageReference: ImageReferences = _ecosystems_infra_image.ImageReference
@@ -281,6 +282,13 @@ class EcosystemRegistry:
         adapter = cls.BY_ID.get(ecosystem)
         declared = adapter.consumer_hooks if isinstance(adapter, BaseEcosystem) else None
         return declared if isinstance(declared, ConsumerHooks) else None
+
+    @classmethod
+    def unpublishable(cls, ecosystem: str, path: str, content: FileContent) -> bool:
+        """Whether the manifest at `path` marks its package as not for publishing, by the mark `ecosystem` declares."""
+        adapter = cls.BY_ID.get(ecosystem)
+        declared = adapter.private_mark if isinstance(adapter, BaseEcosystem) else None
+        return isinstance(declared, PrivateMark) and declared.holds(path, content)
 
     @classmethod
     def published_identity_ecosystem(cls, member: str, archive: str = "") -> str | None:

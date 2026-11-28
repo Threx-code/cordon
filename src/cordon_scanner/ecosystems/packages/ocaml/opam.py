@@ -36,7 +36,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
-from cordon_scanner.ecosystems.install_marks import ConsumerHooks
+from cordon_scanner.ecosystems.install_marks import ConsumerHooks, NoPrivateMark
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.ocaml.opam_syntax import (
     COMPILER_PACKAGES,
@@ -211,6 +211,9 @@ class OpamEcosystem(BaseEcosystem):
 
     id = "opam"
     consumer_hooks = ConsumerHooks(("opam build", "opam install"))
+    private_mark = NoPrivateMark(
+        "an opam package is published by a pull request to opam-repository; the opam file has no field that marks it unpublishable"
+    )
     own_name = OwnName(("*.opam", "opam"), readers=(("*.opam", "opam_name"), ("opam", "opam_name")))
     purl_type = "opam"
     manifest_globs: tuple[str, ...] = (

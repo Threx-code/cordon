@@ -19,7 +19,10 @@ if TYPE_CHECKING:
     from collections.abc import Collection
 
     from cordon_scanner.ecosystems.base import Manifest
-    from cordon_scanner.ecosystems.install_marks import ConsumerHooksDeclaration
+    from cordon_scanner.ecosystems.install_marks import (
+        ConsumerHooksDeclaration,
+        PrivateMarkDeclaration,
+    )
     from cordon_scanner.foundation.content import FileContent
 
 
@@ -216,6 +219,7 @@ class OwnNameDefaults:
 
     own_name: OwnNameDeclaration
     consumer_hooks: ConsumerHooksDeclaration
+    private_mark: PrivateMarkDeclaration
 
     def parse_manifest(
         self, content: FileContent
