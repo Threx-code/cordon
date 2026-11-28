@@ -1,0 +1,26 @@
+name: recheck-reasons
+
+# A written reason for an ecosystem lacking something ("the registry publishes no signature, checked
+# 2026-11-25") is a reading of the world on that date. This fails once a month for every such reading older
+# than 120 days, so somebody re-reads the source: a registry that has started publishing what the reason
+# says it lacks becomes a task, not a stale sentence. It runs on a schedule, never in the test suite, so no
+# ordinary run depends on today's date.
+
+on:
+  schedule:
+    - cron: "17 6 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recheck:
+    name: dated reasons are not older than 120 days
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - name: list dated reasons and fail on stale ones
+        run: python3 scripts/checks/stale_reasons.py
