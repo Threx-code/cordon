@@ -287,6 +287,17 @@ class TestDependencyDetector(DetectorsFixtures):
         )
         assert any(f.rule_id == "SUSPECT.DEPENDENCY.SOURCE.001" for f in findings)
 
+    def test_a_popular_name_from_outside_its_registry_is_reported(self, rules) -> None:
+        """A popular name is no typosquat of itself, but the same name served from another host is the
+        substitution the source check exists for: the name being known must not skip it."""
+        findings = self.graph(
+            rules,
+            DetectorsHelpers.dep("lodash", resolved_from="https://attacker.example/lodash.tgz"),
+        )
+        assert [f.rule_id for f in findings if f.rule_id.startswith("SUSPECT.DEPENDENCY.")] == [
+            "SUSPECT.DEPENDENCY.SOURCE.001"
+        ]
+
     def test_depth_lowers_the_score(self, rules) -> None:
         shallow = self.graph(rules, DetectorsHelpers.dep("lodahs", depth=0, direct=True))
         deep = self.graph(rules, DetectorsHelpers.dep("lodahs", depth=5))
