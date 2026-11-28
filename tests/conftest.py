@@ -48,6 +48,9 @@ class SharedFixtures:
         # express 4.18.2 as vulnerable and failed a VEX test the bundled data passes. Each test
         # starts from an empty cache of its own; one that wants another sets it.
         monkeypatch.setenv("CORDON_CACHE_DIR", str(tmp_path_factory.mktemp("cordon-cache")))
+        # A test never writes to the machine's own keychain (a developer's login keychain, a CI runner's): a stored
+        # credential is a file in the test's own folder, and the keychain tests drive a fake tool.
+        monkeypatch.setenv("CORDON_CREDENTIAL_STORE", "file")
 
     @pytest.fixture(autouse=True)
     def _bundled_reuse_index_without_its_age(self, monkeypatch) -> None:

@@ -33,6 +33,7 @@ from cordon_scanner.engine.pipeline.constants import (
 )
 from cordon_scanner.engine.pipeline.hooks import Hooks
 from cordon_scanner.foundation.config.policy import Policy
+from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import (
     Category,
     Confidence,
@@ -80,10 +81,10 @@ class InstallRunsMake:
 
     @classmethod
     def _hook_runs_make(cls, text: str) -> bool:
-        import json
-
         try:
-            scripts = json.loads(text).get("scripts")
+            # A manifest nested past the decoder's depth is read at any depth, and served by the context
+            # worker while the parent judges the package, as every other manifest read here is.
+            scripts = ScannedJson.loads(text).get("scripts")
         except (ValueError, AttributeError):
             return False
         if not isinstance(scripts, dict):

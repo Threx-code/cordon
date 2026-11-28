@@ -372,7 +372,7 @@ class Registry:
             return False
         try:
             return Path(origin).resolve().is_relative_to(_PACKAGE_ROOT)
-        except (OSError, ValueError):  # pragma: no cover - unresolvable path
+        except (OSError, ValueError):
             return False
 
     @staticmethod

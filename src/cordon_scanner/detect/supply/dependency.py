@@ -481,12 +481,12 @@ class DependencyDetector(BaseDetector):
 
         normalized = ecosystem.normalize_name(dep.name)
 
-        # A package that exists in the known set is not a typosquat of itself.
-        if PopularPackageNames.is_known(dep.ecosystem, normalized):
-            return
-
-        yield from self._confusion_finding(dep, ecosystem, ctx)
-        yield from self._lookalike(dep, normalized, ctx)
+        # A package that exists in the known set is not a typosquat of itself, nor a private name a public
+        # one shadows. Where it came from and whether it is hashed is asked of every name: a popular name
+        # served from an attacker's host is the substitution those checks exist for.
+        if not PopularPackageNames.is_known(dep.ecosystem, normalized):
+            yield from self._confusion_finding(dep, ecosystem, ctx)
+            yield from self._lookalike(dep, normalized, ctx)
         yield from self._lock_findings(ctx, dep, ecosystem, mirrors, unit)
 
     def _lookalike(self, dep: Dependency, normalized: str, ctx: ScanContext) -> Iterator[Finding]:

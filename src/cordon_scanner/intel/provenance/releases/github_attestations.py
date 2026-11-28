@@ -46,6 +46,7 @@ from cordon_scanner.intel.provenance.sigstore_bundle import (
     TrustRoot,
 )
 from cordon_scanner.intel.provenance.x509 import Certificate
+from cordon_scanner.version import USER_AGENT
 
 API: Final = "https://api.github.com"
 TIMEOUT: Final = 20.0
@@ -206,7 +207,7 @@ class GitHubAttestations:
     def get(path: str) -> Any:
         """The JSON GitHub answers for `path`, None for a 404; the operator's `CORDON_GITHUB_TOKEN` goes to api.github.com only."""
         headers = {
-            "User-Agent": "cordon-scanner",
+            "User-Agent": USER_AGENT,
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
         }

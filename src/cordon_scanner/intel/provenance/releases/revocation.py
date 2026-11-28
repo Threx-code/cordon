@@ -25,6 +25,7 @@ from cordon_scanner.foundation.network.pinned import PinnedHTTP
 from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.foundation.signatures.der import Der, DerError
 from cordon_scanner.intel.provenance.x509 import Certificate
+from cordon_scanner.version import USER_AGENT
 
 Fetcher = Callable[[str], bytes]
 
@@ -137,7 +138,7 @@ class Revocation:
 
     @classmethod
     def fetch(cls, url: str) -> bytes:
-        request = urllib.request.Request(url, headers={"User-Agent": "cordon-scanner"})  # noqa: S310 - http, checked by the caller
+        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})  # noqa: S310 - http, checked by the caller
         opener = urllib.request.build_opener(NoRedirects, PinnedHTTP)
         with opener.open(request, timeout=cls.TIMEOUT) as response:
             body: bytes = Download.read(response, cls.MAX_BYTES + 1)

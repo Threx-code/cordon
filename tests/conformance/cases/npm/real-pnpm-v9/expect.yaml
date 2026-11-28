@@ -20,8 +20,10 @@ dependencies:
   - {name: local-util, source_type: path, integrity_status: not_applicable}
   - {name: ms, direct: true, resolved_version: 2.1.3}
   - {name: scheduler, dependency_path: [react-dom, scheduler]}
+findings:
+  # A popular name resolved from a git host is still outside its registry: the name being known does not skip it.
+  - {rule: SUSPECT.DEPENDENCY.SOURCE.001, package: is-number}
 no_findings:
-  - SUSPECT.DEPENDENCY.SOURCE.001
   - POLICY.DEPENDENCY.MUTABLE_REF.001
   - POLICY.LOCKFILE.INTEGRITY.001
   - POLICY.DEPENDENCY.INTEGRITY.001

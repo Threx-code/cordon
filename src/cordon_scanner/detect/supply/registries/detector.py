@@ -68,6 +68,7 @@ from cordon_scanner.detect.supply.registries.evidence import RegistryEvidence
 from cordon_scanner.detect.supply.registries.findings import RegistryFinding
 from cordon_scanner.detect.supply.registries.notices import RegistryNotices
 from cordon_scanner.detect.supply.registries.rule_declarations import DECLARED_RULES, DETECTOR
+from cordon_scanner.detect.supply.registries.takeover_hold import TakeoverHold
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.foundation.dependencies import (
     NAMED_BY_FILE,
@@ -666,6 +667,10 @@ class RegistryDetector(BaseDetector):
                     f"to no commit and no workflow while its siblings can"
                 ),
             )
+
+        yield from TakeoverHold.findings(
+            ctx, dependency, observed, min_attested=MIN_ATTESTED_SIBLINGS
+        )
 
         if observed.latest and dependency.version and observed.latest != dependency.version:
             behind = self._major_distance(dependency.version, observed.latest)

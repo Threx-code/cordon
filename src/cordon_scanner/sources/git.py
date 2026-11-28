@@ -589,7 +589,7 @@ class GitRepository:
         self._close_batch()
         self._batch_failed = False
 
-    def __del__(self) -> None:  # pragma: no cover - interpreter teardown
+    def __del__(self) -> None:  # pragma: no cover - runs only at interpreter teardown
         with contextlib.suppress(Exception):
             self._close_batch()
 

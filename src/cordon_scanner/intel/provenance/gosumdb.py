@@ -41,6 +41,7 @@ from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.intel.provenance._ed25519 import Ed25519
 from cordon_scanner.intel.provenance.bazel_provenance import ModuleCheck
 from cordon_scanner.intel.provenance.transparency import Merkle
+from cordon_scanner.version import USER_AGENT
 
 HOST: Final = "https://sum.golang.org"
 NAME: Final = "sum.golang.org"
@@ -186,7 +187,7 @@ class GoSumdb:
         """The body, or None where the database has no such file (404, 410)."""
         if urllib.parse.urlsplit(url).scheme != "https":
             raise ValueError("not https")
-        request = urllib.request.Request(url, headers={"User-Agent": "cordon-scanner"})  # noqa: S310 - https only
+        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})  # noqa: S310 - https only
         try:
             with urllib.request.build_opener(NoRedirects).open(
                 request, timeout=TIMEOUT

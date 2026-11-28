@@ -106,6 +106,7 @@ ROLES: dict[str, tuple[str, str]] = {
     "PackageNotFound": ("cordon_scanner.intel.registries.registry_client", "PackageNotFound"),
     "SigstoreVerification": ("cordon_scanner.intel.provenance.attest", "SigstoreVerification"),
     "YoungReleases": ("cordon_scanner.intel.registries.registry_client", "RegistryClient"),
+    "ReleaseLedger": ("cordon_scanner.intel.registries.archive_sources.base", "ArchiveFetch"),
 }
 
 if TYPE_CHECKING:
@@ -157,6 +158,7 @@ if TYPE_CHECKING:
         RegistryRecords,
         ReleaseAgeQueries,
         ReleaseHistories,
+        ReleaseLedgerQueries,
         RemovedNameList,
         RepositoryHeads,
         ReuseIndexes,
@@ -215,6 +217,9 @@ if TYPE_CHECKING:
     from cordon_scanner.intel.registries import registry_record as _intel_registries_registry_record
     from cordon_scanner.intel.registries import release_history as _intel_registries_release_history
     from cordon_scanner.intel.registries import removed as _intel_registries_removed
+    from cordon_scanner.intel.registries.archive_sources import (
+        base as _intel_registries_archive_sources_base,
+    )
     from cordon_scanner.intel.registries.archive_sources import (
         table as _intel_registries_archive_sources_table,
     )
@@ -303,6 +308,7 @@ if TYPE_CHECKING:
     PackageNotFound: type[Exception] = _intel_registries_registry_client.PackageNotFound
     SigstoreVerification: BundleVerification = _intel_provenance_attest.SigstoreVerification
     YoungReleases: ReleaseAgeQueries = _intel_registries_registry_client.RegistryClient
+    ReleaseLedger: ReleaseLedgerQueries = _intel_registries_archive_sources_base.ArchiveFetch
 
 
 def __getattr__(name: str) -> object:
@@ -375,6 +381,7 @@ __all__ = [
     "RegistryError",
     "RegistryRecord",
     "ReleaseHistory",
+    "ReleaseLedger",
     "RemovedPackageNames",
     "RuleLinks",
     "SigstoreVerification",

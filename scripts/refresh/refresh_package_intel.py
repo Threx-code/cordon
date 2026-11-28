@@ -507,7 +507,7 @@ class PackageIntelRefresh:
                     entry.get("downloadCount"),
                 )
                 if isinstance(namespace, str) and isinstance(name, str) and isinstance(count, int):
-                    names.append((f"{namespace}.{name}".lower(), count))
+                    names.append((PackageIntelRefresh.spelt(f"{namespace}.{name}"), count))
             if len(entries) < size:
                 break
         return names, source
@@ -542,7 +542,7 @@ class PackageIntelRefresh:
                 downloads = entry.get("downloads")
                 total = downloads.get("all") if isinstance(downloads, dict) else None
                 if isinstance(entry.get("name"), str) and isinstance(total, int):
-                    names.append((str(entry["name"]).lower(), total))
+                    names.append((PackageIntelRefresh.spelt(str(entry["name"])), total))
         return names, source
 
     @staticmethod
@@ -556,7 +556,7 @@ class PackageIntelRefresh:
         if not isinstance(payload, list):
             raise ValueError(f"{source} returned {type(payload).__name__}, expected a list")
         names = [
-            (str(entry["packageName"]).lower(), int(entry["downloads"]))
+            (PackageIntelRefresh.spelt(str(entry["packageName"])), int(entry["downloads"]))
             for entry in payload
             if isinstance(entry, dict)
             and isinstance(entry.get("packageName"), str)
@@ -584,7 +584,7 @@ class PackageIntelRefresh:
             for entry in entries:
                 if isinstance(entry, dict) and isinstance(entry.get("name"), str):
                     stars = int(entry.get("stars") or 0)
-                    name = str(entry["name"]).lower()
+                    name = PackageIntelRefresh.spelt(str(entry["name"]))
                     best[name] = max(best.get(name, 0), stars)
             if len(entries) < size:
                 break
@@ -612,7 +612,12 @@ class PackageIntelRefresh:
                     and isinstance(attributes.get("name"), str)
                     and isinstance(attributes.get("downloads"), int)
                 ):
-                    names.append((str(attributes["name"]).lower(), attributes["downloads"]))
+                    names.append(
+                        (
+                            PackageIntelRefresh.spelt(str(attributes["name"])),
+                            attributes["downloads"],
+                        )
+                    )
         return names, source
 
     @staticmethod
@@ -641,9 +646,9 @@ class PackageIntelRefresh:
         for row in csv.DictReader(io.StringIO(text)):
             name = by_uuid.get(row.get("package_uuid", ""))
             if name and row.get("status") in {"200", "302"}:
-                totals[name.lower()] = totals.get(name.lower(), 0) + int(
-                    row.get("request_count") or 0
-                )
+                totals[PackageIntelRefresh.spelt(name)] = totals.get(
+                    PackageIntelRefresh.spelt(name), 0
+                ) + int(row.get("request_count") or 0)
         return sorted(totals.items()), f"{registry}, {logs}"
 
     @staticmethod
@@ -672,7 +677,7 @@ class PackageIntelRefresh:
                 ):
                     names.append(
                         (
-                            f"{entry['namespace']}.{entry['name']}".lower(),
+                            PackageIntelRefresh.spelt(f"{entry['namespace']}.{entry['name']}"),
                             int(entry.get("download_count") or 0),
                         )
                     )
@@ -707,7 +712,9 @@ class PackageIntelRefresh:
         payload = PackageIntelRefresh.as_object(PackageIntelRefresh.paged(url), url)
         for entry in cast("list[Any]", payload.get("results") or []):
             if isinstance(entry, dict) and isinstance(entry.get("name"), str):
-                best[str(entry["name"]).lower()] = int(entry.get("pull_count") or 0)
+                best[PackageIntelRefresh.spelt(str(entry["name"]))] = int(
+                    entry.get("pull_count") or 0
+                )
         search = "https://hub.docker.com/v2/search/repositories/"
         for term in PackageIntelRefresh.SEARCH_TERMS:
             # Hub answers 403 past the first 200 results of a query, so two pages of 100.
@@ -719,7 +726,7 @@ class PackageIntelRefresh:
                     break
                 for entry in results:
                     if isinstance(entry, dict) and isinstance(entry.get("repo_name"), str):
-                        name = str(entry["repo_name"]).lower()
+                        name = PackageIntelRefresh.spelt(str(entry["repo_name"]))
                         best[name] = max(best.get(name, 0), int(entry.get("pull_count") or 0))
         return sorted(best.items()), f"{official}, {search}"
 
@@ -749,7 +756,7 @@ class PackageIntelRefresh:
                     module = item.get("modulePath")
                     counts = item.get("importedByCounts")
                     if isinstance(module, str) and module != "std" and isinstance(counts, dict):
-                        best[module.lower()] = max(
+                        best[PackageIntelRefresh.spelt(module)] = max(
                             best.get(module.lower(), 0), int(counts.get("modules") or 0)
                         )
                 token = str(payload.get("nextPageToken") or "")
@@ -781,7 +788,10 @@ class PackageIntelRefresh:
             for item in items:
                 if isinstance(item, dict) and isinstance(item.get("full_name"), str):
                     names.append(
-                        (str(item["full_name"]).lower(), int(item.get("stargazers_count") or 0))
+                        (
+                            PackageIntelRefresh.spelt(str(item["full_name"])),
+                            int(item.get("stargazers_count") or 0),
+                        )
                     )
         return names, source
 
@@ -959,7 +969,7 @@ class PackageIntelRefresh:
                 and isinstance(docs[0], dict)
                 and isinstance(docs[0].get("id"), str)
             ):
-                names.append(str(docs[0]["id"]).lower())
+                names.append(PackageIntelRefresh.spelt(str(docs[0]["id"])))
         return names, source, found, step
 
     @staticmethod
@@ -1120,9 +1130,34 @@ class PackageIntelRefresh:
                     scored[str(name)] = max(scored.get(str(name), 0), 1_000_000 - rank)
         return sorted(scored.items()), f"{source} (sort=popularity; score derived from rank)"
 
+    #: Each name as its registry spells it, keyed by the lowered name the lists hold. Hackage and CRAN names are
+    #: case-sensitive (`HTTP`, not `http`): asking a registry about the lowered name asks about nothing.
+    SPELLINGS: ClassVar[dict[str, str]] = {}
+
+    @staticmethod
+    def spelt(name: str) -> str:
+        """The lowered name a list holds, remembering how its registry spells it."""
+        lowered = name.lower()
+        PackageIntelRefresh.SPELLINGS.setdefault(lowered, name)
+        return lowered
+
+    @staticmethod
+    def first_published_of(ecosystem: str) -> Callable[[str], str]:
+        """When the registry says each name was first published, read from its own release history."""
+        sys.path.insert(0, str(ROOT / "src"))
+        from cordon_scanner.intel.registries.release_history import ReleaseHistory
+
+        return lambda name: ReleaseHistory.first_published(
+            ecosystem, PackageIntelRefresh.SPELLINGS.get(name, name)
+        )
+
     @staticmethod
     def refuse_self_allowlisting(
-        ranked: list[tuple[str, int]], *, ecosystem: str
+        ranked: list[tuple[str, int]],
+        *,
+        ecosystem: str,
+        first_published: Callable[[str], str] | None = None,
+        today: dt.date | None = None,
     ) -> tuple[list[str], list[str]]:
         """Drop names whose shape and traffic together look like a squat.
 
@@ -1149,6 +1184,16 @@ class PackageIntelRefresh:
         "More popular" is decided within this fetch, which is the only ranking
         available offline afterwards, and it is the right comparison anyway: the
         question is whether this name looks like a slip of something better known.
+
+        A ratio alone can be bought: a squat whose downloads are inflated past a thousandth of its
+        target's clears it. So a name that is ANY slip of a more popular one -- a letter changed,
+        added, dropped, a separator moved, as well as the three kinds above under the ratio -- is
+        contested, and stays only if a reviewer kept it (`KEEP_DESPITE_SHAPE`), it has at least a tenth of
+        its look-alike's downloads (`CONTESTED_MAX_RATIO`), or the registry says it was first published at
+        least `CONTESTED_MIN_YEARS` ago. Inflated squats are young; the real
+        neighbours that made the ratio necessary (`cchardet`, `pyaml`, `bitvec`) are years old. A
+        contested name whose age cannot be read is refused: it stays reportable, which is the safe
+        side. Only contested names cost a request.
         """
         sys.path.insert(0, str(ROOT / "src"))
         from cordon_scanner.detect.supply.dependency import DependencyDetector
@@ -1160,25 +1205,106 @@ class PackageIntelRefresh:
         # Compared against the names already accepted, which are by construction the
         # more popular ones, so the loop is a single pass rather than a square.
         accepted: dict[str, int] = {}
+        # Every accepted name under each of its one-letter deletions and its separator-free form: two names one
+        # edit apart always share a key, so a name meets only its neighbours, not the whole list.
+        neighbours: dict[str, list[str]] = {}
+        cutoff = (today or dt.date.today()) - dt.timedelta(days=round(365.25 * CONTESTED_MIN_YEARS))
         for name, downloads in by_downloads:
-            slip = next(
+            reviewed = KEEP_DESPITE_SHAPE.get(ecosystem, {}).get(name)
+            long_enough = len(name) >= MIN_NAME_LENGTH
+            # The ratio is checked first: it rules out nearly every pair before any shape is read.
+            squat = next(
                 (
                     other
                     for other, other_downloads in accepted.items()
-                    if len(name) >= MIN_NAME_LENGTH
+                    if long_enough
                     and abs(len(other) - len(name)) <= 1
                     and other_downloads >= downloads * MIN_DOWNLOAD_RATIO
                     and DependencyDetector._slip_kind(name, other) in refused_kinds
                 ),
                 None,
             )
-            reviewed = KEEP_DESPITE_SHAPE.get(ecosystem, {}).get(name)
-            if slip is None or reviewed:
+            contested = (
+                next(
+                    (
+                        other
+                        for key in PackageIntelRefresh.neighbour_keys(name)
+                        for other in neighbours.get(key, ())
+                        if PackageIntelRefresh.one_edit(name, other)
+                    ),
+                    None,
+                )
+                if long_enough
+                else None
+            )
+            if reviewed or (squat is None and contested is None):
                 accepted[name] = downloads
+                PackageIntelRefresh.index_neighbour(neighbours, name)
+                kept.append(name)
+            elif squat is not None:
+                refused.append(f"{name} ~ {squat}")
+            elif contested is not None and (
+                accepted[contested] <= downloads * CONTESTED_MAX_RATIO
+                or PackageIntelRefresh._old_enough(name, first_published, cutoff)
+            ):
+                accepted[name] = downloads
+                PackageIntelRefresh.index_neighbour(neighbours, name)
                 kept.append(name)
             else:
-                refused.append(f"{name} ~ {slip}")
+                refused.append(
+                    f"{name} ~ {contested} (contested; not {CONTESTED_MIN_YEARS} years old)"
+                )
         return sorted(kept), refused
+
+    @staticmethod
+    def neighbour_keys(name: str) -> set[str]:
+        """The keys a name is indexed under: itself, each one-letter deletion of it, and its separator-free form."""
+        return {
+            name,
+            re.sub(r"[-_.]", "", name),
+            *(name[:i] + name[i + 1 :] for i in range(len(name))),
+        }
+
+    @staticmethod
+    def index_neighbour(index: dict[str, list[str]], name: str) -> None:
+        for key in PackageIntelRefresh.neighbour_keys(name):
+            index.setdefault(key, []).append(name)
+
+    @staticmethod
+    def one_edit(name: str, other: str) -> bool:
+        """Whether one letter changed, added, dropped or swapped -- or only the separators -- turns one name into the other."""
+        if name == other:
+            return False
+        if re.sub(r"[-_.]", "", name) == re.sub(r"[-_.]", "", other):
+            return True
+        if len(name) == len(other):
+            diff = [i for i, (a, b) in enumerate(zip(name, other, strict=True)) if a != b]
+            return len(diff) == 1 or (
+                len(diff) == 2
+                and diff[1] == diff[0] + 1
+                and name[diff[0]] == other[diff[1]]
+                and name[diff[1]] == other[diff[0]]
+            )
+        longer, shorter = (name, other) if len(name) > len(other) else (other, name)
+        return len(longer) - len(shorter) == 1 and any(
+            longer[:i] + longer[i + 1 :] == shorter for i in range(len(longer))
+        )
+
+    @staticmethod
+    def _old_enough(
+        name: str, first_published: Callable[[str], str] | None, cutoff: dt.date
+    ) -> bool:
+        """Whether the registry says `name` was first published on or before `cutoff`; False when it cannot say."""
+        if first_published is None:
+            return False
+        try:
+            when = first_published(name)
+        except Exception:  # noqa: BLE001 - any failure to read the age refuses the name, the safe side
+            return False
+        try:
+            return bool(when) and dt.date.fromisoformat(when[:10]) <= cutoff
+        except ValueError:
+            return False
 
     @staticmethod
     def write(
@@ -1332,7 +1458,9 @@ class PackageIntelRefresh:
 
             established = [(name, count) for name, count in ranked if count >= threshold]
             kept, refused = PackageIntelRefresh.refuse_self_allowlisting(
-                established, ecosystem=ecosystem
+                established,
+                ecosystem=ecosystem,
+                first_published=PackageIntelRefresh.first_published_of(ecosystem),
             )
             print(
                 f"  {len(ranked):,} fetched, {len(established):,} over {threshold:,} downloads, "
@@ -1463,6 +1591,16 @@ CRAN_BATCH = 100
 #: false positives this allowlist exists to prevent. Every one clears a
 #: thousandth of its neighbour's traffic comfortably.
 MIN_DOWNLOAD_RATIO = 1_000
+
+#: A name that resembles a more popular one stays on the allowlist only if the registry says it is at
+#: least this old (or a reviewer kept it): download counts can be inflated, a first-publish date cannot.
+CONTESTED_MIN_YEARS = 2
+
+#: ...or has at least a tenth of its look-alike's downloads. Inflating a squat to a tenth of a popular package's
+#: real traffic is costly and conspicuous; a project's own new sibling (`nvidia-nccl-cu13` beside `-cu12`, Google's
+#: `google-adk` beside `google-ads`) reaches it. Measured on the first refresh with ages: without it, 564 crates and 59
+#: PyPI names were refused, most of them real.
+CONTESTED_MAX_RATIO = 10
 
 #: Below this, a resemblance carries no information, so refusing on one cannot
 #: either. Matches `MIN_NAME_LENGTH` in the detector, which will not compare names

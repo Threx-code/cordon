@@ -42,6 +42,7 @@ from cordon_scanner.intel.provenance.releases.hackage_index import (
 )
 from cordon_scanner.intel.provenance.releases.tuf import Tuf, TufError
 from cordon_scanner.intel.provenance.sigstore_bundle import TrustRoot
+from cordon_scanner.version import USER_AGENT
 
 
 class Source(Repository, Protocol):
@@ -61,7 +62,7 @@ class HackageRepository:
 
     def document(self, name: str) -> bytes:
         request = urllib.request.Request(  # noqa: S310 - https, fixed host
-            f"{self.BASE}/{name}", headers={"User-Agent": "cordon-scanner"}
+            f"{self.BASE}/{name}", headers={"User-Agent": USER_AGENT}
         )
         with self._opener().open(request, timeout=self.TIMEOUT) as response:
             body: bytes = Download.read(response, self.DOCUMENT_MAX + 1)
@@ -70,7 +71,7 @@ class HackageRepository:
         return body
 
     def index_range(self, start: int, length: int, sink: Callable[[bytes], None]) -> None:
-        headers = {"User-Agent": "cordon-scanner"}
+        headers = {"User-Agent": USER_AGENT}
         if start:
             headers["Range"] = f"bytes={start}-{length - 1}"
         request = urllib.request.Request(f"{self.BASE}/01-index.tar", headers=headers)  # noqa: S310 - https, fixed host

@@ -16,7 +16,9 @@ dependencies:
   - {name: left-pad, dependency_type: dev, direct: true}
   - {name: is-number, source_type: git, resolution_status: resolved}
   - {name: local-util, source_type: path, resolved_version: 0.1.0}
+findings:
+  # A popular name resolved from a git host is still outside its registry: the name being known does not skip it.
+  - {rule: SUSPECT.DEPENDENCY.SOURCE.001, package: is-number}
 no_findings:
-  - SUSPECT.DEPENDENCY.SOURCE.001
   - POLICY.DEPENDENCY.MUTABLE_REF.001
   - POLICY.LOCKFILE.INTEGRITY.001

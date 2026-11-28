@@ -161,6 +161,25 @@ DECLARED_RULES: tuple[DeclaredRule, ...] = (
         ),
     ),
     DeclaredRule(
+        id="SUSPECT.RELEASE.TAKEOVER_HOLD.001",
+        title="A days-old release of an established package changed who publishes it or how",
+        severity=Severity.HIGH,
+        confidence=Confidence.MEDIUM,
+        category=Category.SUSPICIOUS,
+        detector=DETECTOR,
+        message=(
+            "This release of an established package is days old, and it was published by a "
+            "different account than the release before it, or without the build provenance its "
+            "earlier releases carry. That is how a taken-over maintainer account first shows, "
+            "and taken-over releases are usually found and pulled within days."
+        ),
+        references=(references.ATTACK_SUPPLY_CHAIN_SOFTWARE, references.SLSA_PROVENANCE),
+        remediation=(
+            "Pin the release before this one until this one is older than the hold, or until "
+            "the maintainers confirm the new account or the missing provenance."
+        ),
+    ),
+    DeclaredRule(
         id="SUSPECT.PACKAGE.PROVENANCE.001",
         title="Version published without the provenance its package normally carries",
         severity=Severity.MEDIUM,

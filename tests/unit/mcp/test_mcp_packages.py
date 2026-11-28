@@ -20,6 +20,7 @@ from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 from cordon_scanner.mcp.packages import (
     ECOSYSTEMS,
+    FETCHABLE,
     InstallCommand,
     Lockfiles,
     PackageError,
@@ -136,7 +137,11 @@ class TestSpecs:
     def test_purls_for_fetchable_ecosystems(self) -> None:
         assert PackageSpec.of("npm", "@scope/x", "1.0.0").purl == "pkg:npm/@scope/x@1.0.0"
         assert PackageSpec.of("maven", "org.a:b", "2").purl == "pkg:maven/org.a/b@2"
-        assert PackageSpec.of("cran", "x", "1").purl is None
+        assert PackageSpec.of("cran", "x", "1").purl == "pkg:cran/x@1"
+
+    def test_an_ecosystem_with_no_fetchable_kind_has_no_purl(self) -> None:
+        unfetchable = [e for e in ECOSYSTEMS if e not in FETCHABLE]
+        assert all(PackageSpec.of(e, "x", "1").purl is None for e in unfetchable)
 
     def test_a_gradle_dependency_is_fetched_as_the_maven_artifact_it_is(self) -> None:
         assert PackageSpec.of("gradle", "org.a:b", "2").purl == "pkg:maven/org.a/b@2"
