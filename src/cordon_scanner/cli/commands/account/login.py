@@ -32,11 +32,11 @@ class LoginCommand:
         except CloudError as exc:
             print(f"{PROGRAM}: {exc}", file=sys.stderr)
             return int(ExitCode.CONFIG_ERROR)
-        path = auth.CloudAuth.save(credentials)
+        where = auth.CloudAuth.save(credentials)
         keys = len(credentials.policy_keys)
         print(
             f"Signed in to {credentials.org or 'Cordon Cloud'} as {credentials.subject or 'this device'}. "
-            f"{keys} policy key(s) pinned. Stored in {path} (mode 0600)."
+            f"{keys} policy key(s) pinned. Stored in {where}."
         )
         return int(ExitCode.CLEAN)
 
