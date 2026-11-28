@@ -291,7 +291,16 @@ class AdvisoryDetector(BaseDetector):
                         ).strip(),
                     )
                 )
-            if dependency.version is None and dependency.declared_spec:
+            if dependency.declared_spec and (
+                dependency.version is None
+                or (
+                    dependency.unhonoured_lock
+                    and not any(
+                        f.rule_id == MALICIOUS_RULE and f.location.package == dependency.purl
+                        for f in findings
+                    )
+                )
+            ):
                 findings.extend(self._admitted_malware(dependency, ctx))
 
     def not_installed(self, dependencies: Iterable[Dependency], ctx: ScanContext) -> list[Finding]:
@@ -319,7 +328,11 @@ class AdvisoryDetector(BaseDetector):
                 dependency, repository[1][0], ctx, advice=self._upgrade_advice
             )
             malicious = True
-        if not malicious and dependency.version is None and dependency.declared_spec:
+        if (
+            not malicious
+            and (dependency.version is None or dependency.unhonoured_lock)
+            and dependency.declared_spec
+        ):
             yield from (
                 f for f in self._admitted_malware(dependency, ctx) if f.rule_id == MALICIOUS_RULE
             )

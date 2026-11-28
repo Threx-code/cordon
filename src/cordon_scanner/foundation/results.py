@@ -282,6 +282,11 @@ class Dependency:
     bundled `node_modules`, `DependencyScope`): kept and reported, but no install-set check reads it,
     and an advisory about it is VULNERABLE.DEPENDENCY.BUNDLED, at info."""
 
+    unhonoured_lock: bool = False
+    """In a published package, its version comes from a lockfile the consumer's installer does not read (the maintainers' own
+    environment), so what installs is whatever `declared_spec` resolves to: the advisory detector reads that range against
+    the malicious records as it does for a record with no version."""
+
     signatures: tuple[str, ...] = ()
     """Detached signatures recorded with the installed package, over `signed`. See
     `LockEntry.signatures`. Not in any report: the provenance detector verifies them."""

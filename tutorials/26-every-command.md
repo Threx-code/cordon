@@ -697,6 +697,7 @@ Notification channels: send a test message to each.
 - `R`: renv::restore, scanned
 - `pod`: pod install from the lock
 - `cabal`: cabal build from the freeze
+- `vcpkg`: vcpkg install, scanned
 
 ## npm
 
@@ -1151,6 +1152,18 @@ Run cabal, scanning every package before anything is installed.
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ arguments                 cabal's own arguments                            │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## vcpkg
+
+Run vcpkg, scanning every package before anything is installed.
+
+`cordon-scanner vcpkg ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache. vcpkg is guarded in manifest mode only: vcpkg.json needs a builtin-baseline, your clone (VCPKG_ROOT) must hold that commit, and a port whose source is not fetched with vcpkg_from_github or vcpkg_download_distfile is refused. vcpkg then builds from the scanned archives only; tools it downloads itself (CMake, Ninja) must already be installed.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 vcpkg's own arguments                            │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 

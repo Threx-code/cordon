@@ -33,7 +33,7 @@ class InstallGuardCommand:
     TOOLS: ClassVar[tuple[str, ...]] = (
         "npm", "pnpm", "yarn", "pip", "pip3", "uv", "poetry", "cargo", "go", "gem", "bundler",
         "dotnet", "dart", "flutter", "conda", "mamba", "composer", "mvn",
-        "terraform", "tofu", "helm", "ansible-galaxy", "mix", "docker", "podman", "code", "codium", "cursor", "brew", "bazel", "bazelisk", "julia", "nix", "swift", "Rscript", "R", "pod", "cabal",
+        "terraform", "tofu", "helm", "ansible-galaxy", "mix", "docker", "podman", "code", "codium", "cursor", "brew", "bazel", "bazelisk", "julia", "nix", "swift", "Rscript", "R", "pod", "cabal", "vcpkg",
     )  # fmt: skip
     #: The executable each tool runs, where its name here differs (`bundle` is Cordon's own command).
     EXECUTABLES: ClassVar[dict[str, str]] = {"bundler": "bundle"}
@@ -43,6 +43,11 @@ class InstallGuardCommand:
         "cabal": (
             "cabal builds from a private repository of only the scanned packages (cabal.project.freeze names them), so your own "
             "cabal config and extra repositories are not used for a guarded install; a project that sets its own repositories is refused."
+        ),
+        "vcpkg": (
+            "vcpkg is guarded in manifest mode only: vcpkg.json needs a builtin-baseline, your clone (VCPKG_ROOT) must hold that commit, "
+            "and a port whose source is not fetched with vcpkg_from_github or vcpkg_download_distfile is refused. vcpkg then builds "
+            "from the scanned archives only; tools it downloads itself (CMake, Ninja) must already be installed."
         ),
         "pod": (
             "pod refuses often: any pod whose source is a bare git tag is refused (pin :commit), as is one from a podspec URL or "
@@ -110,6 +115,7 @@ class InstallGuardCommand:
         from cordon_scanner.cli.commands.install.locked.julia import JuliaTools
         from cordon_scanner.cli.commands.install.locked.nix import NixTools
         from cordon_scanner.cli.commands.install.locked.swift import SwiftTools
+        from cordon_scanner.cli.commands.install.locked.vcpkg import VcpkgTools
         from cordon_scanner.cli.commands.install.maven import MavenTools
         from cordon_scanner.cli.commands.install.native import NativeTools
         from cordon_scanner.cli.commands.install.node import NodeTools
@@ -155,6 +161,7 @@ class InstallGuardCommand:
             "R": (CranTools.installs, CranTools.rscript),
             "pod": (CocoaPodsTools.installs, CocoaPodsTools.pod),
             "cabal": (HackageTools.installs, HackageTools.cabal),
+            "vcpkg": (VcpkgTools.installs, VcpkgTools.vcpkg),
         }
 
 

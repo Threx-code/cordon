@@ -12,6 +12,7 @@ import re
 from typing import Final
 
 from cordon_scanner.analysis.shared.source_paths import SourcePaths
+from cordon_scanner.ecosystems.registry import RegistryFacts
 from cordon_scanner.foundation.models import (
     Confidence,
     Severity,
@@ -270,9 +271,12 @@ MAKE_AT_INSTALL = frozenset({"cran", "hex", "rubygems", "hackage"})
 package may declare `build-type: Make`. A Makefile there is install-time code, not the
 maintainers'."""
 
-HONOURED_PINS: dict[str, re.Pattern[str]] = SourcePaths.PUBLISHED_PINS
-"""Files inside a published package that its consumer's installer reads and obeys: what they pin
-is what installing the package brings in, so they keep their rating."""
+HONOURED_PINS: dict[str, re.Pattern[str]] = {
+    **SourcePaths.PUBLISHED_PINS,
+    **RegistryFacts.shipped_locks(),
+}
+"""Files inside a published package that its consumer's installer reads and obeys, or that run as shipped (an action's lock): what
+they pin is what installing the package brings in, so they keep their rating."""
 
 DROP_POINT_SECRETS = frozenset(
     {
