@@ -1414,7 +1414,7 @@
   "test_last_ecosystem_edges.py": "ecosystems/packages",
   "test_small_lock_edges.py": "ecosystems/packages",
   "test_python_helpers_edges.py": "ecosystems/python",
-  "test_registry_index_edges.py": "ecosystems",
+  "test_registry_index_edges.py": "ecosystems/coverage",
   "test_cargo_edges.py": "ecosystems/packages",
   "test_cocoapods_edges.py": "ecosystems/packages",
   "test_npm_edges.py": "ecosystems/packages",
