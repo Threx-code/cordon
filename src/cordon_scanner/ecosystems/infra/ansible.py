@@ -39,6 +39,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.launchers import NoLauncher
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Scope
@@ -474,6 +475,9 @@ class AnsibleGalaxyEcosystem(BaseEcosystem):
 
     purl_type = "ansible"
     published_archive = (GalaxyArchive(),)
+    mcp_launch = NoLauncher(
+        "`ansible-galaxy collection install` downloads a collection and a playbook uses it afterwards: two steps, and a collection is content, not a program (https://docs.ansible.com/ansible/latest/collections_guide/collections_installing.html)"
+    )
     manifest_globs: tuple[str, ...] = (
         "**/requirements.yml",
         "**/requirements.yaml",

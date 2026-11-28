@@ -34,6 +34,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.launchers import NoLauncher
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -358,6 +359,9 @@ class VcpkgEcosystem(BaseEcosystem):
     purl_type = "vcpkg"
     published_archive = NoArchive(
         "the vcpkg registry is a git repository of ports (a portfile.cmake and a vcpkg.json each) whose sources are the upstream project's own archive, named by the REF and SHA512 in the portfile (captured: vcpkg/portfile.cmake)"
+    )
+    mcp_launch = NoLauncher(
+        "`vcpkg install` builds ports into an install tree and has no command that runs one (https://learn.microsoft.com/en-us/vcpkg/commands/install)"
     )
     manifest_globs: tuple[str, ...] = (
         "**/vcpkg.json",

@@ -20,6 +20,21 @@ class ArchiveDigest:
             return GoModuleHash.of_zip(data)
         if algorithm == "commit":
             return CommitArchive.of_zip(data)
+        if algorithm == "git-commit":
+            from cordon_scanner.intel.registries.archive_sources.git import GitTar
+
+            return bytes.fromhex(GitTar.commit(data) or "00")
+        if algorithm == "nar-sha256":
+            from cordon_scanner.sources.install.nar_hash import NarHash, NarRefused
+
+            try:
+                return base64.b64decode(NarHash.of_tarball(data)[0].removeprefix("sha256-"))
+            except NarRefused as exc:
+                raise ValueError(str(exc)) from exc
+        if algorithm == "git-tree-sha1":
+            from cordon_scanner.intel.registries.archive_sources.git import GitTar
+
+            return bytes.fromhex(GitTar.tree_sha1(data))
         return hashlib.new(algorithm, data).digest()
 
 

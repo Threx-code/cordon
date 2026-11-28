@@ -30,6 +30,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.launchers import NoLauncher
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -331,6 +332,9 @@ class ComposerEcosystem(BaseEcosystem):
 
     purl_type = "composer"
     published_archive = (ComposerArchive(),)
+    mcp_launch = NoLauncher(
+        "`composer global require` installs a package and a later command runs its binary; `composer exec` runs the binary of an already installed one (https://getcomposer.org/doc/03-cli.md#exec)"
+    )
     manifest_globs: tuple[str, ...] = ("**/composer.json", "**/composer.lock", "**/auth.json")
     lockfile_globs: tuple[str, ...] = ("**/composer.lock",)
     registry_hosts: frozenset[str] = frozenset(

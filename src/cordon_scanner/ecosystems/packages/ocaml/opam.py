@@ -38,6 +38,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.launchers import NoLauncher
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.ocaml.opam_syntax import (
     COMPILER_PACKAGES,
@@ -215,6 +216,9 @@ class OpamEcosystem(BaseEcosystem):
     purl_type = "opam"
     published_archive = NoArchive(
         "an opam package's archive is the upstream project's own source tarball, named by the `url` in its opam file; no opam metadata is inside it (captured: opam cache-small)"
+    )
+    mcp_launch = NoLauncher(
+        "`opam install` installs a package and `opam exec` runs inside the switch afterwards: two steps (https://opam.ocaml.org/doc/man/opam-exec.html)"
     )
     manifest_globs: tuple[str, ...] = (
         "**/*.opam",

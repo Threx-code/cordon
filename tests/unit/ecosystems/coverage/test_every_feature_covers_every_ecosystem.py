@@ -235,7 +235,19 @@ class More:
     def device_attestation(cls) -> frozenset[str]:
         from cordon_scanner.cloud.device_attestation import DeviceAttestation
 
-        return cls.ids(DeviceAttestation.SPLITTERS)
+        return cls.ids(DeviceAttestation.splitters())
+
+    @staticmethod
+    def device_attestation_reasons() -> dict[str, str]:
+        from cordon_scanner.ecosystems.base import BaseEcosystem
+        from cordon_scanner.ecosystems.launchers import NoLauncher
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+        return {
+            e.id: e.mcp_launch.reason
+            for e in EcosystemRegistry.all_ecosystems()
+            if isinstance(e, BaseEcosystem) and isinstance(e.mcp_launch, NoLauncher)
+        }
 
     @classmethod
     def subjects(cls) -> frozenset[str]:
@@ -376,7 +388,7 @@ class Features:
         "agent hook install recognition": (More.agent_hook, More.agent_hook_reasons),
         "install shims and planners": (More.install_guard, More.install_guard_reasons),
         "fixer (lockfile fix)": (More.fixer, dict),
-        "device attestation splitters": (More.device_attestation, dict),
+        "device attestation splitters": (More.device_attestation, More.device_attestation_reasons),
         "subject canonicalisation": (More.subjects, dict),
         "manifest findings (own name)": (More.own_name_findings, More.own_name_reasons),
         "credential homes": (More.credential_homes, More.credential_homes_reasons),
@@ -390,7 +402,6 @@ class Features:
             "popular package lists",
             "install shims and planners",
             "fixer (lockfile fix)",
-            "device attestation splitters",
         }
     )
 
@@ -537,8 +548,7 @@ class TestNoPhantomCoverage:
 #: list when its shim and planner land; a listed cell must still fail (strict), so none stays listed.
 INSTALL_PENDING = frozenset(
     {
-        "bazel", "cocoapods", "conan", "cran", "gradle", "hackage",
-        "julia", "nix", "opam", "swift", "vcpkg",
+        "conan", "gradle", "opam", "vcpkg",
     }
 )  # fmt: skip
 

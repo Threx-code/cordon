@@ -24,7 +24,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from cordon_scanner.ecosystems.archive_shapes import PublishedArchive
+from cordon_scanner.ecosystems.launchers import Declarations
 from cordon_scanner.ecosystems.own_names import OwnNameDefaults
 from cordon_scanner.foundation.dependencies import InstallTool
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
@@ -698,6 +698,7 @@ class BaseEcosystem(
     PackageEntryDefaults,
     PublishedCodeDefaults,
     OwnNameDefaults,
+    Declarations,
 ):
     """Shared behaviour. Implementing the protocol directly is equally valid."""
 
@@ -759,7 +760,6 @@ class BaseEcosystem(
 
     id: str = "base"
     purl_type: str = "generic"
-    published_archive: PublishedArchive  # no default: each ecosystem states it
     manifest_globs: tuple[str, ...] = ()
     lockfile_globs: tuple[str, ...] = ()
     installed_with_package: tuple[str, ...] = ()

@@ -223,10 +223,12 @@ class AiBom:
             }
             if launched is not None:
                 ecosystem, spec, pinned = launched
-                if ecosystem in McpConfigs.SPLIT_SPECS:
+                if ecosystem in McpConfigs.launcher_ecosystems():
                     package, version = McpConfigs.split_spec(ecosystem, spec)
                     quoted = urllib.parse.quote(package, safe="/")
-                    entry["purl"] = f"pkg:{ecosystem}/{quoted}" + (f"@{version}" if version else "")
+                    entry["purl"] = f"pkg:{McpConfigs.purl_type(ecosystem)}/{quoted}" + (
+                        f"@{urllib.parse.quote(version, safe='+._-~')}" if version else ""
+                    )
                     if version:
                         entry["version"] = version
                 entry["properties"] += AiBom._props(

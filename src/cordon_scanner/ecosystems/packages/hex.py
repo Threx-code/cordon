@@ -30,6 +30,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.launchers import NoLauncher
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.hex_literals import ElixirLiterals
 from cordon_scanner.foundation.models import Hook, Scope
@@ -786,6 +787,9 @@ class HexEcosystem(BaseEcosystem):
 
     purl_type = "hex"
     published_archive = (HexArchive(),)
+    mcp_launch = NoLauncher(
+        "`mix escript.install hex <package>` installs an escript and a later command runs it: two steps (https://hexdocs.pm/mix/Mix.Tasks.Escript.Install.html)"
+    )
     manifest_globs: tuple[str, ...] = ("**/mix.exs", "**/rebar.config")
     lockfile_globs: tuple[str, ...] = ("**/mix.lock", "**/rebar.lock")
     registry_hosts: frozenset[str] = frozenset({"hex.pm", "repo.hex.pm"})

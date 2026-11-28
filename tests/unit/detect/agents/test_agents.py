@@ -11,6 +11,9 @@ import pytest
 from cordon_scanner import Scanner
 from cordon_scanner.detect.agents.chain import AgentChainDetector
 from cordon_scanner.detect.agents.mcp_servers.declarations import McpConfigs
+from cordon_scanner.ecosystems.base import BaseEcosystem
+from cordon_scanner.ecosystems.launchers import NoLauncher
+from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Severity
 from cordon_scanner.intel.registries.archive_sources.table import ArchiveSources
@@ -269,6 +272,164 @@ class TestAgentSettings:
         body = '{\n  // agent mode\n  "chat.tools.autoApprove": true,\n}\n'
         found = AgentsHelpers._rules(AgentsHelpers._scan(tmp_path, {".vscode/settings.json": body}))
         assert "POLICY.AGENT.AUTO_APPROVE.001" in found
+
+
+class TestEveryEcosystemDeclaresHowItIsLaunched:
+    """`mcp_launch` of each adapter is the one table `McpConfigs` reads; npm and pypi read exactly as they always did."""
+
+    DIGEST = "sha256:" + "a" * 64
+    REV = "b" * 40
+
+    @pytest.mark.parametrize(
+        ("command", "args", "expected"),
+        [
+            # npm and pypi, every runner word the old tables had, byte for byte
+            ("npx", ["-y", "@scope/pkg@1.2.3"], ("npm", "@scope/pkg@1.2.3", True)),
+            ("npx", ["pkg@^1.2.3"], ("npm", "pkg@^1.2.3", False)),
+            (
+                "npx",
+                ["-p", "other", "pkg"],
+                ("npm", "other", False),
+            ),  # the flag is skipped, its value is not (unchanged)
+            ("bunx", ["pkg@1.0.0"], ("npm", "pkg@1.0.0", True)),
+            ("pnpx", ["pkg@1.0.0-rc.1"], ("npm", "pkg@1.0.0-rc.1", True)),
+            ("pnpm", ["dlx", "pkg@2.0.0"], ("npm", "pkg@2.0.0", True)),
+            ("yarn", ["DLX", "pkg"], ("npm", "pkg", False)),
+            ("uvx", ["tool[cli]==1.0"], ("pypi", "tool[cli]==1.0", True)),
+            ("uvx", ["--from", "git+https://x", "tool"], ("pypi", "git+https://x", False)),
+            ("pipx", ["tool@1.2"], ("pypi", "tool@1.2", True)),
+            ("uv", ["tool", "run", "tool==1.0"], ("pypi", "tool==1.0", True)),
+            ("uv", ["tool", "tool"], ("pypi", "tool", False)),
+            ("uv", ["pip", "install", "tool"], None),
+            ("node", ["pkg@1.0.0"], None),
+            ("pnpm", ["install", "pkg@1.0.0"], None),
+        ],
+    )
+    def test_npm_and_pypi_read_as_they_always_did(self, command, args, expected) -> None:
+        assert McpConfigs.launched_package(command, args) == expected
+
+    @pytest.mark.parametrize(
+        ("command", "args", "expected"),
+        [
+            (
+                "docker",
+                ["run", "-i", "--rm", "-e", "K=v", "mcp/github:1.0"],
+                ("image", "mcp/github:1.0", False),
+            ),
+            (
+                "docker",
+                ["run", "--rm", f"mcp/github@{DIGEST}"],
+                ("image", f"mcp/github@{DIGEST}", True),
+            ),
+            ("podman", ["run", "ghcr.io/o/x:latest"], ("image", "ghcr.io/o/x:latest", False)),
+            ("docker.exe", ["run", "mcp/x"], ("image", "mcp/x", False)),
+            ("docker", ["ps"], None),
+            (
+                "go",
+                ["run", "example.com/mcp/cmd@v1.2.3"],
+                ("gomod", "example.com/mcp/cmd@v1.2.3", True),
+            ),
+            (
+                "go",
+                ["run", "-tags", "x", "example.com/mcp@latest"],
+                ("gomod", "example.com/mcp@latest", False),
+            ),
+            ("go", ["run", "./cmd/server"], None),
+            ("go", ["build", "example.com/mcp@v1.0.0"], None),
+            ("dnx", ["Mcp.Server@1.2.3"], ("nuget", "Mcp.Server@1.2.3", True)),
+            (
+                "dnx",
+                ["Mcp.Server", "--version", "1.2.3", "--yes"],
+                ("nuget", "Mcp.Server@1.2.3", True),
+            ),
+            ("dotnet", ["tool", "exec", "Mcp.Server"], ("nuget", "Mcp.Server", False)),
+            ("dotnet", ["dnx", "Mcp.Server@2.0.0"], ("nuget", "Mcp.Server@2.0.0", True)),
+            ("dotnet", ["run"], None),
+            ("jbang", ["org.acme:mcp:1.2.3"], ("maven", "org.acme:mcp:1.2.3", True)),
+            ("jbang", ["org.acme:mcp:RELEASE"], ("maven", "org.acme:mcp:RELEASE", False)),
+            ("jbang", ["script.java"], None),
+            (
+                "gem",
+                ["exec", "-v", "1.2.3", "mcp-gem", "serve"],
+                ("rubygems", "mcp-gem@1.2.3", True),
+            ),
+            ("gem", ["exec", "mcp-gem"], ("rubygems", "mcp-gem", False)),
+            ("gem", ["install", "mcp-gem"], None),
+            ("nix", ["run", f"github:o/r/{REV}#server"], ("nix", f"github:o/r/{REV}#server", True)),
+            ("nix", ["run", "nixpkgs#hello", "--", "-x"], ("nix", "nixpkgs#hello", False)),
+            ("nix", ["build", "nixpkgs#hello"], None),
+            ("deno", ["run", "-A", "npm:@scope/mcp@1.2.3"], ("npm", "@scope/mcp@1.2.3", True)),
+            ("deno", ["run", "server.ts"], None),
+            (
+                "pixi",
+                ["exec", "--spec", "mcp-server==1.2.3", "mcp-server"],
+                ("conda", "mcp-server==1.2.3", True),
+            ),
+            ("pixi", ["exec", "mcp-server"], ("conda", "mcp-server", False)),
+            ("mint", ["run", "owner/repo@1.2.3"], ("swift", "owner/repo@1.2.3", True)),
+        ],
+    )
+    def test_the_other_launchers_are_read(self, command, args, expected) -> None:
+        assert McpConfigs.launched_package(command, args) == expected
+
+    @pytest.mark.parametrize(
+        ("ecosystem", "spec", "expected"),
+        [
+            ("image", "mcp/github:1.0", ("mcp/github", "1.0")),
+            ("image", f"mcp/github@{DIGEST}", ("mcp/github", DIGEST)),
+            ("image", "localhost:5000/x", ("localhost:5000/x", None)),
+            ("gomod", "example.com/mcp@v1.2.3", ("example.com/mcp", "v1.2.3")),
+            ("gomod", "example.com/mcp@latest", ("example.com/mcp", None)),
+            ("nuget", "Mcp.Server@1.2.3", ("Mcp.Server", "1.2.3")),
+            ("maven", "org.acme:mcp:1.2.3", ("org.acme:mcp", "1.2.3")),
+            ("maven", "org.acme:mcp:LATEST", ("org.acme:mcp", None)),
+            ("rubygems", "mcp-gem@1.2.3", ("mcp-gem", "1.2.3")),
+            ("nix", f"github:o/r/{REV}#server", ("o/r", REV)),
+            ("nix", "nixpkgs#hello", ("nixpkgs", None)),
+            ("conda", "mcp-server==1.2.3", ("mcp-server", "1.2.3")),
+            ("swift", "owner/repo@1.2.3", ("owner/repo", "1.2.3")),
+        ],
+    )
+    def test_each_kind_of_spec_splits_into_a_name_and_a_release(
+        self, ecosystem, spec, expected
+    ) -> None:
+        assert McpConfigs.split_spec(ecosystem, spec) == expected
+
+    def test_the_ecosystems_with_a_launcher(self) -> None:
+        assert McpConfigs.launcher_ecosystems() == {
+            "npm",
+            "pypi",
+            "image",
+            "gomod",
+            "nuget",
+            "maven",
+            "rubygems",
+            "nix",
+            "conda",
+            "swift",
+        }
+
+    @pytest.mark.parametrize("ecosystem", sorted(EcosystemRegistry.BY_ID))
+    def test_every_ecosystem_declares_its_launch_itself(self, ecosystem: str) -> None:
+        declared = vars(type(EcosystemRegistry.BY_ID[ecosystem])).get("mcp_launch")
+        assert isinstance(declared, tuple | NoLauncher)
+        if isinstance(declared, NoLauncher):
+            assert len(declared.reason) > 40 and "https://" in declared.reason
+        else:
+            assert declared and all(lc.page.startswith("https://") for lc in declared)
+
+    def test_the_base_adapter_has_no_default_launch(self) -> None:
+        assert not hasattr(BaseEcosystem, "mcp_launch")
+
+    def test_a_docker_run_still_reports_the_host_it_is_given(self, tmp_path) -> None:
+        config = {
+            "mcpServers": {"x": {"command": "docker", "args": ["run", "--privileged", "mcp/x:1"]}}
+        }
+        found = AgentsHelpers._rules(
+            AgentsHelpers._scan(tmp_path, {".mcp.json": json.dumps(config)})
+        )
+        assert "SUSPECT.MCP.CONTAINER_HOST_ACCESS.001" in found
+        assert "SUSPECT.MCP.UNPINNED.001" in found
 
 
 class TestMcpConfigs:

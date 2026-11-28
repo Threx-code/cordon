@@ -16,6 +16,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.launchers import Launcher
 from cordon_scanner.ecosystems.own_names import OwnName
 
 # Each `*Ecosystem` imported below from its own module (GitHub Actions, Bazel, CocoaPods, Composer,
@@ -557,6 +558,11 @@ class MavenEcosystem(BaseEcosystem):
 
     purl_type = "maven"
     published_archive = (MavenArchive(),)
+    mcp_launch = (
+        Launcher(
+            (("jbang",),), "maven", "https://www.jbang.dev/documentation/jbang/latest/usage.html"
+        ),
+    )
     manifest_globs: tuple[str, ...] = ("**/pom.xml", "**/.mvn/wrapper/maven-wrapper.properties")
     lockfile_globs: tuple[str, ...] = (
         "**/dependency-tree.txt",

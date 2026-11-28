@@ -1,0 +1,11 @@
+PODS:
+  - BrazeKit (18.2.1)
+
+EXTERNAL SOURCES:
+  BrazeKit:
+    :podspec: https://raw.githubusercontent.com/braze-inc/braze-swift-sdk-prebuilt-static/18.2.1/BrazeKit.podspec
+
+SPEC CHECKSUMS:
+  BrazeKit: 2834efe30d0939776d1ada0f05a7430c6d1b4731
+
+COCOAPODS: 1.16.2

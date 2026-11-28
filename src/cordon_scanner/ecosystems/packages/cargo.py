@@ -15,6 +15,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.launchers import NoLauncher
 from cordon_scanner.ecosystems.own_names import OwnName
 
 # Each `*Ecosystem` imported below from its own module (GitHub Actions, Bazel, CocoaPods, Composer,
@@ -31,6 +32,9 @@ class CargoEcosystem(BaseEcosystem):
     own_name = OwnName(("Cargo.toml",))
     purl_type = "cargo"
     published_archive = (CargoArchive(),)
+    mcp_launch = NoLauncher(
+        "`cargo install` and `cargo binstall` put a crate's binary on the machine and a later command runs it; `cargo run` runs the local package's targets only, and cargo-run-bin takes its versions from Cargo.toml metadata, not the command (https://doc.rust-lang.org/cargo/commands/cargo-run.html)"
+    )
     manifest_globs: tuple[str, ...] = ("**/Cargo.toml", "**/.cargo/config.toml", "**/.cargo/config")
     lockfile_globs: tuple[str, ...] = ("**/Cargo.lock",)
     registry_hosts: frozenset[str] = frozenset(

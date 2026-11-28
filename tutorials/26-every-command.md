@@ -688,6 +688,15 @@ Notification channels: send a test message to each.
 - `codium`: codium extensions, scanned
 - `cursor`: cursor extensions, scanned
 - `brew`: brew install, bottles scanned
+- `bazel`: bazel build from the lock
+- `bazelisk`: bazelisk build from lock
+- `julia`: Pkg.instantiate, scanned
+- `nix`: nix build from flake.lock
+- `swift`: swift build from the lock
+- `Rscript`: renv::restore, scanned
+- `R`: renv::restore, scanned
+- `pod`: pod install from the lock
+- `cabal`: cabal build from the freeze
 
 ## npm
 
@@ -1034,6 +1043,114 @@ Run brew, scanning every package before anything is installed.
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ arguments                 brew's own arguments                             │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## bazel
+
+Run bazel, scanning every package before anything is installed.
+
+`cordon-scanner bazel ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 bazel's own arguments                            │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## bazelisk
+
+Run bazelisk, scanning every package before anything is installed.
+
+`cordon-scanner bazelisk ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 bazelisk's own arguments                         │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## julia
+
+Run julia, scanning every package before anything is installed.
+
+`cordon-scanner julia ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 julia's own arguments                            │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## nix
+
+Run nix, scanning every package before anything is installed.
+
+`cordon-scanner nix ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 nix's own arguments                              │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## swift
+
+Run swift, scanning every package before anything is installed.
+
+`cordon-scanner swift ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 swift's own arguments                            │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Rscript
+
+Run Rscript, scanning every package before anything is installed.
+
+`cordon-scanner Rscript ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 Rscript's own arguments                          │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## R
+
+Run R, scanning every package before anything is installed.
+
+`cordon-scanner R ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 R's own arguments                                │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## pod
+
+Run pod, scanning every package before anything is installed.
+
+`cordon-scanner pod ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache. pod refuses often: any pod whose source is a bare git tag is refused (pin :commit), as is one from a podspec URL or another spec repository; pod runs with --deployment.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 pod's own arguments                              │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## cabal
+
+Run cabal, scanning every package before anything is installed.
+
+`cordon-scanner cabal ...`: resolve without running anything, fetch and verify every file against its registry hash, scan them, and install exactly those files only when nothing is malicious. Other subcommands run unchanged. Cordon's options go first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token URL=VAR, --cordon-no-cache. cabal builds from a private repository of only the scanned packages (cabal.project.freeze names them), so your own cabal config and extra repositories are not used for a guarded install; a project that sets its own repositories is refused.
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ arguments                 cabal's own arguments                            │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 

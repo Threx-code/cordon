@@ -15,6 +15,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.launchers import Launcher
 from cordon_scanner.ecosystems.own_names import OwnName
 
 # Each `*Ecosystem` imported below from its own module (GitHub Actions, Bazel, CocoaPods, Composer,
@@ -193,6 +194,11 @@ class GoEcosystem(BaseEcosystem):
 
     purl_type = "golang"
     published_archive = (GoModuleArchive(),)
+    mcp_launch = (
+        Launcher(
+            (("go", "run"),), "go", "https://pkg.go.dev/cmd/go#hdr-Compile_and_run_Go_program"
+        ),
+    )
     manifest_globs: tuple[str, ...] = ("**/go.mod", "**/go.work")
     lockfile_globs: tuple[str, ...] = (
         "**/go.mod",

@@ -39,6 +39,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.launchers import NoLauncher
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Hook, Scope
@@ -731,6 +732,9 @@ class ConanEcosystem(BaseEcosystem):
     own_name = OwnName(("conanfile.py",))
     purl_type = "conan"
     published_archive = (ConanArchive(),)
+    mcp_launch = NoLauncher(
+        "`conan install --requires` downloads a recipe or binary and a later command runs what it deployed; Conan has no command that downloads and runs (https://docs.conan.io/2/reference/commands.html)"
+    )
     manifest_globs: tuple[str, ...] = (
         "**/conanfile.txt",
         "**/conanfile.py",

@@ -36,6 +36,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.launchers import NoLauncher
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Scope
@@ -299,6 +300,9 @@ class HelmEcosystem(BaseEcosystem):
     own_name = OwnName(("Chart.yaml",))
     purl_type = "helm"
     published_archive = (HelmArchive(),)
+    mcp_launch = NoLauncher(
+        "`helm install` and `helm pull` fetch a chart to deploy or unpack; nothing runs a chart's code on the device (https://helm.sh/docs/helm/helm_install/)"
+    )
     # requirements.yaml is Ansible's name too: an apiVersion v1 chart's is read through the
     # Chart.yaml beside it, not claimed by name.
     manifest_globs: tuple[str, ...] = ("**/Chart.yaml", "**/Chart.lock", "**/requirements.lock")

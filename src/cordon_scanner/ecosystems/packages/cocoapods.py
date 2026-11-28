@@ -26,6 +26,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.launchers import NoLauncher
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.rubygems import RubySource
 from cordon_scanner.foundation.models import Hook, Scope
@@ -514,6 +515,9 @@ class CocoaPodsEcosystem(BaseEcosystem):
     purl_type = "cocoapods"
     published_archive = NoArchive(
         "a pod is a podspec whose `source` names a git repository or an upstream archive; the spec repository publishes no archive of the pod (captured: cocoapods/podspec)"
+    )
+    mcp_launch = NoLauncher(
+        "a pod is a library linked into an app, and `pod` has no command that runs one (https://guides.cocoapods.org/terminal/commands.html)"
     )
     manifest_globs: tuple[str, ...] = ("**/Podfile", "**/*.podspec")
     lockfile_globs: tuple[str, ...] = ("**/Podfile.lock",)

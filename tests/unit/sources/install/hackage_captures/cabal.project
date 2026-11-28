@@ -1,0 +1,309 @@
+-- Global project configuration.
+
+--
+-- This file can be overridden with cabal.project.local (see e.g. cabal/dev.project)
+--
+-- If you need to switch between several local configurations you can also create a
+-- symbolic link to this file in the project root directory; e.g.:
+--     $ ln -s cabal.project myconfig.project
+--     $ ln -s cabal.project.freeze myconfig.project.freeze
+--
+-- ...and then create a new set of overrides in:
+--     myconfig.project.local
+--
+-- ...and then invoke cabal with
+--     $ cabal new-build --project-file=myconfig.project
+--
+-- See: https://www.haskell.org/cabal/users-guide/nix-local-build.html#configuring-builds-with-cabal-project
+
+
+-- NOTE: we want to be using 9.10.1 with this patch applied for now:
+-- https://gitlab.haskell.org/ghc/ghc/-/issues/25074
+--
+-- which we do on CI. Hope this makes it into 9.10.2
+--
+-- You can run this locally by installing the bindist I've created 
+--
+--   curl 'https://drive.usercontent.google.com/download?id=1ZYKOwmwINRNzo9M2PkdpDX7htgQ98oMG&export=download&confirm=t' --output 9.10.1-fork-bindist.tar.xz
+--   ghcup install ghc -u file:///9.10.1-fork-bindist.tar.xz
+-- 
+with-compiler: ghc-9.14.1
+
+-- package-level parallelism:
+jobs: $ncpus
+semaphore: True
+
+packages: server
+packages: server/lib/*/*.cabal
+packages: server/forks/*/*.cabal
+
+-- TODO remove these when we are able:
+allow-newer: req:template-haskell
+allow-newer: ekg-core:base
+allow-newer: ekg-core:primitive
+allow-newer: ekg-core:ghc-prim
+allow-newer: ekg-core:containers
+allow-newer: ekg-core:inspection-testing
+allow-newer: ekg-core:text
+allow-newer: ekg-json:base
+allow-newer: ekg-json:text
+allow-newer: ekg-json:vector
+allow-newer: ekg-prometheus:base
+allow-newer: ekg-prometheus:text
+allow-newer: ekg-prometheus:bytestring
+allow-newer: ekg-prometheus:primitive
+allow-newer: ekg-prometheus:containers
+-- Migrating to 0.25+ looks like it will be a real pain... :(
+-- https://github.com/morpheusgraphql/morpheus-graphql/pull/766
+allow-newer: relude:base
+allow-newer: relude:ghc-prim
+allow-newer: morpheus-graphql:text
+allow-newer: morpheus-graphql:relude
+allow-newer: morpheus-graphql:vector
+allow-newer: morpheus-graphql:transformers
+allow-newer: morpheus-graphql-app:text
+allow-newer: morpheus-graphql-app:vector
+allow-newer: morpheus-graphql-app:transformers
+allow-newer: morpheus-graphql-code-gen:text
+allow-newer: morpheus-graphql-code-gen:filepath
+allow-newer: morpheus-graphql-code-gen:optparse-applicative
+allow-newer: morpheus-graphql-code-gen-utils:text
+allow-newer: morpheus-graphql-core:text
+allow-newer: morpheus-graphql-core:transformers
+allow-newer: morpheus-graphql-core:vector
+allow-newer: morpheus-graphql-server:text
+allow-newer: morpheus-graphql-server:transformers
+allow-newer: morpheus-graphql-server:vector
+allow-newer: morpheus-graphql-client:text
+allow-newer: morpheus-graphql-client:req
+allow-newer: req:containers
+allow-newer: morpheus-graphql-client:transformers
+allow-newer: morpheus-graphql-client:vector
+allow-newer: morpheus-graphql-subscriptions:text
+allow-newer: morpheus-graphql-subscriptions:transformers
+allow-newer: servant-openapi3:base
+allow-newer: openapi3:base
+allow-newer: servant-client:base
+allow-newer: servant-client:containers
+allow-newer: servant-client:transformers
+allow-newer: servant-client:mtl
+allow-newer: servant-client-core:base
+allow-newer: servant-client-core:containers
+allow-newer: servant-client-core:free
+allow-newer: servant-client-core:template-haskell
+allow-newer: servant-client-core:transformers
+allow-newer: servant-server:base
+allow-newer: servant-server:containers
+allow-newer: servant-server:either
+allow-newer: servant-server:bytestring
+allow-newer: servant-server:filepath
+allow-newer: servant-server:template-haskell
+allow-newer: servant-server:transformers
+allow-newer: servant-server:mtl
+allow-newer: servant:base
+allow-newer: servant:mtl
+allow-newer: ghc-heap-view:base
+allow-newer: ghc-heap-view:Cabal
+allow-newer: servant:transformers
+allow-newer: singleton-bool:base
+allow-newer: semigroupoids:base
+allow-newer: http-api-data:base
+allow-newer: validation:assoc
+allow-newer: aeson:th-abstraction
+allow-newer: optics-th:th-abstraction
+allow-newer: generics-sop:th-abstraction
+allow-newer: insert-ordered-containers:base
+allow-newer: lucid2:base
+allow-newer: insert-ordered-containers:lens
+allow-newer: uuid-types:text
+allow-newer: uuid-types:template-haskell
+allow-newer: string-interpolate:template-haskell 
+allow-newer: postgresql-simple:time
+allow-newer: postgresql-simple:base
+allow-newer: postgresql-simple:template-haskell
+allow-newer: postgresql-simple:bytestring
+allow-newer: postgresql-simple:text
+allow-newer: postgresql-simple:containers
+allow-newer: postgresql-simple:postgresql-libpq
+allow-newer: openapi3:template-haskell 
+allow-newer: superbuffer:bytestring
+allow-newer: websockets:containers
+allow-newer: http-api-data:containers
+allow-newer: stm-hamt:primitive
+allow-newer: stm-hamt:primitive-extras
+allow-newer: quickcheck-instances:base
+allow-newer: quickcheck-instances:bytestring
+allow-newer: uuid:uuid-types
+allow-newer: connection:tls
+allow-newer: proto-lens:base
+allow-newer: proto-lens-runtime:base
+allow-newer: lrucache:containers
+allow-newer: generic-monoid:base
+allow-newer: aeson-optics:base
+allow-newer: testcontainers:bytestring
+allow-newer: testcontainers:network
+allow-newer: postgresql-libpq:base
+allow-newer: xml-lens:text
+allow-newer: xml-lens:containers
+allow-newer: config-ini:text
+allow-newer: hsc2hs:base
+allow-newer: xml-conduit:Cabal
+allow-newer: cabal-doctest:Cabal
+allow-newer: postgresql-libpq:Cabal
+allow-newer: hsc2hs:filepath
+allow-newer: hsc2hs:containers
+-- 9.14.1
+allow-newer: http-api-data:hashable
+allow-newer: aeson:template-haskell
+allow-newer: aeson:time
+allow-newer: indexed-traversable-instances:base
+allow-newer: these:base
+allow-newer: semialign:base
+allow-newer: aeson:containers
+allow-newer: indexed-traversable:base
+allow-newer: semialign:containers
+allow-newer: indexed-traversable:containers
+allow-newer: modern-uri:template-haskell
+allow-newer: postgresql-simple:hashable
+allow-newer: dec:base
+allow-newer: boring:base
+allow-newer: http-media:containers
+allow-newer: ekg-core:hashable
+allow-newer: time-compat:time
+allow-newer: text-iso8601:time
+allow-newer: http-api-data:text-iso8601
+-- aeson 2.3 upgrade: relax aeson upper bounds across all packages
+allow-newer: all:aeson
+allow-newer: insert-ordered-containers:hashable
+allow-newer: uuid:time
+allow-newer: servant-client:time
+allow-newer: openapi3:time
+allow-newer: nonempty-vector:base
+allow-newer: quickcheck-instances:containers
+allow-newer: dependent-map:containers
+allow-newer: constraints-extras:template-haskell
+allow-newer: proto-lens:ghc-prim
+allow-newer: proto-lens:containers
+allow-newer: lens-family:containers
+allow-newer: lens-family-core:containers
+allow-newer: proto-lens-runtime:containers
+allow-newer: bytestring-lexing:base
+allow-newer: parallel:base
+allow-newer: microstache:base
+allow-newer: microstache:containers
+allow-newer: binary-orphans:base
+allow-newer: config-ini:containers
+allow-newer: Cabal:containers
+allow-newer: Cabal-syntax:containers
+allow-newer: entropy:Cabal
+
+-- https://github.com/mokus0/th-extras/pull/20
+allow-newer: th-extras:template-haskell
+
+-- DO NOT lift without checking https://github.com/basvandijk/scientific/issues/120
+-- 0.3.9.0 makes Eq/Ord on Scientific read out of bounds (SIGSEGV) for exponents
+-- near the Int bounds. aeson's decoder wraps exponents silently, so any client can
+-- send such values, and we compare them before auth (e.g. field merging in
+-- schema-parsers Collect.hs). 0.3.8.1 is affected only in (+)/(-), which we don't
+-- apply to input-derived values (audited 2026-10-21).
+constraints: scientific <0.3.9
+
+package *
+  -- NOTE: this gets applied to both local (hasura) packages and dependencies,
+  -- but optimizations for local hasura packages are overridden/controlled
+  -- via the 'optimize-hasura' flag.
+  optimization: 2
+  -- For tooling support, e.g. HLS:
+  ghc-options: -fwrite-ide-info
+
+  -- we statically link malloc from mimalloc. Out of an abundance of caution,
+  -- disable special treatment of these in all the foreign code we build. The
+  -- only risk is potential for some missed optimizations.
+  -- See: https://github.com/microsoft/mimalloc/issues/785
+  -- NOTE: cc-options is not recognized here for some reason, so we use ghc-options+optc:
+  ghc-options: -optc-fno-builtin-malloc -optc-fno-builtin-calloc -optc-fno-builtin-realloc -optc-fno-builtin-free
+
+  haddock-html: true
+  haddock-hoogle: true
+  haddock-hyperlink-source: true
+  haddock-quickjump: true
+  haddock-internal: true
+
+-- Allow for dead-code elimination at link-time, to reduce binary size
+if(os(linux))
+ package *
+  -- ld on M1 OSX does not recognise this:
+  ld-options: -Wl,--gc-sections
+  ghc-options: -split-sections
+  -- -----------------------------------------------------------
+
+package graphql-engine
+  ghc-options: -j
+  haddock-options: "--show-all"
+
+allow-newer: hedgehog-generic:base
+allow-newer: hedgehog-generic:hedgehog
+
+-- 9.6 support. Awaiting release I guess...
+source-repository-package
+  type: git
+  location: https://github.com/agrafix/Spock
+  tag: 40d028bfea0e94ca7096c719cd024ca47a46e559
+  subdir: Spock-core
+
+-- 9.6 support: https://github.com/jfischoff/postgres-options/pull/7
+source-repository-package
+  type: git
+  location: https://github.com/jfischoff/postgres-options.git
+  tag: 3100f7ca4319748a07a46e2838f4c80f8e3f076a
+
+-- 9.6 support: https://github.com/MichaelXavier/cron/pull/51
+source-repository-package
+  type: git
+  location: https://github.com/TristanCacqueray/cron.git
+  tag: 5f5b662a1d7abc3951ea5a2a625bbf3e83f7a11a
+
+source-repository-package
+  type: git
+  location: https://github.com/hasura/kriti-lang.git
+  tag: c8fd863d359876af3a0fce47db8a5393dc556667
+
+-- This is an unrelesaed version of "odbc"
+-- For text v2 support
+-- WIP/FIXME: review change, maybe upstream PR
+source-repository-package
+  type: git
+  location: https://github.com/hasura/odbc.git
+  tag: 43b07813d635215b3466824d07890de452920fc2
+
+package odbc
+  ghc-options: -Wwarn
+  -- Our CI compiles with -Werror, which is also applied to those packages
+  -- while it's fine for packages we maintain, we can't actually enforce
+  -- that third-party packages are warning-free, hence this -Wno-error.
+  -- When the changes in odbc are released, we can instead depend on
+  -- the hackage version, and remove it from this list of packages.
+
+source-repository-package
+  type: git
+  location: https://github.com/hasura/ekg-core.git
+  tag: df610859603b504494ad770bdbb7053a7f0b9a6c
+
+source-repository-package
+  type: git
+  location: https://github.com/hasura/libdeflate-hs.git
+  tag: 0715562e5393acfa5dde66b79c2bfbd05c1828b7
+
+-- waiting on release:
+source-repository-package
+  type: git
+  location: https://github.com/testcontainers/testcontainers-hs
+  tag: fe0d6bbce6ce74d5843a964ac231929ea37025e8
+
+-- 0.2.7 with an O(n log n) traverseWithKey (upstream is quadratic in the
+-- number of entries). We can't take 0.3 which changes the aeson instances.
+source-repository-package
+  type: git
+  location: https://github.com/hasura/insert-ordered-containers.git
+  tag: cdf4f82bc74b9950cb7e69ef2d0add9a8f397a71
+

@@ -1,0 +1,44 @@
+{
+  "nodes": {
+    "glab": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1795796951,
+        "narHash": "sha256-3h5PFSthjXO8l+l12LoboR0gjanKoO6BfZQEAINHDoM=",
+        "owner": "gitlab-org",
+        "repo": "cli",
+        "rev": "9858866c61b13bfdcb0551b407fa558c4c868d8a",
+        "type": "gitlab"
+      },
+      "original": {
+        "owner": "gitlab-org",
+        "repo": "cli",
+        "type": "gitlab"
+      }
+    },
+    "root": {
+      "inputs": {
+        "glab": "glab",
+        "scdoc": "scdoc"
+      }
+    },
+    "scdoc": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1783408017,
+        "narHash": "sha256-Tjafa7m+YcUTryYHnW2EF0yaXPRc3uNzWdeEucCdEso=",
+        "owner": "~sircmpwn",
+        "repo": "scdoc",
+        "rev": "24be30ef17d5ca0162f11b35258c8fa2413d556a",
+        "type": "sourcehut"
+      },
+      "original": {
+        "owner": "~sircmpwn",
+        "repo": "scdoc",
+        "type": "sourcehut"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

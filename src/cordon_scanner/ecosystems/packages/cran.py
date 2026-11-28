@@ -30,6 +30,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.launchers import NoLauncher
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -508,6 +509,9 @@ class CranEcosystem(BaseEcosystem):
     own_name = OwnName(("DESCRIPTION",))
     purl_type = "cran"
     published_archive = (CranArchive(),)
+    mcp_launch = NoLauncher(
+        "`install.packages` downloads a package and R then loads it: two steps, and R has no command that fetches a named release and runs it (https://cran.r-project.org/doc/manuals/r-release/R-admin.html)"
+    )
     manifest_globs: tuple[str, ...] = ("**/DESCRIPTION", "**/renv/settings.json", "**/PACKAGES")
     lockfile_globs: tuple[str, ...] = ("**/renv.lock",)
     registry_hosts: frozenset[str] = frozenset(

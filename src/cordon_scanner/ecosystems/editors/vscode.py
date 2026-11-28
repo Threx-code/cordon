@@ -32,6 +32,7 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.launchers import NoLauncher
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Scope
 
@@ -91,6 +92,9 @@ class VsCodeEcosystem(BaseEcosystem):
     )
     purl_type = "vscode-extension"
     published_archive = (VsixArchive(),)
+    mcp_launch = NoLauncher(
+        "an extension is installed into an editor (`code --install-extension`), which loads it itself; no command downloads one and runs it (https://code.visualstudio.com/docs/configure/command-line)"
+    )
     manifest_globs: tuple[str, ...] = (
         "**/.vscode/extensions.json",
         "**/*.code-workspace",
