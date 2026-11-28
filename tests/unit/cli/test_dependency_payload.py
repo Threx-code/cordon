@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 import cordon_scanner
-from cordon_scanner.cli.dependency_payload import RULE_ID, DependencyPayload, NpmRange
+from cordon_scanner.cli.dependency_payload import RULE_ID, DependencyPayload, EcosystemDependencies
 from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.models import Category, Confidence, Severity
 from cordon_scanner.foundation.results import OperationalFinding, ScanResult
@@ -47,7 +47,7 @@ class DependencyKit:
         )
 
 
-class TestNpmRanges:
+class TestNpmRangesThroughTheSharedPath:
     @pytest.mark.parametrize(
         ("spec", "accepted", "refused"),
         [
@@ -63,14 +63,13 @@ class TestNpmRanges:
         ],
     )
     def test_a_range_accepts_what_npm_would_and_no_more(self, spec, accepted, refused):
-        assert NpmRange.satisfies(accepted, spec) is True
-        assert NpmRange.satisfies(refused, spec) is False
+        assert EcosystemDependencies.admitted("npm", spec, [accepted, refused]) == [accepted]
 
     @pytest.mark.parametrize(
         "spec", ["git+https://example.test/a.git", "file:../a", "npm:other@1", "user/repo#main"]
     )
     def test_what_is_not_a_registry_range_is_not_resolved(self, spec):
-        assert NpmRange.satisfies("1.0.0", spec) is None
+        assert EcosystemDependencies.admitted("npm", spec, ["1.0.0"]) == []
 
 
 class TestResolution:
@@ -84,15 +83,21 @@ class TestResolution:
                 "devDependencies": {"c": "1"},
             },
         )
-        assert DependencyPayload.declared(target) == {"a": "^1.0.0", "b": "2"}
+        assert DependencyPayload.declared(target) == ("npm", {"a": "^1.0.0", "b": "2"})
 
     def test_the_highest_held_version_the_range_accepts_is_chosen(self, tmp_path):
         (tmp_path / "npm").mkdir()
         for version in ("1.0.0", "1.4.0", "2.0.0"):
             (tmp_path / "npm" / f"@s_a@{version}.tgz").write_bytes(b"")
-        found = DependencyPayload.from_store(tmp_path, "@s/a", "^1.0.0")
+        found = EcosystemDependencies.resolve("npm", "@s/a", "^1.0.0", tmp_path, tmp_path)
         assert found is not None and found.version == "1.4.0"
-        assert DependencyPayload.from_store(tmp_path, "@s/a", "^3.0.0") is None
+        assert EcosystemDependencies.resolve("npm", "@s/a", "^3.0.0", tmp_path, tmp_path) is None
+
+    def test_a_store_named_with_a_dash_is_read_too(self, tmp_path):
+        (tmp_path / "npm").mkdir()
+        (tmp_path / "npm" / "a-b-1.2.0.tgz").write_bytes(b"")
+        found = EcosystemDependencies.resolve("npm", "a-b", "^1.0.0", tmp_path, tmp_path)
+        assert found is not None and found.version == "1.2.0"
 
 
 class TestTheVerdict:
@@ -207,3 +212,89 @@ class TestAnUnreadDependency:
         assert result.content_gaps == (self.GAP,) and not result.complete
         assert PolicyGate.evaluate(result, Config.default().policy).exit_code is ExitCode.INCOMPLETE
         assert [(f.rule_id, f.location.path) for f in result.findings] == [self.GAP]
+
+
+class TestEveryEcosystem:
+    """A vehicle in any ecosystem: its declared dependencies are those the scan read from its own
+    manifest, each range is read in the ecosystem's own syntax, and the payload blocks the vehicle."""
+
+    @staticmethod
+    def declared(ecosystem: str, name: str, spec: str, scope=None):
+        from cordon_scanner.foundation.models import Scope
+        from cordon_scanner.foundation.results import Dependency
+
+        return Dependency(
+            purl=f"pkg:{ecosystem}/{name}",
+            ecosystem=ecosystem,
+            name=name,
+            version=None,
+            direct=True,
+            scope=scope or Scope.RUNTIME,
+            declared_spec=spec,
+            declared_in="vehicle-1.0.0.crate!vehicle-1.0.0/Cargo.toml",
+        )
+
+    def _scan(self, monkeypatch, tmp_path, dependencies, held):
+        store = tmp_path / "store" / "cargo"
+        store.mkdir(parents=True)
+        for filename in held:
+            (store / filename).write_bytes(b"crate")
+
+        def scan(self, target):
+            bad = Path(target).name == "payload@1.4.0.crate"
+            return ScanResult(
+                findings=(DependencyKit.finding("MALWARE.DROPPER.001"),) if bad else ()
+            )
+
+        monkeypatch.setattr(cordon_scanner.Scanner, "scan", scan)
+        target = tmp_path / "vehicle-1.0.0.crate"
+        target.write_bytes(b"crate")
+        return DependencyPayload.applied(
+            DependencyKit.args(tmp_path / "store"),
+            target,
+            ScanResult(dependencies=tuple(dependencies)),
+            Config.default(),
+            None,
+        )
+
+    def test_a_crate_whose_dependency_carries_the_payload_is_blocked(self, monkeypatch, tmp_path):
+        # Cargo reads the bare `1.2` as `^1.2`, so 1.4.0 is what an install resolves to.
+        result = self._scan(
+            monkeypatch,
+            tmp_path,
+            [self.declared("cargo", "payload", "1.2")],
+            ["payload@1.2.0.crate", "payload@1.4.0.crate", "payload@2.0.0.crate"],
+        )
+        added = [f for f in result.findings if f.rule_id == RULE_ID]
+        assert len(added) == 1 and "payload" in added[0].message
+
+    def test_a_range_that_does_not_admit_the_payload_release_is_not_blocked(
+        self, monkeypatch, tmp_path
+    ):
+        result = self._scan(
+            monkeypatch,
+            tmp_path,
+            [self.declared("cargo", "payload", "=1.2.0")],
+            ["payload@1.2.0.crate", "payload@1.4.0.crate"],
+        )
+        assert not any(f.rule_id == RULE_ID for f in result.findings)
+
+    def test_a_development_dependency_is_not_followed(self, monkeypatch, tmp_path):
+        from cordon_scanner.foundation.models import Scope
+
+        result = self._scan(
+            monkeypatch,
+            tmp_path,
+            [self.declared("cargo", "payload", "1.2", Scope.DEV)],
+            ["payload@1.4.0.crate"],
+        )
+        assert not any(f.rule_id == RULE_ID for f in result.findings)
+
+    def test_a_minimum_only_ecosystem_resolves_the_named_version(self) -> None:
+        from cordon_scanner.cli.dependency_payload import EcosystemDependencies
+
+        assert EcosystemDependencies.admitted("gomod", "v1.2.0", ["v1.2.0", "v1.9.0"]) == ["v1.2.0"]
+        assert EcosystemDependencies.admitted("cargo", "1.2", ["1.2.0", "1.9.0", "2.0.0"]) == [
+            "1.2.0",
+            "1.9.0",
+        ]
