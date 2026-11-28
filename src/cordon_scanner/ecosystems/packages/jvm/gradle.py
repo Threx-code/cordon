@@ -444,13 +444,10 @@ class GradleEcosystem(BaseEcosystem):
         if name == "gradle-wrapper.properties":
             return GradleWrapper.parse(content, self.id)
         if name == "libs.versions.toml":
-            catalog = GradleCatalog.load(content.text)
-            if catalog is None:
-                try:
-                    tomllib.loads(content.text)
-                except (tomllib.TOMLDecodeError, ValueError) as exc:
-                    return BaseEcosystem._err(content, self.id, f"invalid TOML: {exc}")
-                return BaseEcosystem._err(content, self.id, "not a version catalog")
+            try:
+                catalog = GradleCatalog(tomllib.loads(content.text))
+            except (tomllib.TOMLDecodeError, ValueError) as exc:
+                return BaseEcosystem._err(content, self.id, f"invalid TOML: {exc}")
             # A catalog says what is available, not what is used: an alias no build references is
             # not a dependency. Its entries are what `libs.<alias>` in the scripts resolve to.
             return Manifest(

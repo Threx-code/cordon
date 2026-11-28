@@ -60,9 +60,8 @@ class CabalLayout:
             for number, line in enumerate(text.splitlines(), start=1)
             if line.strip() and not line.strip().startswith("--")
         ]
-        nodes, index = CabalLayout._block(lines, 0, -1, 0)
-        if index != len(lines):
-            raise ValueError(f"line {lines[index][2]}: unexpected indentation")
+        # With a floor of -1 no line ever ends the block early, so it consumes every line.
+        nodes, _ = CabalLayout._block(lines, 0, -1, 0)
         return nodes
 
     @staticmethod

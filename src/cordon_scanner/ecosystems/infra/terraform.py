@@ -135,12 +135,9 @@ class HclLexer:
             elif char == '"':
                 index, value, literal = HclLexer.string(text, index)
                 out.append(("str" if literal else "template", value))
-            elif text.startswith("<<", index) and re.match(
-                r"<<-?[A-Za-z_][A-Za-z0-9_]*\n", text[index:]
+            elif text.startswith("<<", index) and (
+                heredoc := re.match(r"<<-?([A-Za-z_][A-Za-z0-9_]*)\n", text[index:])
             ):
-                heredoc = re.match(r"<<-?([A-Za-z_][A-Za-z0-9_]*)\n", text[index:])
-                if heredoc is None:
-                    raise HclError("a heredoc without its marker")
                 marker = heredoc.group(1)
                 closing = re.compile(rf"(?m)^[ \t]*{re.escape(marker)}[ \t]*$").search(
                     text, index + heredoc.end()

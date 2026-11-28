@@ -510,8 +510,6 @@ class NpmEcosystem(NpmProjects, NpmPackageCode, BaseEcosystem):
                 continue
             directory = NpmEcosystem._name_from_location(location)
             name = meta.get("name") or linked_as.get(location) or directory
-            if not name:
-                continue
             resolved = NpmEcosystem._str_or_none(meta.get("resolved"))
             edges: set[str] = set()
             for field in ("dependencies", "optionalDependencies", "peerDependencies"):

@@ -81,7 +81,9 @@ class Strings:
     def text(self, raw: memoryview, what: str) -> str:
         head = bytes(raw[:8])
         if len(head) < 8:
-            raise Malformed(f"{what}: a string cut short")
+            raise Malformed(
+                f"{what}: a string cut short"
+            )  # pragma: no cover - record widths give eight bytes
         if head[7] & 0x80:
             off, length = struct.unpack("<II", head)
             length &= 0x7FFFFFFF

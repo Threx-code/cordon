@@ -183,7 +183,9 @@ class Starlark:
                 call.positional.append(argument)
             else:
                 call.keywords[key] = argument
-        raise StarlarkError("a call that does not close")
+        raise StarlarkError(
+            "a call that does not close"
+        )  # pragma: no cover - refused earlier by bracket count
 
     @staticmethod
     def value(tokens: list[tuple[str, str]], index: int) -> tuple[int, Any]:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING, ClassVar
 
 from cordon_scanner.ecosystems.base import (
@@ -26,7 +25,6 @@ class Sexp:
     and `#;` datum comments."""
 
     MAX_DEPTH: ClassVar[int] = 64
-    ATOM: ClassVar[re.Pattern[str]] = re.compile(r'[^\s()";]+')
 
     @staticmethod
     def parse(text: str) -> list[object]:
@@ -74,11 +72,11 @@ class Sexp:
                 index += 1
                 Sexp._add(stack, skip_next, "".join(buffer))
             else:
-                found = Sexp.ATOM.match(text, index)
-                if not found:
-                    raise ValueError("an unreadable character")
-                Sexp._add(stack, skip_next, found.group(0))
-                index = found.end()
+                end = index
+                while end < length and not (text[end].isspace() or text[end] in '()";'):
+                    end += 1
+                Sexp._add(stack, skip_next, text[index:end])
+                index = end
         if len(stack) != 1:
             raise ValueError("a parenthesis that does not close")
         return stack[0]

@@ -395,8 +395,6 @@ class BeamTerms:
             if self.peek() == ",":
                 self.position += 1
                 continue
-            if self.peek() == "|" and closing == "]":
-                raise self.fail("an improper list is not data")
             self.expect(closing)
             return out
 
