@@ -553,7 +553,6 @@
  "src/cordon_scanner/intel/advisories/upstream/inference.py": 7,
  "src/cordon_scanner/intel/advisories/upstream/tags.py": 41,
  "src/cordon_scanner/intel/advisories/upstream/vcpkg.py": 102,
- "src/cordon_scanner/intel/advisories/upstream_advisories.py": 115,
  "src/cordon_scanner/intel/advisories/versions.py": 7,
  "src/cordon_scanner/intel/base.py": 1,
  "src/cordon_scanner/intel/malware/atr.py": 15,
