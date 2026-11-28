@@ -110,11 +110,11 @@ Scan a directory, file or archive.
 │                           or binaries. With --online and a published npm   │
 │                           or PyPI artefact, the previous release is        │
 │                           fetched from the registry instead                │
-│ --dependency-store DIR    a directory of npm archives                      │
-│                           (npm/<name>@<version>.tgz, a scope's / written   │
-│                           _) to resolve the scanned package's declared     │
-│                           dependencies from; each is scanned, and one      │
-│                           whose own content is malicious blocks this       │
+│ --dependency-store DIR    a directory of package archives                  │
+│                           (<ecosystem>/<name>@<version>.<suffix>, a /      │
+│                           written _) to resolve the scanned package's      │
+│                           declared dependencies from; each is scanned, and │
+│                           one whose own content is malicious blocks this   │
 │                           package (MALWARE.DEPENDENCY.PAYLOAD.001). With   │
 │                           --online the registry is asked instead           │
 │ --allow-network           permit the one network operation there is:       │
