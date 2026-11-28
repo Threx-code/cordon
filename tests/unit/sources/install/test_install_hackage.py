@@ -24,19 +24,23 @@ NOW = datetime(2026, 11, 27, tzinfo=UTC)
 AESON_SHA = "cfdc301326d363074cbed14b4e3a853a3b7e22e75b649d49992f37439b851cee"
 
 
-def signed() -> tuple[bytes, bytes, bytes]:
-    return tuple((CAPTURES / f"{n}.json").read_bytes() for n in ("root", "timestamp", "snapshot"))  # type: ignore[return-value]
+class Helpers:
+    @staticmethod
+    def signed() -> tuple[bytes, bytes, bytes]:
+        return tuple(
+            (CAPTURES / f"{n}.json").read_bytes() for n in ("root", "timestamp", "snapshot")
+        )  # type: ignore[return-value]
 
 
 class TestTheSignedChain:
     def test_the_real_chain_states_the_index_it_describes(self) -> None:
-        facts = HackageTrust.index(*signed(), now=NOW)
+        facts = HackageTrust.index(*Helpers.signed(), now=NOW)
         assert facts == IndexFacts(
             1058028032, "4da064b39a767e2681ff596d690b24ffd2b8509d57992860c35792abe02b6e33"
         )
 
     def test_a_snapshot_the_timestamp_does_not_describe_is_refused(self) -> None:
-        root, stamp, shot = signed()
+        root, stamp, shot = Helpers.signed()
         with pytest.raises(
             InstallRefused, match=r"not the file Hackage's timestamp\.json describes"
         ):
@@ -44,17 +48,17 @@ class TestTheSignedChain:
 
     def test_an_expired_timestamp_is_refused(self) -> None:
         with pytest.raises(InstallRefused, match=r"timestamp\.json expired"):
-            HackageTrust.index(*signed(), now=datetime(2026, 12, 5, tzinfo=UTC))
+            HackageTrust.index(*Helpers.signed(), now=datetime(2026, 12, 5, tzinfo=UTC))
 
     def test_a_root_the_pinned_keys_did_not_sign_is_refused(self) -> None:
-        root, stamp, shot = signed()
+        root, stamp, shot = Helpers.signed()
         with pytest.raises(InstallRefused, match=r"not signed by 3 of the six root keys"):
             HackageTrust.index(
                 root.replace(b"2027-07-31T23", b"2027-07-30T23"), stamp, shot, now=NOW
             )
 
     def test_a_timestamp_with_a_changed_signed_part_is_refused(self) -> None:
-        root, stamp, shot = signed()
+        root, stamp, shot = Helpers.signed()
         changed = stamp.replace(b'"version":112725', b'"version":112726')
         assert changed != stamp
         with pytest.raises(InstallRefused, match="not signed by the timestamp key"):
@@ -124,12 +128,14 @@ class TestTheFreeze:
         return lambda wanted: HackageIndex.targets(path, wanted)
 
     def test_the_real_freeze_pins_424_releases(self) -> None:
-        pinned = HackagePlanner.pinned((CAPTURES / "cabal.project.freeze").read_text())
+        pinned = HackagePlanner.pinned(
+            (CAPTURES / "cabal.project.freeze").read_text(encoding="utf-8")
+        )
         assert len(pinned) == 424
         assert ("aeson", "2.3.0.0") in pinned
 
     def test_a_release_the_signed_index_holds_no_hash_for_is_refused(self, tmp_path: Path) -> None:
-        text = (CAPTURES / "cabal.project.freeze").read_text()
+        text = (CAPTURES / "cabal.project.freeze").read_text(encoding="utf-8")
         with pytest.raises(
             InstallRefused, match=r"kriti-lang-0\.3\.3: the signed Hackage index holds no SHA-256"
         ):
@@ -140,7 +146,7 @@ class TestTheFreeze:
     ) -> None:
         lines = [
             line
-            for line in (CAPTURES / "cabal.project.freeze").read_text().splitlines()
+            for line in (CAPTURES / "cabal.project.freeze").read_text(encoding="utf-8").splitlines()
             if not any(f"any.{n} ==" in line for n in ("kriti-lang", "libdeflate-hs", "odbc"))
         ]
         plan = HackagePlanner.files("\n".join(lines), self.hashes(tmp_path))

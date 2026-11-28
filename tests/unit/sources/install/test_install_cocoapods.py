@@ -20,17 +20,19 @@ PODSPEC_URL = "https://cdn.cocoapods.org/Specs/a/7/5/AFNetworking/2.7.0/AFNetwor
 COMMIT = "ca22646f5a8449795fba3d3436a045da0aeb5949"
 
 
-def lock(name: str) -> str:
-    return (CAPTURES / f"{name}.Podfile.lock").read_text(encoding="utf-8")
+class Helpers:
+    @staticmethod
+    def lock(name: str) -> str:
+        return (CAPTURES / f"{name}.Podfile.lock").read_text(encoding="utf-8")
 
-
-def cdn(tamper: bool = False):
-    data = (CAPTURES / "AFNetworking-2.7.0.podspec.json").read_bytes()
-    return lambda url: (
-        (data + b" " if tamper else data)
-        if url == PODSPEC_URL
-        else pytest.fail(f"unexpected fetch {url}")
-    )
+    @staticmethod
+    def cdn(tamper: bool = False):
+        data = (CAPTURES / "AFNetworking-2.7.0.podspec.json").read_bytes()
+        return lambda url: (
+            (data + b" " if tamper else data)
+            if url == PODSPEC_URL
+            else pytest.fail(f"unexpected fetch {url}")
+        )
 
 
 class TestTheLock:
@@ -38,7 +40,7 @@ class TestTheLock:
         self, tmp_path: Path
     ) -> None:
         with pytest.raises(InstallRefused, match="git tag") as refused:
-            CocoaPodsPlanner.files(lock("afnetworking"), tmp_path, cdn())
+            CocoaPodsPlanner.files(Helpers.lock("afnetworking"), tmp_path, Helpers.cdn())
         # the podspec was the right one (else the refusal would be about the checksum), and the tag is refused
         assert "not the one" not in str(refused.value)
 
@@ -46,7 +48,7 @@ class TestTheLock:
         self, tmp_path: Path
     ) -> None:
         with pytest.raises(InstallRefused) as refused:
-            CocoaPodsPlanner.files(lock("afnetworking"), tmp_path, cdn())
+            CocoaPodsPlanner.files(Helpers.lock("afnetworking"), tmp_path, Helpers.cdn())
         text = str(refused.value)
         assert "AFNetworking 2.7.0" in text
         assert (
@@ -58,10 +60,10 @@ class TestTheLock:
         with pytest.raises(
             InstallRefused, match=r"not the one Podfile\.lock's SPEC CHECKSUMS pins"
         ):
-            CocoaPodsPlanner.files(lock("afnetworking"), tmp_path, cdn(tamper=True))
+            CocoaPodsPlanner.files(Helpers.lock("afnetworking"), tmp_path, Helpers.cdn(tamper=True))
 
     def test_a_git_pod_is_held_to_the_commit_of_its_checkout_options(self, tmp_path: Path) -> None:
-        plan = CocoaPodsPlanner.files(lock("interstellar"), tmp_path, cdn())
+        plan = CocoaPodsPlanner.files(Helpers.lock("interstellar"), tmp_path, Helpers.cdn())
         (file,) = plan.files
         assert (file.name, file.algorithm, file.digest.hex()) == (
             "Interstellar",
@@ -76,21 +78,23 @@ class TestTheLock:
         with pytest.raises(
             InstallRefused, match=r"podspec at https://raw\.githubusercontent\.com/braze-inc"
         ):
-            CocoaPodsPlanner.files(lock("braze"), tmp_path, cdn())
+            CocoaPodsPlanner.files(Helpers.lock("braze"), tmp_path, Helpers.cdn())
 
     def test_a_path_pod_inside_the_project_is_its_own_code_and_outside_it_is_refused(
         self, tmp_path: Path
     ) -> None:
         (tmp_path / "build" / "rndeps-facades" / "boost").mkdir(parents=True)
-        plan = CocoaPodsPlanner.files(lock("boost"), tmp_path, cdn())
+        plan = CocoaPodsPlanner.files(Helpers.lock("boost"), tmp_path, Helpers.cdn())
         assert plan.local == [(tmp_path / "build" / "rndeps-facades" / "boost").resolve()]
-        outside = lock("boost").replace("build/rndeps-facades/boost", "../node_modules/boost")
+        outside = Helpers.lock("boost").replace(
+            "build/rndeps-facades/boost", "../node_modules/boost"
+        )
         with pytest.raises(InstallRefused, match="outside this project"):
-            CocoaPodsPlanner.files(outside, tmp_path, cdn())
+            CocoaPodsPlanner.files(outside, tmp_path, Helpers.cdn())
 
     def test_no_lock_is_refused(self, tmp_path: Path) -> None:
         with pytest.raises(InstallRefused, match=r"no Podfile\.lock"):
-            CocoaPodsPlanner.plan(["install"], tmp_path, cdn())
+            CocoaPodsPlanner.plan(["install"], tmp_path, Helpers.cdn())
 
 
 class TestTheCommandLine:
@@ -109,9 +113,9 @@ class TestTheCommandLine:
         assert CocoaPodsPlanner.installs(args) is installs
 
     def test_pod_update_is_refused(self, tmp_path: Path) -> None:
-        (tmp_path / "Podfile.lock").write_text(lock("interstellar"), encoding="utf-8")
+        (tmp_path / "Podfile.lock").write_text(Helpers.lock("interstellar"), encoding="utf-8")
         with pytest.raises(InstallRefused, match="chooses pod versions"):
-            CocoaPodsPlanner.plan(["update"], tmp_path, cdn())
+            CocoaPodsPlanner.plan(["update"], tmp_path, Helpers.cdn())
 
     def test_cocoapods_keeps_to_the_lock_too(self) -> None:
         assert CocoaPodsPlanner.arguments(["install", "--verbose"]) == [

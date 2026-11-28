@@ -1,4 +1,4 @@
-"""Bazel through Cordon (`sources/install/managers/bazel.py`, `cli/commands/install/bazel.py`), on real registry files.
+"""Bazel through Cordon (`sources/install/managers/bazel.py`, `cli/commands/install/locked/bazel.py`), on real registry files.
 
 `bazel_captures/` holds the bytes bcr.bazel.build serves for two modules (each file's sha256 is the one in the real MODULE.bazel.lock of
 the bazelbuild/bazel repository) and a lock cut from that real lock: those four registry entries and one real module extension's

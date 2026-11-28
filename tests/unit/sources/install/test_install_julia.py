@@ -1,4 +1,4 @@
-"""Julia through Cordon (`sources/install/managers/julia.py`, `cli/commands/install/julia.py`), on a real manifest.
+"""Julia through Cordon (`sources/install/managers/julia.py`, `cli/commands/install/locked/julia.py`), on a real manifest.
 
 `julia_captures/` holds the Manifest.toml and Project.toml of SciML/LinearSolve.jl (296 packages, 248 with a tree hash, the rest standard
 libraries) and the Pkg server's tarball of JSON 1.13.4 (its tree hash is the one General's Versions.toml records for that release)."""
