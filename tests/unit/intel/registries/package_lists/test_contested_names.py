@@ -44,9 +44,9 @@ class TestAnInflatedSquatIsNotAllowlisted:
         ],
     )
     def test_a_young_look_alike_is_refused_whatever_its_downloads(self, squat: str) -> None:
-        # 1/10 of the target's downloads: far past the ratio a squat used to need.
+        # 1/20 of the target's downloads: far past the 1/1000 a squat used to need, short of a tenth.
         kept, refused, _ = ContestedHelpers.run(
-            [("lodash", 10_000_000), (squat, 1_000_000)], {squat: YOUNG}
+            [("lodash", 10_000_000), (squat, 500_000)], {squat: YOUNG}
         )
         assert kept == ["lodash"]
         assert refused == [f"{squat} ~ lodash (contested; not 2 years old)"]
@@ -68,6 +68,12 @@ class TestAnInflatedSquatIsNotAllowlisted:
 
 
 class TestRealNeighboursStay:
+    def test_a_young_sibling_with_a_tenth_of_the_traffic_is_kept_without_asking(self) -> None:
+        kept, refused, asked = ContestedHelpers.run(
+            [("nvidia-nccl-cu12", 30_000_000), ("nvidia-nccl-cu13", 3_000_000)], {}, "pypi"
+        )
+        assert "nvidia-nccl-cu13" in kept and refused == [] and asked == []
+
     def test_an_old_look_alike_is_kept(self) -> None:
         kept, refused, _ = ContestedHelpers.run(
             [("chardet", 50_000_000), ("cchardet", 2_000_000)], {"cchardet": OLD}, "pypi"

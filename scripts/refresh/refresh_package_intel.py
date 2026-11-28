@@ -1188,8 +1188,9 @@ class PackageIntelRefresh:
         A ratio alone can be bought: a squat whose downloads are inflated past a thousandth of its
         target's clears it. So a name that is ANY slip of a more popular one -- a letter changed,
         added, dropped, a separator moved, as well as the three kinds above under the ratio -- is
-        contested, and stays only if a reviewer kept it (`KEEP_DESPITE_SHAPE`) or the registry says it
-        was first published at least `CONTESTED_MIN_YEARS` ago. Inflated squats are young; the real
+        contested, and stays only if a reviewer kept it (`KEEP_DESPITE_SHAPE`), it has at least a tenth of
+        its look-alike's downloads (`CONTESTED_MAX_RATIO`), or the registry says it was first published at
+        least `CONTESTED_MIN_YEARS` ago. Inflated squats are young; the real
         neighbours that made the ratio necessary (`cchardet`, `pyaml`, `bitvec`) are years old. A
         contested name whose age cannot be read is refused: it stays reportable, which is the safe
         side. Only contested names cost a request.
@@ -1242,7 +1243,11 @@ class PackageIntelRefresh:
                 kept.append(name)
             elif squat is not None:
                 refused.append(f"{name} ~ {squat}")
-            elif PackageIntelRefresh._old_enough(name, first_published, cutoff):
+            elif accepted[
+                contested
+            ] <= downloads * CONTESTED_MAX_RATIO or PackageIntelRefresh._old_enough(
+                name, first_published, cutoff
+            ):
                 accepted[name] = downloads
                 PackageIntelRefresh.index_neighbour(neighbours, name)
                 kept.append(name)
@@ -1591,6 +1596,12 @@ MIN_DOWNLOAD_RATIO = 1_000
 #: A name that resembles a more popular one stays on the allowlist only if the registry says it is at
 #: least this old (or a reviewer kept it): download counts can be inflated, a first-publish date cannot.
 CONTESTED_MIN_YEARS = 2
+
+#: ...or has at least a tenth of its look-alike's downloads. Inflating a squat to a tenth of a popular package's
+#: real traffic is costly and conspicuous; a project's own new sibling (`nvidia-nccl-cu13` beside `-cu12`, Google's
+#: `google-adk` beside `google-ads`) reaches it. Measured on the first refresh with ages: without it, 564 crates and 59
+#: PyPI names were refused, most of them real.
+CONTESTED_MAX_RATIO = 10
 
 #: Below this, a resemblance carries no information, so refusing on one cannot
 #: either. Matches `MIN_NAME_LENGTH` in the detector, which will not compare names

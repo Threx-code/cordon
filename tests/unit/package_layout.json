@@ -1787,6 +1787,7 @@
   "test_rule_pack.py": "detect/binary",
   "test_pe.py": "detect/binary/modules",
   "test_signature.py": "detect/binary/modules",
+  "test_signature_damage.py": "detect/binary/modules",
   "test_tables.py": "detect/binary/modules",
   "test_tlsh.py": "detect/binary/modules",
   "test_vt.py": "detect/binary/modules",
