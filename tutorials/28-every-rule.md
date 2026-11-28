@@ -2,7 +2,7 @@
 
 > **For Cordon 0.7.0.** Using another version? Open the tutorials at its tag: `https://github.com/Threx-code/cordon/tree/v<version>/tutorials`. `cordon-scanner --help` prints the link for the version you have installed.
 
-All 1,844 detection rules Cordon defines itself, grouped by what they watch, with the
+All 1,845 detection rules Cordon defines itself, grouped by what they watch, with the
 severity each reports at, and after them every Agent Threat Rule it carries. Rendered from the detectors and rule packs themselves. `cordon-scanner rules
 show <id>` prints one in full, with its remediation and references; `rules test` runs every
 rule's own samples.
@@ -2181,7 +2181,7 @@ rule's own samples.
 
 ## Release
 
-7 rules.
+8 rules.
 
 | Rule | Severity | What it catches |
 |---|---|---|
@@ -2192,6 +2192,7 @@ rule's own samples.
 | `SUSPECT.RELEASE.NEW_OBFUSCATION.001` | high | This release ships obfuscated code where the previous shipped none |
 | `SUSPECT.RELEASE.NEW_PUBLISHER.001` | medium | This release was published by a different account than the previous one |
 | `SUSPECT.RELEASE.NEW_YOUNG_DEPENDENCY.001` | medium | This release adds a dependency that was itself published days ago |
+| `SUSPECT.RELEASE.TAKEOVER_HOLD.001` | high | A days-old release of an established package changed who publishes it or how |
 
 ## Reverse Shell
 

@@ -546,6 +546,27 @@ class CollectionSignatureQueries(Protocol):
     ) -> CollectionCheck: ...
 
 
+class PublishedRelease(Protocol):
+    """One release as its registry states it: the version, when it was published, and by which account."""
+
+    @property
+    def version(self) -> str: ...
+    @property
+    def published(self) -> datetime: ...
+    @property
+    def publisher(self) -> str: ...
+
+
+class ReleaseLedgerQueries(Protocol):
+    """What a detector uses of the class `ArchiveFetch` to read a name's release history."""
+
+    def releases(self, ecosystem: str, name: str, version: str) -> Sequence[PublishedRelease]: ...
+
+    def previous_release(
+        self, ecosystem: str, name: str, version: str
+    ) -> PublishedRelease | None: ...
+
+
 class ReleaseAgeQueries(Protocol):
     """What a detector uses of the class `RegistryClient` to ask how old a release is."""
 
