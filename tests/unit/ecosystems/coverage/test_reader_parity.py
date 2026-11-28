@@ -43,18 +43,9 @@ class Parity:
     NAMES_NONE: ClassVar[dict[str, str]] = {
         "**/*.tfvars": "a Terraform variables file sets values; providers and modules are named in the .tf files",
     }
-    #: Files that name images (a CI job's `image:`/`services:`, a pipeline's docker agent, a Kubernetes manifest's
-    #: `image:`) the image ecosystem does not read yet: each fails loudly once it does, until it comes off.
-    BUILDING: ClassVar[frozenset[str]] = frozenset(
-        {
-            "**/.gitlab-ci.yml", "**/.gitlab-ci.yaml", "**/Jenkinsfile", "**/Jenkinsfile.*",
-            "**/azure-pipelines.yml", "**/azure-pipelines.yaml", "**/.azure-pipelines/*.yml",
-            "**/.circleci/config.yml", "**/.circleci/config.yaml", "**/bitbucket-pipelines.yml",
-            "**/.buildkite/*.yml", "**/.buildkite/*.yaml", "**/cloudbuild.yaml", "**/cloudbuild.yml",
-            "**/.drone.yml", "**/.woodpecker.yml", "**/*.k8s.yaml", "**/helm/**/*.yaml",
-            "**/charts/**/*.yaml", "**/base/**/*.yaml",
-        }
-    )  # fmt: skip
+    #: Files a rule reads that the owner does not read yet: each fails loudly once it does, until it comes off. None now:
+    #: the image adapter reads every CI pipeline file and chart-folder manifest (`CiFiles`).
+    BUILDING: ClassVar[frozenset[str]] = frozenset()
 
     @staticmethod
     def sample(glob: str) -> str:
