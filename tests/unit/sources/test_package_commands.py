@@ -8,8 +8,6 @@ disk -- its comments, its layout, and that it still loads.
 from __future__ import annotations
 
 import argparse
-import base64
-import hashlib
 import io
 import json
 import os
@@ -32,14 +30,13 @@ from cordon_scanner.foundation.config.policy import OrgConstraints
 from cordon_scanner.foundation.errors import ConfigError, ExitCode
 from cordon_scanner.foundation.models import Category, Suppression
 from cordon_scanner.intel.registries import registry_client, registry_request
-from cordon_scanner.intel.registries.more_registries import MoreRegistries
+from cordon_scanner.intel.registries.archive_sources.table import ArchiveSources
 from cordon_scanner.intel.registries.registry_client import (
     PackageArchive,
     PackageFacts,
     RegistryClient,
     RegistryError,
 )
-from cordon_scanner.intel.registries.registry_request import RegistryRequest
 from cordon_scanner.sources.package import PackageTarget, PackageTargetError
 
 TODAY = date(2026, 10, 3)
@@ -59,6 +56,38 @@ class PackageHelpers:
         return buffer.getvalue()
 
 
+class TestEveryEcosystemHasAPackageUrlOrAReason:
+    def test_each_ecosystem_is_a_type_or_has_its_reason(self) -> None:
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+        named = set(PackageTarget.TYPES.values()) | set(PackageTarget.NOT_PURL_TYPES)
+        assert set(EcosystemRegistry.BY_ID) | {"vscode"} <= named
+
+    def test_a_reason_is_for_an_ecosystem_that_is_no_type(self) -> None:
+        assert not set(PackageTarget.NOT_PURL_TYPES) & set(PackageTarget.TYPES.values())
+        assert all(
+            len(why) >= 60 and why.endswith(".") for why in PackageTarget.NOT_PURL_TYPES.values()
+        )
+
+    def test_a_target_reaches_the_verified_archive_of_its_ecosystem(self, monkeypatch) -> None:
+        from cordon_scanner.intel.base import PackageArchive
+        from cordon_scanner.intel.registries.archive_sources.table import ArchiveSources
+
+        asked = []
+
+        def archive(ecosystem, name, version):
+            asked.append((ecosystem, name, version))
+            return PackageArchive(
+                ecosystem, name, str(version), "x.vsix", b"PK\x05\x06" + b"\0" * 18
+            )
+
+        monkeypatch.setattr(ArchiveSources, "package_archive", staticmethod(archive))
+        target = PackageTarget.parse("pkg:vscode-extension/ms-python/python@2024.0.0")
+        with target.fetched() as path:
+            assert path.name.endswith(".vsix")
+        assert asked == [("vscode", "ms-python.python", "2024.0.0")]
+
+
 class TestParsingPackageUrls:
     @pytest.mark.parametrize(
         "purl, expected",
@@ -73,6 +102,31 @@ class TestParsingPackageUrls:
             ("pkg:gem/rack@3.1.6", ("rubygems", "rack", "3.1.6")),
             ("pkg:nuget/Newtonsoft.Json@13.0.1", ("nuget", "Newtonsoft.Json", "13.0.1")),
             ("pkg:PyPI/six@1.16.0", ("pypi", "six", "1.16.0")),
+            ("pkg:githubactions/actions/checkout@v4", ("actions", "actions/checkout", "v4")),
+            ("pkg:ansible/community/general@8.0.0", ("ansible", "community.general", "8.0.0")),
+            ("pkg:bazel/rules_cc@0.0.9", ("bazel", "rules_cc", "0.0.9")),
+            ("pkg:cocoapods/Alamofire@5.8.0", ("cocoapods", "Alamofire", "5.8.0")),
+            ("pkg:composer/monolog/monolog@3.5.0", ("composer", "monolog/monolog", "3.5.0")),
+            ("pkg:conan/zlib@1.3", ("conan", "zlib", "1.3")),
+            ("pkg:conda/numpy@1.26.0", ("conda", "numpy", "1.26.0")),
+            ("pkg:cran/ggplot2@3.4.4", ("cran", "ggplot2", "3.4.4")),
+            ("pkg:hackage/aeson@2.2.0.0", ("hackage", "aeson", "2.2.0.0")),
+            ("pkg:helm/bitnami/nginx@15.0.0", ("helm", "bitnami/nginx", "15.0.0")),
+            ("pkg:brew/libyaml@0.2.5", ("homebrew", "libyaml", "0.2.5")),
+            ("pkg:julia/JSON@0.21.4", ("julia", "JSON", "0.21.4")),
+            ("pkg:nix/nixos/nixpkgs@24.05", ("nix", "nixos/nixpkgs", "24.05")),
+            ("pkg:opam/dune@3.12.0", ("opam", "dune", "3.12.0")),
+            ("pkg:swift/apple/swift-log@1.5.0", ("swift", "apple/swift-log", "1.5.0")),
+            ("pkg:terraform/hashicorp/aws@5.0.0", ("terraform", "hashicorp/aws", "5.0.0")),
+            ("pkg:vcpkg/zlib@1.3", ("vcpkg", "zlib", "1.3")),
+            (
+                "pkg:vscode-extension/ms-python/python@2024.0.0",
+                ("vscode", "ms-python.python", "2024.0.0"),
+            ),
+            (
+                "pkg:maven/org.apache.commons/commons-lang3@3.14.0",
+                ("maven", "org.apache.commons:commons-lang3", "3.14.0"),
+            ),
         ],
     )
     def test_supported_forms(self, purl, expected) -> None:
@@ -84,7 +138,10 @@ class TestParsingPackageUrls:
         [
             ("pkg:npm/left-pad@1.3.0?repository_url=https://evil.example", "qualifiers"),
             ("pkg:npm/left-pad@1.3.0#lib/index.js", "qualifiers"),
-            ("pkg:conan/zlib@1.3", "cannot fetch"),
+            ("pkg:deb/debian/curl@7.88", "cannot fetch"),
+            ("pkg:ansible/acme@1.0", "namespace and name"),
+            ("pkg:vscode-extension/ms-python@1.0", "namespace and name"),
+            ("pkg:conan/a/b/c@1.0", "not a valid"),
             ("pkg:npm/", "not a valid"),
             ("pkg:pypi/a/b@1.0", "not a valid"),
             ("pkg:npm/../../etc/passwd@1", "not a valid"),
@@ -121,7 +178,7 @@ class TestFetchingAndScanning:
                     raise result
                 return result
 
-            monkeypatch.setattr(RegistryClient, "package_archive", staticmethod(fake))
+            monkeypatch.setattr(ArchiveSources, "package_archive", staticmethod(fake))
 
         return install
 
@@ -160,7 +217,7 @@ class TestFetchingAndScanning:
         assert "--online" in capsys.readouterr().err
 
     def test_a_malformed_package_url_is_a_usage_error(self, capsys) -> None:
-        assert CommandLine.run(["scan", "pkg:conan/zlib@1", "--online"]) == 3
+        assert CommandLine.run(["scan", "pkg:deb/x@1", "--online"]) == 3
 
     def test_a_package_that_cannot_be_fetched_is_never_clean(self, archive, capsys) -> None:
         archive(RegistryError("registry.npmjs.org has no package by that name"))
@@ -191,77 +248,6 @@ class TestFetchingAndScanning:
         assert any(f["rule_id"].startswith(("MALWARE.", "SUSPECT.")) for f in report["findings"])
 
 
-class TestVerifiedArchivesForMoreRegistries:
-    @pytest.fixture
-    def serve(self, monkeypatch):
-        def install(facts: PackageFacts, body: bytes) -> list[str]:
-            fetched: list[str] = []
-            monkeypatch.setattr(MoreRegistries, "facts", staticmethod(lambda e, n, v: facts))
-
-            def fetch(url, ecosystem):
-                fetched.append(url)
-                return body
-
-            monkeypatch.setattr(RegistryRequest, "fetch_bytes", staticmethod(fetch))
-            return fetched
-
-        return install
-
-    def test_a_crate_matching_its_checksum(self, serve) -> None:
-        body = b"crate-bytes"
-        fetched = serve(
-            PackageFacts(
-                name="serde", version="1.0.0", digests=(hashlib.sha256(body).hexdigest(),)
-            ),
-            body,
-        )
-        archive = MoreRegistries.archive("cargo", "serde", "1.0.0")
-        assert archive.filename == "serde-1.0.0.crate" and archive.data == body
-        assert fetched == ["https://static.crates.io/crates/serde/serde-1.0.0.crate"]
-
-    def test_a_gem_that_does_not_match_is_refused(self, serve) -> None:
-        serve(PackageFacts(name="rack", version="3.1.6", digests=("ab" * 32,)), b"tampered")
-        with pytest.raises(RegistryError, match="does not match"):
-            MoreRegistries.archive("rubygems", "rack", "3.1.6")
-
-    def test_a_nupkg_is_verified_against_the_catalog_sha512(self, serve) -> None:
-        body = b"nupkg-bytes"
-        digest = "sha512-" + base64.b64encode(hashlib.sha512(body).digest()).decode()
-        fetched = serve(
-            PackageFacts(name="Newtonsoft.Json", version="13.0.1", digests=(digest,)), body
-        )
-        archive = MoreRegistries.archive("nuget", "Newtonsoft.Json", "13.0.1")
-        assert archive.filename == "newtonsoft.json.13.0.1.nupkg"
-        assert fetched == [
-            "https://api.nuget.org/v3-flatcontainer/newtonsoft.json/13.0.1/newtonsoft.json.13.0.1.nupkg"
-        ]
-
-    def test_nothing_to_verify_against_is_a_refusal_not_a_pass(self, serve) -> None:
-        fetched = serve(PackageFacts(name="serde", version="1.0.0"), b"x")
-        with pytest.raises(RegistryError, match="nothing to verify against"):
-            MoreRegistries.archive("cargo", "serde", "1.0.0")
-        assert fetched == []
-
-    def test_the_latest_is_resolved_when_no_version_is_named(self, serve) -> None:
-        body = b"x"
-        serve(
-            PackageFacts(
-                name="serde",
-                version=None,
-                latest="1.0.229",
-                digests=(hashlib.sha256(body).hexdigest(),),
-            ),
-            body,
-        )
-        assert MoreRegistries.archive("cargo", "serde", None).version == "1.0.229"
-
-    def test_archive_hosts_are_confined_per_registry(self) -> None:
-        with pytest.raises(RegistryError, match="allowlist"):
-            RegistryClient._fetch_bytes("https://evil.example/serde.crate", "cargo")
-        with pytest.raises(RegistryError, match="allowlist"):
-            RegistryClient._fetch_bytes("http://static.crates.io/serde.crate", "cargo")
-
-
 class TestLargeRegistryDocuments:
     def test_a_gzip_body_is_expanded(self) -> None:
         import gzip
@@ -284,26 +270,6 @@ class TestLargeRegistryDocuments:
         # the packages people install most.
         assert registry_client.MAX_RESPONSE_BYTES >= 40 << 20
         assert registry_request.MAX_RESPONSE_BYTES == registry_client.MAX_RESPONSE_BYTES
-
-    def test_a_pinned_npm_archive_reads_only_the_version_document(self, monkeypatch) -> None:
-        body = b"tarball"
-        integrity = "sha512-" + base64.b64encode(hashlib.sha512(body).digest()).decode()
-        asked: list[str] = []
-
-        def fetch(url, **kwargs):
-            asked.append(url)
-            return {
-                "version": "1.0.0",
-                "dist": {
-                    "tarball": "https://registry.npmjs.org/demo/-/demo-1.0.0.tgz",
-                    "integrity": integrity,
-                },
-            }
-
-        monkeypatch.setattr(RegistryClient, "_fetch", staticmethod(fetch))
-        monkeypatch.setattr(RegistryClient, "_fetch_bytes", staticmethod(lambda url, eco: body))
-        archive = RegistryClient._npm_archive("@scope/demo", "1.0.0")
-        assert asked == ["https://registry.npmjs.org/@scope/demo/1.0.0"] and archive.data == body
 
 
 class TestSuppressionFile:
@@ -596,3 +562,9 @@ class TestCompletion:
     def test_the_cli_prints_it(self, capsys) -> None:
         assert CommandLine.run(["completion", "bash"]) == 0
         assert "complete -F _cordon_scanner cordon-scanner" in capsys.readouterr().out
+
+
+class TestImagePackageUrl:
+    def test_an_invalid_image_reference_is_refused(self) -> None:
+        with pytest.raises(PackageTargetError, match="not a valid image reference"):
+            PackageTarget.parse("pkg:docker/UPPER/Case@1.0")

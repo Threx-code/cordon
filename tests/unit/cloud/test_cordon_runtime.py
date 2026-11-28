@@ -408,3 +408,72 @@ class TestARevokedDigestIsNeverServedFromACache:
         runtime = self.runtime(tmp_path, calls, set())
         outcome = self.ask(runtime, "ci_gate")
         assert outcome.decision.state != "ALLOW"
+
+
+class SpyStore(LocalStore):
+    """A store that records the keys under which scan evidence is kept."""
+
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.scan_keys: list[str] = []
+
+    def keep_scan(self, key: str, evidence: dict[str, Any]) -> None:
+        self.scan_keys.append(key)
+        super().keep_scan(key, evidence)
+
+
+class TestTenantsShareTheAnalysisAndNeverTheDecision:
+    """BP-22-8, code part: the decision's key includes the policy's sha, so no decision is shared across tenants; the analysis of a public digest is
+    kept under a key with neither a policy nor a tenant in it, so it is."""
+
+    SUSPICIOUS = FindingFact(
+        rule_id="SUSPECT.X.001", severity="high", confidence="high", category="suspicious"
+    )
+
+    def tenant(
+        self, root: Path, rules: list[dict[str, Any]] | None
+    ) -> tuple[CordonRuntime, SpyStore]:
+        calls = Calls()
+        calls.scan_answer = ScanEvidence(findings=(self.SUSPICIOUS,))
+        platform, store = Platform(), SpyStore(root)
+        local = Kit.runtime(platform, store)
+        expires = T0 + timedelta(days=2)
+        policy = Kit.compiled(1, expires, on_incomplete=LEVELS, rules=rules)
+        local.accept([platform.publish(policy, issued=T0, expires=expires)], T0)
+        return CordonRuntime(
+            local, resolvers={"ci_action": Calls.resolver}, sources=calls.sources()
+        ), store
+
+    def test_two_policies_give_two_keys_for_the_same_question(self, tmp_path: Path) -> None:
+        lenient, _ = self.tenant(tmp_path / "a", None)
+        strict, _ = self.tenant(tmp_path / "b", DENY)
+        one, two = World.run(lenient), World.run(strict)
+        assert one.decision.inputs_digest != two.decision.inputs_digest
+        assert one.decision.policy.sha256 != two.decision.policy.sha256
+        assert (one.decision.state, two.decision.state) == ("ALLOW", "BLOCK")
+
+    def test_the_same_policy_gives_the_same_key(self, tmp_path: Path) -> None:
+        first, _ = self.tenant(tmp_path / "a", DENY)
+        second, _ = self.tenant(tmp_path / "b", DENY)
+        assert World.run(first).decision.inputs_digest == World.run(second).decision.inputs_digest
+
+    def test_the_analysis_is_kept_under_the_same_key_whatever_the_policy(
+        self, tmp_path: Path
+    ) -> None:
+        (lenient, store_a), (strict, store_b) = (
+            self.tenant(tmp_path / "a", None),
+            self.tenant(tmp_path / "b", DENY),
+        )
+        World.run(lenient)
+        World.run(strict)
+        assert store_a.scan_keys and store_a.scan_keys == store_b.scan_keys
+
+    def test_a_decision_kept_by_one_policy_is_not_served_to_another(self, tmp_path: Path) -> None:
+        root = tmp_path / "shared"
+        lenient, store = self.tenant(root, None)
+        World.run(lenient)
+        kept = list((root / "decisions").glob("*.json"))
+        strict, _ = self.tenant(tmp_path / "other", DENY)
+        decision = World.run(strict).decision
+        assert all(path.stem != decision.inputs_digest.partition(":")[2] for path in kept)
+        assert store.scan_keys

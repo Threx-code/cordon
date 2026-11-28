@@ -73,7 +73,7 @@ class Sources:
 
     intel: Callable[[ArtifactRef], tuple[IntelMatch, ...]] | None = None
     cloud: Callable[[ArtifactRef], Decision | None] | None = None
-    scan: Callable[[ArtifactRef], ScanEvidence] | None = None
+    scan: Callable[[ArtifactRef], ScanEvidence | None] | None = None
     provenance: Callable[[ArtifactRef], Provenance | None] | None = None
     #: Whether the signed revocation list names this artifact. Asked before anything else, so a kept or reused ALLOW never stands in for a revoked digest.
     revoked: Callable[[ArtifactRef], bool] | None = None

@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from cordon_scanner.analysis.python.pysyntax import PythonSyntax
 from cordon_scanner.analysis.python.statements import PythonTwo
+from cordon_scanner.ecosystems.archive_shapes import PypiArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -25,6 +26,9 @@ from cordon_scanner.ecosystems.base import (
     Manifest,
     ReleaseFile,
 )
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, PrivateMark
+from cordon_scanner.ecosystems.launchers import Launcher
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.python.lockfiles import PypiLockfiles
 from cordon_scanner.ecosystems.packages.python.requirements import (
     _NORMALIZE,
@@ -110,6 +114,12 @@ class PypiEcosystem(PypiLockfiles, BaseEcosystem):
         return out
 
     id = "pypi"
+    consumer_hooks = NoConsumerHooks(
+        "setup.py is a file the build backend runs; no command string in the package's metadata is run at install"
+    )
+    private_mark = PrivateMark(("pyproject.toml", "setup.cfg", "setup.py"), "classifier")
+    bundle_keyword = "uv"
+    own_name = OwnName(("setup.py", "pyproject.toml", "setup.cfg"), blocks=True)
 
     _REQUIRES_DIST: ClassVar[re.Pattern[str]] = re.compile(
         r"(?m)^Requires-Dist:\s*([A-Za-z0-9][A-Za-z0-9._-]*)([^\n]*)$"
@@ -130,6 +140,13 @@ class PypiEcosystem(PypiLockfiles, BaseEcosystem):
         return frozenset()
 
     purl_type = "pypi"
+    published_archive = (PypiArchive(),)
+    mcp_launch = (
+        Launcher((("uvx",), ("pipx",)), "pypi", "https://docs.astral.sh/uv/guides/tools/"),
+        Launcher(
+            (("uv", "tool"),), "pypi", "https://docs.astral.sh/uv/guides/tools/", skip=("run",)
+        ),
+    )
     manifest_globs: tuple[str, ...] = (
         "**/pyproject.toml",
         "**/setup.py",

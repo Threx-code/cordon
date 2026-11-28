@@ -32,6 +32,8 @@ class Defaults(JsonRecord):
     default: str = "allow"
     max_intel_age_s: int | None = None
     bundle_max_age_s: int | None = None
+    exception_max_age_s: int | None = None
+    """The longest an approval or exception may be granted for under this policy; None leaves the platform's own limit."""
     warn_until_measured: tuple[str, ...] = ()
     clock_bucket_s: int = 60
     serve_last_allow_s: int | None = None
@@ -108,8 +110,12 @@ class CompiledPolicy(JsonRecord):
     prev_sha: str | None = None
 
     def computed_sha256(self) -> str:
-        """The digest of everything but `sha256` itself, in canonical JSON."""
-        body = replace(self, sha256="sha256:" + "0" * 64).to_json()
+        """The digest of everything but `sha256` itself and `expires_at`, in canonical JSON.
+
+        The expiry is left out so the platform can give a policy a lifetime (a bundle's own) without changing the policy's digest between the cloud
+        and a device or from one refresh to the next: the same rules are the same policy. Its integrity is the bundle signature's, which covers the
+        whole payload, expiry included. A policy with no expiry keeps the digest it always had."""
+        body = replace(self, sha256="sha256:" + "0" * 64, expires_at=None).to_json()
         body.pop("sha256")
         return ArtifactDigests.of_bytes(ArtifactDigests.canonical_json(body))
 

@@ -25,6 +25,7 @@ from typing import Final
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.images.packages import OsPackage
+from cordon_scanner.version import USER_AGENT
 
 HOST: Final = "cdn.amazonlinux.com"
 
@@ -170,7 +171,7 @@ class AmazonLinuxAdvisories:
         parsed = urllib.parse.urlsplit(url)
         if parsed.scheme != "https" or parsed.hostname != HOST:
             raise AlasError(f"refusing an Amazon Linux URL off {HOST}: {parsed.hostname}")
-        request = urllib.request.Request(url, headers={"User-Agent": "cordon-scanner"})  # noqa: S310 - checked above
+        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})  # noqa: S310 - checked above
         try:
             with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310
                 body = Download.read(response, MAX_BYTES + 1)

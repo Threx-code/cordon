@@ -27,8 +27,10 @@ locked archive URL is not a departure from it -- only a pin is.
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+from cordon_scanner.ecosystems.archive_shapes import NoArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -36,6 +38,9 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import ConsumerHooks, NoPrivateMark
+from cordon_scanner.ecosystems.launchers import NoLauncher
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.ocaml.opam_syntax import (
     COMPILER_PACKAGES,
     Formula,
@@ -208,7 +213,18 @@ class OpamEcosystem(BaseEcosystem):
     """OCaml packages through opam and dune."""
 
     id = "opam"
+    consumer_hooks = ConsumerHooks(("opam build", "opam install"))
+    private_mark = NoPrivateMark(
+        "an opam package is published by a pull request to opam-repository; the opam file has no field that marks it unpublishable"
+    )
+    own_name = OwnName(("*.opam", "opam"), readers=(("*.opam", "opam_name"), ("opam", "opam_name")))
     purl_type = "opam"
+    published_archive = NoArchive(
+        "an opam package's archive is the upstream project's own source tarball, named by the `url` in its opam file; no opam metadata is inside it (captured: opam cache-small)"
+    )
+    mcp_launch = NoLauncher(
+        "`opam install` installs a package and `opam exec` runs inside the switch afterwards: two steps (https://opam.ocaml.org/doc/man/opam-exec.html)"
+    )
     manifest_globs: tuple[str, ...] = (
         "**/*.opam",
         "**/opam",
@@ -225,6 +241,18 @@ class OpamEcosystem(BaseEcosystem):
     opam-repository's own definition of the package. dune's lock does record each archive's
     checksum, and those are kept and judged (a malformed one is reported); a missing one is the
     format, not a gap."""
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A locked opam file requiring these packages at these versions: `{path: content}`."""
+        deps = "".join(f'  "{name}" {{= "{version}"}}\n' for name, version in pins)
+        return {"check.opam.locked": f'opam-version: "2.0"\nname: "check"\ndepends: [\n{deps}]\n'}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """An opam file depending on these packages with no version: `{path: content}`."""
+        deps = "".join(f'  "{name}"\n' for name in names)
+        return {"check.opam": f'opam-version: "2.0"\nname: "check"\ndepends: [\n{deps}]\n'}
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()

@@ -889,6 +889,7 @@ rather than a document.
 | `SUSPECT.AGENT.SKILL_RUNS_INPUT.001` | medium | `agents` | prompt_injection |
 | `SUSPECT.AGENT.TOOL_PRIORITY_CLAIM.001` | high | `agents` | prompt_injection |
 | `SUSPECT.AGENT.UNATTENDED.001` | medium | `composites` | prompt_injection |
+| `SUSPECT.EXTENSION.ADDED_CODE.001` | medium | `agents` | malicious_code |
 | `SUSPECT.EXTENSION.HIDDEN_NAME.001` | medium | `agents` | malicious_code |
 | `SUSPECT.EXTENSION.LOOKALIKE.001` | medium | `agents` | typosquat |
 | `SUSPECT.EXTENSION.MALICIOUS_VERSIONS.001` | low | `agents` | malicious_code |

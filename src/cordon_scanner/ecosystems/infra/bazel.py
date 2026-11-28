@@ -25,10 +25,11 @@ from __future__ import annotations
 import dataclasses
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import NoArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -36,6 +37,9 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
+from cordon_scanner.ecosystems.launchers import NoLauncher
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
@@ -179,7 +183,9 @@ class Starlark:
                 call.positional.append(argument)
             else:
                 call.keywords[key] = argument
-        raise StarlarkError("a call that does not close")
+        raise StarlarkError(
+            "a call that does not close"
+        )  # pragma: no cover - refused earlier by bracket count
 
     @staticmethod
     def value(tokens: list[tuple[str, str]], index: int) -> tuple[int, Any]:
@@ -477,7 +483,7 @@ class ModuleFile:
         module_name = module_version = None
         for call in calls:
             kw = call.keywords
-            if call.name == "module":
+            if call.name == "module" and call.receiver is None:
                 module_name = kw.get("name") if isinstance(kw.get("name"), str) else None
                 module_version = kw.get("version") if isinstance(kw.get("version"), str) else None
             elif call.name in (
@@ -712,7 +718,20 @@ class BazelEcosystem(BaseEcosystem):
     """Bazel modules and external repositories."""
 
     id = "bazel"
+    consumer_hooks = NoConsumerHooks(
+        "a module's install-time code is Starlark in its own files (repository rules, module extensions); MODULE.bazel holds no command string"
+    )
+    private_mark = NoPrivateMark(
+        "a module enters the Bazel Central Registry only by a pull request to it; MODULE.bazel has no field that marks it unpublishable"
+    )
+    own_name = OwnName(("MODULE.bazel",))
     purl_type = "bazel"
+    published_archive = NoArchive(
+        "the Bazel Central Registry holds only MODULE.bazel and a source.json naming the upstream project's own archive; the archive is whatever that project publishes (captured: bazel/source)"
+    )
+    mcp_launch = NoLauncher(
+        "`bazel run @module//pkg:target` runs a target of a module the project's own MODULE.bazel already pins, so a launch command never names a release (https://bazel.build/external/module)"
+    )
     manifest_globs: tuple[str, ...] = (
         "**/MODULE.bazel",
         "**/WORKSPACE",
@@ -722,6 +741,19 @@ class BazelEcosystem(BaseEcosystem):
     )
     lockfile_globs: tuple[str, ...] = ("**/MODULE.bazel.lock",)
     registry_hosts: frozenset[str] = frozenset({"bcr.bazel.build", "registry.bazel.build"})
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A MODULE.bazel depending on these modules at these versions: `{path: content}`."""
+        deps = "".join(
+            f'bazel_dep(name = "{name}", version = "{version}")\n' for name, version in pins
+        )
+        return {"MODULE.bazel": f'module(name = "check", version = "0.0.0")\n{deps}'}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A Bazel module is depended on at a version."""
+        raise ValueError("a Bazel module needs a version: bazel_dep names one")
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()

@@ -115,7 +115,14 @@ class PolicyCommand:
             store=store,
         )
         runtime.resume(now or datetime.now(UTC))
-        puller = BundlePuller(args.url, fetch or cls.fetch, store)  # type: ignore[arg-type]
+        puller = BundlePuller(
+            args.url,
+            fetch or cls.fetch,  # type: ignore[arg-type]
+            store,
+            root_public=root,
+            delegation=delegation,
+            tenant=args.tenant,
+        )
         try:
             state = puller.pull(runtime, now or datetime.now(UTC))
         except BundleRefused as exc:
@@ -131,5 +138,14 @@ class PolicyCommand:
                 "pin", "delegation", json.dumps(delegation, sort_keys=True).encode(), issued
             )
             store.put_blob("pin", "tenant", args.tenant.encode("utf-8"), issued)
-        print(f"policy bundle: {state}")
+        refused = puller.refusal()
+        if refused:
+            print(
+                f"{PROGRAM}: decision delegation refused: {refused}; the one held is kept",
+                file=sys.stderr,
+            )
+        print(
+            f"policy bundle: {state}"
+            + (f"; decision delegation refused: {refused}" if refused else "")
+        )
         return int(ExitCode.CLEAN) if state != "unreachable" else int(ExitCode.SCANNER_ERROR)

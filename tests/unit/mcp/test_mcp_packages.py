@@ -11,12 +11,16 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
+from cordon_scanner.ecosystems.registry import EcosystemRegistry
+from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.intel.advisories.shipped import ShippedAdvisories
 from cordon_scanner.mcp.packages import (
     ECOSYSTEMS,
+    FETCHABLE,
     InstallCommand,
     Lockfiles,
     PackageError,
@@ -133,7 +137,105 @@ class TestSpecs:
     def test_purls_for_fetchable_ecosystems(self) -> None:
         assert PackageSpec.of("npm", "@scope/x", "1.0.0").purl == "pkg:npm/@scope/x@1.0.0"
         assert PackageSpec.of("maven", "org.a:b", "2").purl == "pkg:maven/org.a/b@2"
-        assert PackageSpec.of("cran", "x", "1").purl is None
+        assert PackageSpec.of("cran", "x", "1").purl == "pkg:cran/x@1"
+
+    def test_an_ecosystem_with_no_fetchable_kind_has_no_purl(self) -> None:
+        unfetchable = [e for e in ECOSYSTEMS if e not in FETCHABLE]
+        assert all(PackageSpec.of(e, "x", "1").purl is None for e in unfetchable)
+
+    def test_a_gradle_dependency_is_fetched_as_the_maven_artifact_it_is(self) -> None:
+        assert PackageSpec.of("gradle", "org.a:b", "2").purl == "pkg:maven/org.a/b@2"
+
+
+class Projects:
+    #: A real package of each ecosystem and a release of it, as a package check names them.
+    SAMPLES: ClassVar[dict[str, tuple[str, str]]] = {
+        "actions": ("actions/checkout", "v4.1.0"),
+        "ansible": ("community.general", "9.0.0"),
+        "bazel": ("rules_go", "0.50.1"),
+        "cargo": ("serde", "1.0.190"),
+        "cocoapods": ("Alamofire", "5.8.0"),
+        "composer": ("monolog/monolog", "3.5.0"),
+        "conan": ("zlib", "1.3.1"),
+        "conda": ("numpy", "1.26.4"),
+        "cran": ("R6", "2.5.1"),
+        "gomod": ("github.com/gin-gonic/gin", "v1.9.1"),
+        "gradle": ("org.apache.commons:commons-lang3", "3.14.0"),
+        "hackage": ("aeson", "2.2.1.0"),
+        "helm": ("redis", "17.0.0"),
+        "hex": ("phoenix", "1.7.10"),
+        "homebrew": ("wget", "1.25.0"),
+        "image": ("nginx", "1.27.0"),
+        "julia": ("JSON", "0.21.4"),
+        "maven": ("org.apache.commons:commons-lang3", "3.14.0"),
+        "nix": ("NixOS/nixpkgs", "a" * 40),
+        "npm": ("left-pad", "1.3.0"),
+        "nuget": ("Newtonsoft.Json", "13.0.3"),
+        "opam": ("lwt", "5.7.0"),
+        "pub": ("http", "1.2.0"),
+        "pypi": ("requests", "2.31.0"),
+        "rubygems": ("rails", "7.1.0"),
+        "swift": ("apple/swift-log", "1.5.3"),
+        "terraform": ("hashicorp/aws", "5.31.0"),
+        "vcpkg": ("zlib", "1.3.1"),
+        "vscode": ("ms-python.python", "2024.18.0"),
+    }
+
+    @staticmethod
+    def read(ecosystem: str, files: dict[str, str]) -> list[tuple[str, str]]:
+        """What the ecosystem's own parser finds in the files: (name, version or declared spec)."""
+        adapter = EcosystemRegistry.BY_ID[ecosystem]
+        found: list[tuple[str, str]] = []
+        for path, body in files.items():
+            content = FileContent.from_bytes(path, body.encode())
+            if EcosystemRegistry.lockfile_ecosystem(path) == ecosystem:
+                found += [(e.name, e.version) for e in adapter.parse_lockfile(content).entries]
+            if EcosystemRegistry.manifest_ecosystem(path) == ecosystem:
+                manifest = adapter.parse_manifest(content)
+                assert manifest.parse_error is None, (path, manifest.parse_error)
+                found += [(d.name, d.spec) for d in manifest.dependencies]
+        return found
+
+
+class TestEveryEcosystemWritesAProject:
+    def test_the_samples_name_every_registered_ecosystem(self) -> None:
+        assert set(Projects.SAMPLES) == set(EcosystemRegistry.BY_ID)
+
+    @pytest.mark.parametrize("ecosystem", sorted(Projects.SAMPLES))
+    def test_a_pinned_project_is_read_back_by_the_ecosystems_own_parser(
+        self, ecosystem: str
+    ) -> None:
+        name, version = Projects.SAMPLES[ecosystem]
+        adapter = EcosystemRegistry.BY_ID[ecosystem]
+        files = adapter.pinned_project([(name, version)])
+        assert files, ecosystem
+        found = Projects.read(ecosystem, files)
+        assert any(
+            adapter.normalize_name(n) == adapter.normalize_name(name)
+            and version.removeprefix("v") in v.removeprefix("v")
+            for n, v in found
+        ), (ecosystem, found)
+
+    @pytest.mark.parametrize("ecosystem", sorted(Projects.SAMPLES))
+    def test_a_project_of_names_alone_is_read_back_or_says_it_needs_a_version(
+        self, ecosystem: str
+    ) -> None:
+        name, _ = Projects.SAMPLES[ecosystem]
+        adapter = EcosystemRegistry.BY_ID[ecosystem]
+        try:
+            files = adapter.loose_project([name])
+        except ValueError as exc:
+            assert "version" in str(exc)
+            return
+        assert files, ecosystem
+        found = Projects.read(ecosystem, files)
+        assert any(adapter.normalize_name(n) == adapter.normalize_name(name) for n, _ in found), (
+            ecosystem,
+            found,
+        )
+
+    def test_the_package_check_accepts_every_registered_ecosystem(self) -> None:
+        assert set(ECOSYSTEMS) == set(EcosystemRegistry.BY_ID)
 
 
 class Records:
@@ -162,6 +264,40 @@ class Records:
                 ):
                     return advisory.name, version, advisory.identifier
         pytest.skip(f"no exact-version {ecosystem} record in this database")
+
+
+class Scanned:
+    @staticmethod
+    def findings(tmp_path: Path, ecosystem: str, name: str, version: str) -> list[dict]:
+        for relative, body in Lockfiles.write([PackageSpec.of(ecosystem, name, version)]).items():
+            target = tmp_path / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(body, encoding="utf-8")
+        run = subprocess.run(
+            [
+                *[sys.executable, "-m", "cordon_scanner", "scan", str(tmp_path), "--offline"],
+                *["--format", "json", "--no-cache", "--severity", "info"],
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=600,
+        )
+        return json.loads(run.stdout)["findings"]
+
+
+@pytest.mark.slow
+class TestAGradleDependencyIsAMavenArtifact:
+    """Gradle resolves Maven artifacts, so Maven's advisories apply to a Gradle project's dependencies."""
+
+    @pytest.mark.parametrize("ecosystem", ["maven", "gradle"])
+    def test_log4shell_is_reported_for_log4j_core_2_14_1(
+        self, ecosystem: str, tmp_path: Path
+    ) -> None:
+        found = Scanned.findings(
+            tmp_path, ecosystem, "org.apache.logging.log4j:log4j-core", "2.14.1"
+        )
+        assert any("CVE-2021-44228" in json.dumps(f) for f in found), ecosystem
 
 
 @pytest.mark.slow

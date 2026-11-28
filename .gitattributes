@@ -16,3 +16,8 @@ corpus/** binary
 # The README terminal's recordings are the bytes a pseudo-terminal wrote (CRLF and all), cut by
 # byte counts in their timing files: rewriting a line ending would shift every count after it.
 docs/assets/terminal/** binary
+
+# Captured fixtures are real files kept byte for byte, each recorded with its sha256 in its folder's CAPTURES.md
+# (tests/unit/repository/release/test_fixture_provenance.py): a checkout must never rewrite a line ending in one,
+# or the recorded hash stops being the file's (a real action.yml is served with CRLF line endings).
+tests/**/*_captures/** binary

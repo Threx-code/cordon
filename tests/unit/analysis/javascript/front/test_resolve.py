@@ -111,3 +111,67 @@ class TestPlaces:
     def test_a_tsx_file_is_read_with_its_markup(self) -> None:
         source = "const cp = require('child_process');\nexport const V = () => <div>{cp.exec(x)}</div>;\n"
         assert "child_process.exec" in Resolved.names(source, typescript=True)
+
+
+class TestFoldedModuleNames:
+    """A module named by computed text is the module only when every piece is known."""
+
+    @staticmethod
+    def codes(name: str) -> str:
+        return ", ".join(str(ord(c)) for c in name)
+
+    def test_character_codes_name_the_module(self) -> None:
+        source = (
+            f"const m = require(String.fromCharCode({self.codes('child_process')})); m.exec(c);"
+        )
+        assert "child_process.exec" in Resolved.names(source)
+
+    @pytest.mark.parametrize("arg", ['"a"', "1.5", "x"])
+    def test_a_code_that_is_not_a_whole_number_leaves_the_module_unknown(self, arg: str) -> None:
+        source = f"const m = require(String.fromCharCode({arg})); m.exec(c);"
+        names = Resolved.names(source)
+        assert "m.exec" in names
+        assert "child_process.exec" not in names
+
+    def test_a_joined_array_names_the_module(self) -> None:
+        source = 'const m = require(["child", "_process"].join("")); m.exec(c);'
+        assert "child_process.exec" in Resolved.names(source)
+
+    @pytest.mark.parametrize("join", ['[a, "_process"].join("")', '["child", "_process"].join(a)'])
+    def test_a_joined_array_with_an_unknown_piece_leaves_the_module_unknown(
+        self, join: str
+    ) -> None:
+        names = Resolved.names(f"const m = require({join}); m.exec(c);")
+        assert "m.exec" in names
+        assert "child_process.exec" not in names
+
+    def test_a_constant_built_through_a_few_additions_names_the_module(self) -> None:
+        source = 'const m = "child" + ("_" + "process"); require(m).exec(c);'
+        assert "child_process.exec" in Resolved.names(source)
+
+    def test_a_constant_built_through_too_many_nested_additions_is_not_followed(self) -> None:
+        nested = '"child_process"'
+        for _ in range(20):
+            nested = f'"" + ({nested})'
+        names = Resolved.names(f"const m = {nested}; require(m).exec(c);")
+        assert "child_process.exec" not in names
+
+
+class TestBindingForms:
+    def test_a_name_declared_without_a_value_is_not_a_module(self) -> None:
+        assert Resolved.names("var cp; cp.exec(c);") == ["cp.exec"]
+
+    def test_a_nested_destructuring_is_not_followed_to_the_module(self) -> None:
+        names = Resolved.names('const { e: { exec } } = require("child_process"); exec(c);')
+        assert "exec" in names
+        assert "child_process.exec" not in names
+
+    def test_a_default_value_is_not_followed_to_the_module(self) -> None:
+        names = Resolved.names('function f(cp = require("child_process")) { cp.exec(c); }')
+        assert "cp.exec" in names
+
+    def test_a_private_member_is_read_as_its_name(self) -> None:
+        assert "a.b.c" in Resolved.names("a.#b.c(x);")
+
+    def test_a_member_chain_past_the_limit_is_not_a_call_path(self) -> None:
+        assert Resolved.names("a" + ".b" * 20 + "(x);") == []

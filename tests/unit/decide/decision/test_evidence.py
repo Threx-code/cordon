@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 
@@ -184,3 +185,65 @@ class TestEvidence:
         artifact = ArtifactRef("package", "pkg:npm/x", released_at="2026-11-14T09:00:00Z")
         assert artifact.age_days(CLOCK) == 2
         assert ArtifactRef("package", "pkg:npm/x").age_days(CLOCK) is None
+
+
+class TestTheContextKey:
+    """BP-5-4: `context_key` is the sha256 of the canonical (point, environment, scope path, relation), for caching."""
+
+    @staticmethod
+    def context(**changes: Any) -> Context:
+        base: dict[str, Any] = {
+            "point": "cli",
+            "environment": "production",
+            "scope_path": ("acme", "web"),
+            "relation": "direct",
+        }
+        return Context(**{**base, **changes})
+
+    def test_it_is_the_sha256_of_the_canonical_four(self) -> None:
+        expected = ArtifactDigests.of_bytes(
+            ArtifactDigests.canonical_json(
+                {
+                    "point": "cli",
+                    "environment": "production",
+                    "scope_path": ["acme", "web"],
+                    "relation": "direct",
+                }
+            )
+        )
+        assert self.context().context_key() == expected
+        assert (
+            self.context().context_key().startswith("sha256:")
+            and len(self.context().context_key()) == 71
+        )
+
+    @pytest.mark.parametrize(
+        "change",
+        [
+            {"point": "ide"},
+            {"environment": "staging"},
+            {"scope_path": ("acme",)},
+            {"scope_path": ("web", "acme")},
+            {"relation": "transitive"},
+        ],
+        ids=["point", "environment", "scope", "scope order", "relation"],
+    )
+    def test_each_of_the_four_moves_it(self, change: dict[str, Any]) -> None:
+        assert self.context(**change).context_key() != self.context().context_key()
+
+    @pytest.mark.parametrize(
+        "change", [{"actor": "agent"}, {"online": False}, {"bundle_age_s": 5}, {"intel_age_s": 9}]
+    )
+    def test_nothing_else_of_the_context_moves_it(self, change: dict[str, Any]) -> None:
+        assert self.context(**change).context_key() == self.context().context_key()
+
+    def test_the_same_four_given_in_another_order_are_the_same_key(self) -> None:
+        a = Context(point="cli", environment="production", scope_path=("a",), relation="direct")
+        b = Context(relation="direct", scope_path=("a",), environment="production", point="cli")
+        assert a.context_key() == b.context_key()
+
+    def test_a_scope_path_does_not_run_into_its_neighbour(self) -> None:
+        assert (
+            self.context(scope_path=("ab", "c")).context_key()
+            != self.context(scope_path=("a", "bc")).context_key()
+        )

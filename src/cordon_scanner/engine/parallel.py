@@ -626,7 +626,7 @@ class ParallelScanner:
         )  # fmt: skip
         supervisor.template = template
         timed = DetectorClock.enabled()
-        outcome = supervisor.run(
+        outcome = supervisor.run_or_lose(
             Unit(k, (item, root, deadline, timed), item[2]) for k, item in enumerate(files)
         )
         if unstarted is not None:
@@ -765,7 +765,9 @@ class ParallelScanner:
         # What the parent's profile, intent and reached-flow steps read of the file (item 56, sites
         # 9 and 10), with the engine's labelling detector as the parent picks it, enabled or not.
         from cordon_scanner.engine.isolation.analysis_facts import (
+            CampaignFacts,
             CapabilityNames,
+            ExecutableFacts,
             WorkerAnalysis,
             WorkerSummaries,
         )
@@ -773,6 +775,8 @@ class ParallelScanner:
         WorkerAnalysis.produce(unit, ctx, tuple(engine.detectors))
         WorkerSummaries.produce(unit)
         CapabilityNames.produce(unit)
+        CampaignFacts.produce(unit, ctx)
+        ExecutableFacts.produce(unit)
         return produced, windowed, intact, (acc.complete, tuple(acc.content_gaps))
 
     @staticmethod

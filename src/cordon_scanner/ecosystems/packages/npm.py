@@ -15,6 +15,7 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
+from cordon_scanner.ecosystems.archive_shapes import NpmPackageArchive, NpmRenamedArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -24,6 +25,9 @@ from cordon_scanner.ecosystems.base import (
     Manifest,
     ReleaseFile,
 )
+from cordon_scanner.ecosystems.install_marks import ConsumerHooks, PrivateMark
+from cordon_scanner.ecosystems.launchers import Launcher
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.javascript.conditions import NpmConditions
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Hook, Scope
@@ -173,6 +177,10 @@ class NpmEcosystem(NpmProjects, NpmPackageCode, BaseEcosystem):
         return str(value) if isinstance(value, str) and value else None
 
     id = "npm"
+    consumer_hooks = ConsumerHooks(("preinstall", "install", "postinstall"), measured=True)
+    private_mark = PrivateMark(("package.json",), "package_json")
+    bundle_keyword = "npm"
+    own_name = OwnName(("package.json",), blocks=True)
 
     def declared_dependencies(self, files: Sequence[ReleaseFile]) -> frozenset[str]:
         """A published tarball's runtime dependencies: its package.json's, optional ones too."""
@@ -208,6 +216,20 @@ class NpmEcosystem(NpmProjects, NpmPackageCode, BaseEcosystem):
         return ("pypi", "rubygems", "cargo")
 
     purl_type = "npm"
+    published_archive = (NpmPackageArchive(), NpmRenamedArchive())
+    mcp_launch = (
+        Launcher(
+            (("npx",), ("bunx",), ("pnpx",), ("pnpm", "dlx"), ("yarn", "dlx")),
+            "npm",
+            "https://docs.npmjs.com/cli/v10/commands/npx",
+        ),
+        Launcher(
+            (("deno", "run"),),
+            "npm",
+            "https://docs.deno.com/runtime/reference/cli/run/",
+            read="deno_npm_package",
+        ),
+    )
     manifest_globs: tuple[str, ...] = ("**/package.json", "**/deno.json", "**/deno.jsonc")
     #: bundledDependencies: npm installs a tarball's own `node_modules` with it as shipped, and
     #: `require()` loads them -- where a payload can hide in a dependency. Theirs too, recursively.
@@ -488,8 +510,6 @@ class NpmEcosystem(NpmProjects, NpmPackageCode, BaseEcosystem):
                 continue
             directory = NpmEcosystem._name_from_location(location)
             name = meta.get("name") or linked_as.get(location) or directory
-            if not name:
-                continue
             resolved = NpmEcosystem._str_or_none(meta.get("resolved"))
             edges: set[str] = set()
             for field in ("dependencies", "optionalDependencies", "peerDependencies"):

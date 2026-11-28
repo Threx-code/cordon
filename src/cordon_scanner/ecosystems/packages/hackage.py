@@ -30,15 +30,20 @@ from __future__ import annotations
 
 import dataclasses
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import HackageArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
+from cordon_scanner.ecosystems.launchers import NoLauncher
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.haskell.cabal import (
     GHC_PACKAGES,
     CabalDeps,
@@ -584,7 +589,18 @@ class HackageEcosystem(BaseEcosystem):
     """Haskell packages through Cabal and Stack."""
 
     id = "hackage"
+    consumer_hooks = NoConsumerHooks(
+        "a custom build is `Setup.hs`, a file the .cabal names, not a command string"
+    )
+    private_mark = NoPrivateMark(
+        "a package is published only by `cabal upload`; a .cabal file has no field that marks it unpublishable"
+    )
+    own_name = OwnName(("*.cabal",))
     purl_type = "hackage"
+    published_archive = (HackageArchive(),)
+    mcp_launch = NoLauncher(
+        "`cabal install` installs an executable and a later command runs it; `cabal run` runs a target of the project in the current directory (https://cabal.readthedocs.io/en/stable/cabal-commands.html#cabal-run)"
+    )
     manifest_globs: tuple[str, ...] = (
         "**/*.cabal",
         "**/cabal.project",
@@ -596,6 +612,23 @@ class HackageEcosystem(BaseEcosystem):
     records_integrity = False
     """A freeze file pins versions and no hashes (Cabal checks downloads against Hackage's signed
     index); Stack's lock records the cabal-file revision hash, kept where present."""
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A freeze file pinning these packages: `{path: content}`."""
+        rows = ",\n             ".join(f"any.{name} =={version}" for name, version in pins)
+        return {"cabal.project.freeze": f"constraints: {rows}\n"}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A package description depending on these packages with no version: `{path: content}`."""
+        deps = ", ".join(["base", *names])
+        return {
+            "check.cabal": (
+                "cabal-version: 2.4\nname: check\nversion: 0.1.0.0\nbuild-type: Simple\n\n"
+                f"library\n  build-depends: {deps}\n  default-language: Haskell2010\n"
+            )
+        }
 
     def normalize_name(self, name: str) -> str:
         """Hackage refuses a name that differs from an existing one only in case."""

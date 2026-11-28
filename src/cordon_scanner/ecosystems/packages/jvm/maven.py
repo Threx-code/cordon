@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar
 from xml.sax.saxutils import escape
 
+from cordon_scanner.ecosystems.archive_shapes import MavenArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -15,6 +16,9 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, PrivateMark
+from cordon_scanner.ecosystems.launchers import Launcher
+from cordon_scanner.ecosystems.own_names import OwnName
 
 # Each `*Ecosystem` imported below from its own module (GitHub Actions, Bazel, CocoaPods, Composer,
 # Conan, Conda, CRAN, Gradle, Hex, NuGet, Pub, RubyGems, Swift) is re-exported where it always lived.
@@ -542,6 +546,11 @@ class MavenWrapper:
 
 class MavenEcosystem(BaseEcosystem):
     id = "maven"
+    consumer_hooks = NoConsumerHooks(
+        "a dependency's pom plugins never run when it is resolved; only the project's own build runs them"
+    )
+    private_mark = PrivateMark(("pom.xml",), "maven")
+    own_name = OwnName(("pom.xml", "META-INF/maven/*/*/pom.xml"))
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         return name.split(":", 1)[0] if ":" in name else None
@@ -553,6 +562,12 @@ class MavenEcosystem(BaseEcosystem):
         return version.upper().endswith("-SNAPSHOT")
 
     purl_type = "maven"
+    published_archive = (MavenArchive(),)
+    mcp_launch = (
+        Launcher(
+            (("jbang",),), "maven", "https://www.jbang.dev/documentation/jbang/latest/usage.html"
+        ),
+    )
     manifest_globs: tuple[str, ...] = ("**/pom.xml", "**/.mvn/wrapper/maven-wrapper.properties")
     lockfile_globs: tuple[str, ...] = (
         "**/dependency-tree.txt",

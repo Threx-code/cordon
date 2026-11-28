@@ -157,6 +157,7 @@ class TextReporter(BaseReporter):
         if operational:
             yield from self._operational_block(operational, color)
 
+        yield from self._provenance_notes(result, color)
         yield from self._summary(
             result,
             color,
@@ -427,6 +428,23 @@ class TextReporter(BaseReporter):
                 label = "refs    " if index == 0 else "        "
                 yield self._line(f"  {DIM}{label}{RESET}  {ref}", color)
 
+        yield b"\n"
+
+    def _provenance_notes(self, result: ScanResult, color: bool) -> Iterator[bytes]:
+        """Once per ecosystem, why its dependencies have no provenance to check: the registry publishes none, in the words of the
+        table that records what was read and when (`PROVENANCE_NOT_PUBLISHED`)."""
+        reasons: dict[str, str] = {}
+        for dependency in result.dependencies:
+            if dependency.provenance_reason:
+                reasons.setdefault(dependency.ecosystem, dependency.provenance_reason)
+        if not reasons:
+            return
+        yield self._line(f"{DIM}provenance not published by the registry{RESET}", color)
+        for ecosystem in sorted(reasons):
+            lines = self._wrap(reasons[ecosystem], WIDTH, "    ")
+            yield self._line(f"  {ecosystem}", color)
+            for line in lines:
+                yield self._line(line, color)
         yield b"\n"
 
     def _operational_block(self, findings: list[Finding], color: bool) -> Iterator[bytes]:

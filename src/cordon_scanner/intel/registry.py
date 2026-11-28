@@ -34,9 +34,9 @@ ROLES: dict[str, tuple[str, str]] = {
     "Ed25519": ("cordon_scanner.intel.provenance._ed25519", "Ed25519"),
     "FeedClient": ("cordon_scanner.intel.malware.feed", "FeedClient"),
     "ReuseIndex": ("cordon_scanner.intel.malware.reuse_index", "ReuseIndex"),
+    "ReuseKeys": ("cordon_scanner.intel.malware.reuse_index", "ReuseKeys"),
     "LICENSE_UNKNOWN": ("cordon_scanner.intel.store.licenses", "LicenseCategory.UNKNOWN"),
     "LicenseClassifier": ("cordon_scanner.intel.store.licenses", "LicenseClassifier"),
-    "MoreRegistries": ("cordon_scanner.intel.registries.more_registries", "MoreRegistries"),
     "OsvImport": ("cordon_scanner.intel.advisories.osv_import", "OsvImport"),
     "UPSTREAM_ECOSYSTEMS": ("cordon_scanner.intel.advisories.upstream_advisories", "SUPPORTED"),
     "UpstreamAdvisories": (
@@ -50,6 +50,7 @@ ROLES: dict[str, tuple[str, str]] = {
     "RegistryError": ("cordon_scanner.intel.registries.registry_client", "RegistryError"),
     "RegistryRecord": ("cordon_scanner.intel.registries.registry_record", "RegistryRecord"),
     "ReleaseHistory": ("cordon_scanner.intel.registries.release_history", "ReleaseHistory"),
+    "ArchiveSources": ("cordon_scanner.intel.registries.archive_sources.table", "ArchiveSources"),
     "VersionRanges": ("cordon_scanner.intel.advisories.ranges", "VersionRanges"),
     "Versions": ("cordon_scanner.intel.advisories.versions", "Versions"),
     "YOUNG_DEPENDENCY_DAYS": (
@@ -57,8 +58,26 @@ ROLES: dict[str, tuple[str, str]] = {
         "YOUNG_DEPENDENCY_DAYS",
     ),
     "BazelProvenance": ("cordon_scanner.intel.provenance.bazel_provenance", "BazelProvenance"),
+    "GoSumdb": ("cordon_scanner.intel.provenance.gosumdb", "GoSumdb"),
+    "HackageTuf": ("cordon_scanner.intel.provenance.releases.hackage_tuf", "HackageTuf"),
+    "OpenVsxSignature": (
+        "cordon_scanner.intel.provenance.releases.openvsx_signature",
+        "OpenVsxSignature",
+    ),
+    "NuGetSignature": (
+        "cordon_scanner.intel.provenance.releases.nuget_signature",
+        "NuGetSignature",
+    ),
+    "GitHubAttestations": (
+        "cordon_scanner.intel.provenance.releases.github_attestations",
+        "GitHubAttestations",
+    ),
     "GitHubRepository": ("cordon_scanner.intel.provenance.github_repository", "GitHubRepository"),
     "HelmProvenance": ("cordon_scanner.intel.provenance.helm_provenance", "HelmProvenance"),
+    "TerraformProvenance": (
+        "cordon_scanner.intel.provenance.terraform_provenance",
+        "TerraformProvenance",
+    ),
     "HomebrewProvenance": (
         "cordon_scanner.intel.provenance.homebrew_provenance",
         "HomebrewProvenance",
@@ -87,6 +106,7 @@ ROLES: dict[str, tuple[str, str]] = {
     "PackageNotFound": ("cordon_scanner.intel.registries.registry_client", "PackageNotFound"),
     "SigstoreVerification": ("cordon_scanner.intel.provenance.attest", "SigstoreVerification"),
     "YoungReleases": ("cordon_scanner.intel.registries.registry_client", "RegistryClient"),
+    "ReleaseLedger": ("cordon_scanner.intel.registries.archive_sources.base", "ArchiveFetch"),
 }
 
 if TYPE_CHECKING:
@@ -118,6 +138,7 @@ if TYPE_CHECKING:
         EstablishedNames,
         Exploitations,
         ExploitLikelihoods,
+        ExtensionSignatures,
         FeedOverlays,
         FeedStatus,
         HallucinationLookup,
@@ -131,19 +152,22 @@ if TYPE_CHECKING:
         PackageFactsQueries,
         PopularNames,
         PrivateRegistryQueries,
+        ProviderProvenance,
         PublishedManifestQueries,
         RangeMatching,
         RegistryRecords,
-        RegistryVersions,
         ReleaseAgeQueries,
         ReleaseHistories,
+        ReleaseLedgerQueries,
         RemovedNameList,
         RepositoryHeads,
         ReuseIndexes,
+        ReuseKeyRules,
         RuleAddresses,
         SignatureCheck,
         ToolApprovals,
         UpstreamLookup,
+        VerifiedArchives,
         VersionOrdering,
     )
     from cordon_scanner.intel.malware import atr as _intel_malware_atr
@@ -162,13 +186,28 @@ if TYPE_CHECKING:
     from cordon_scanner.intel.provenance import (
         github_repository as _intel_provenance_github_repository,
     )
+    from cordon_scanner.intel.provenance import gosumdb as _intel_provenance_gosumdb
     from cordon_scanner.intel.provenance import helm_provenance as _intel_provenance_helm_provenance
     from cordon_scanner.intel.provenance import (
         homebrew_provenance as _intel_provenance_homebrew_provenance,
     )
     from cordon_scanner.intel.provenance import openpgp as _intel_provenance_openpgp
+    from cordon_scanner.intel.provenance import (
+        terraform_provenance as _intel_provenance_terraform_provenance,
+    )
+    from cordon_scanner.intel.provenance.releases import (
+        github_attestations as _intel_provenance_releases_github_attestations,
+    )
+    from cordon_scanner.intel.provenance.releases import (
+        hackage_tuf as _intel_provenance_releases_hackage_tuf,
+    )
+    from cordon_scanner.intel.provenance.releases import (
+        nuget_signature as _intel_provenance_releases_nuget_signature,
+    )
+    from cordon_scanner.intel.provenance.releases import (
+        openvsx_signature as _intel_provenance_releases_openvsx_signature,
+    )
     from cordon_scanner.intel.registries import installers as _intel_registries_installers
-    from cordon_scanner.intel.registries import more_registries as _intel_registries_more_registries
     from cordon_scanner.intel.registries import names as _intel_registries_names
     from cordon_scanner.intel.registries import (
         private_registries as _intel_registries_private_registries,
@@ -178,6 +217,12 @@ if TYPE_CHECKING:
     from cordon_scanner.intel.registries import registry_record as _intel_registries_registry_record
     from cordon_scanner.intel.registries import release_history as _intel_registries_release_history
     from cordon_scanner.intel.registries import removed as _intel_registries_removed
+    from cordon_scanner.intel.registries.archive_sources import (
+        base as _intel_registries_archive_sources_base,
+    )
+    from cordon_scanner.intel.registries.archive_sources import (
+        table as _intel_registries_archive_sources_table,
+    )
     from cordon_scanner.intel.store import datafile as _intel_store_datafile
     from cordon_scanner.intel.store import dbsync as _intel_store_dbsync
     from cordon_scanner.intel.store import licenses as _intel_store_licenses
@@ -196,9 +241,9 @@ if TYPE_CHECKING:
     Ed25519: SignatureCheck = _intel_provenance__ed25519.Ed25519
     FeedClient: FeedStatus = _intel_malware_feed.FeedClient
     ReuseIndex: ReuseIndexes = _intel_malware_reuse_index.ReuseIndex
+    ReuseKeys: ReuseKeyRules = _intel_malware_reuse_index.ReuseKeys
     LICENSE_UNKNOWN: enum.Enum = _intel_store_licenses.LicenseCategory.UNKNOWN
     LicenseClassifier: LicenseExpressions = _intel_store_licenses.LicenseClassifier
-    MoreRegistries: RegistryVersions = _intel_registries_more_registries.MoreRegistries
     OsvImport: OsvRepositories = _intel_advisories_osv_import.OsvImport
     UPSTREAM_ECOSYSTEMS: frozenset[str] = _intel_advisories_upstream.SUPPORTED
     UpstreamAdvisories: UpstreamLookup = _intel_advisories_upstream.UpstreamAdvisories
@@ -209,14 +254,27 @@ if TYPE_CHECKING:
     RegistryError: type[Exception] = _intel_registries_registry_client.RegistryError
     RegistryRecord: RegistryRecords = _intel_registries_registry_record.RegistryRecord
     ReleaseHistory: ReleaseHistories = _intel_registries_release_history.ReleaseHistory
+    ArchiveSources: VerifiedArchives = _intel_registries_archive_sources_table.ArchiveSources
     VersionRanges: RangeMatching = _intel_advisories_ranges.VersionRanges
     Versions: VersionOrdering = _intel_advisories_versions.Versions
     YOUNG_DEPENDENCY_DAYS: int = _intel_registries_release_history.YOUNG_DEPENDENCY_DAYS
 
     # The detectors' ports (intel/base.py, review 27 F2).
     BazelProvenance: ModuleProvenance = _intel_provenance_bazel_provenance.BazelProvenance
+    GoSumdb: ModuleProvenance = _intel_provenance_gosumdb.GoSumdb
+    GitHubAttestations: ModuleProvenance = (
+        _intel_provenance_releases_github_attestations.GitHubAttestations
+    )
+    HackageTuf: ModuleProvenance = _intel_provenance_releases_hackage_tuf.HackageTuf
+    OpenVsxSignature: ExtensionSignatures = (
+        _intel_provenance_releases_openvsx_signature.OpenVsxSignature
+    )
+    NuGetSignature: ModuleProvenance = _intel_provenance_releases_nuget_signature.NuGetSignature
     GitHubRepository: RepositoryHeads = _intel_provenance_github_repository.GitHubRepository
     HelmProvenance: ChartProvenance = _intel_provenance_helm_provenance.HelmProvenance
+    TerraformProvenance: ProviderProvenance = (
+        _intel_provenance_terraform_provenance.TerraformProvenance
+    )
     HomebrewProvenance: BottleProvenance = _intel_provenance_homebrew_provenance.HomebrewProvenance
     IntelDataFile: DataFiles = _intel_store_datafile.IntelDataFile
     KNOWN_INSTALLERS: tuple[tuple[str, str], ...] = _intel_registries_installers.KNOWN_INSTALLERS
@@ -250,6 +308,7 @@ if TYPE_CHECKING:
     PackageNotFound: type[Exception] = _intel_registries_registry_client.PackageNotFound
     SigstoreVerification: BundleVerification = _intel_provenance_attest.SigstoreVerification
     YoungReleases: ReleaseAgeQueries = _intel_registries_registry_client.RegistryClient
+    ReleaseLedger: ReleaseLedgerQueries = _intel_registries_archive_sources_base.ArchiveFetch
 
 
 def __getattr__(name: str) -> object:
@@ -283,6 +342,7 @@ __all__ = [
     "AdvisoryFiles",
     "AdvisoryTextSymbols",
     "AnsibleSignatures",
+    "ArchiveSources",
     "AtrEngine",
     "AttestationDocuments",
     "BazelProvenance",
@@ -295,7 +355,10 @@ __all__ = [
     "ExploitedCatalogue",
     "FeedClient",
     "FeedStore",
+    "GitHubAttestations",
     "GitHubRepository",
+    "GoSumdb",
+    "HackageTuf",
     "HallucinatedPackages",
     "HelmProvenance",
     "HomebrewProvenance",
@@ -304,9 +367,10 @@ __all__ = [
     "LiveMcp",
     "LiveMcpError",
     "McpApprovals",
-    "MoreRegistries",
+    "NuGetSignature",
     "OfficialInstallers",
     "OpenPgp",
+    "OpenVsxSignature",
     "OsvImport",
     "PackageNotFound",
     "PopularPackageNames",
@@ -317,9 +381,11 @@ __all__ = [
     "RegistryError",
     "RegistryRecord",
     "ReleaseHistory",
+    "ReleaseLedger",
     "RemovedPackageNames",
     "RuleLinks",
     "SigstoreVerification",
+    "TerraformProvenance",
     "UpstreamAdvisories",
     "VersionRanges",
     "Versions",

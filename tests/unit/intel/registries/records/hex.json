@@ -1,0 +1,199 @@
+{
+ "configs": {
+  "erlang.mk": "dep_plug_crypto = hex 2.2.1",
+  "mix.exs": "{:plug_crypto, \"~> 2.2\"}",
+  "rebar.config": "{plug_crypto, \"2.2.1\"}"
+ },
+ "docs_html_url": "https://plug-crypto.hexdocs.pm/",
+ "downloads": {
+  "all": 163448139,
+  "day": 130560,
+  "recent": 8464446,
+  "week": 741049
+ },
+ "html_url": "https://hex.pm/packages/plug_crypto",
+ "inserted_at": "2018-10-03T10:19:35.447599Z",
+ "latest_stable_version": "2.2.1",
+ "latest_version": "2.2.1",
+ "meta": {
+  "description": "Crypto-related functionality for the web",
+  "licenses": [
+   "Apache-2.0"
+  ],
+  "links": {
+   "GitHub": "https://github.com/elixir-plug/plug_crypto"
+  },
+  "maintainers": []
+ },
+ "name": "plug_crypto",
+ "owners": [
+  {
+   "url": "https://hex.pm/api/users/ericmj",
+   "username": "ericmj"
+  },
+  {
+   "url": "https://hex.pm/api/users/josevalim",
+   "username": "josevalim"
+  },
+  {
+   "url": "https://hex.pm/api/users/whatyouhide",
+   "username": "whatyouhide"
+  }
+ ],
+ "releases": [
+  {
+   "has_docs": true,
+   "inserted_at": "2026-10-23T09:48:03.934659Z",
+   "url": "https://hex.pm/api/packages/plug_crypto/releases/2.2.1",
+   "version": "2.2.1"
+  },
+  {
+   "has_docs": true,
+   "inserted_at": "2026-07-24T10:46:10.019987Z",
+   "url": "https://hex.pm/api/packages/plug_crypto/releases/2.2.0",
+   "version": "2.2.0"
+  },
+  {
+   "has_docs": true,
+   "inserted_at": "2025-04-03T12:02:20.333637Z",
+   "url": "https://hex.pm/api/packages/plug_crypto/releases/2.1.1",
+   "version": "2.1.1"
+  },
+  {
+   "has_docs": true,
+   "inserted_at": "2024-05-02T14:35:37.316823Z",
+   "url": "https://hex.pm/api/packages/plug_crypto/releases/2.1.0",
+   "version": "2.1.0"
+  },
+  {
+   "has_docs": true,
+   "inserted_at": "2023-10-06T09:46:09.725338Z",
+   "url": "https://hex.pm/api/packages/plug_crypto/releases/2.0.0",
+   "version": "2.0.0"
+  },
+  {
+   "has_docs": true,
+   "inserted_at": "2023-03-10T21:11:25.394112Z",
+   "url": "https://hex.pm/api/packages/plug_crypto/releases/1.2.5",
+   "version": "1.2.5"
+  },
+  {
+   "has_docs": true,
+   "inserted_at": "2023-03-10T07:56:45.156306Z",
+   "url": "https://hex.pm/api/packages/plug_crypto/releases/1.2.4",
+   "version": "1.2.4"
+  },
+  {
+   "has_docs": true,
+   "inserted_at": "2022-08-19T15:16:36.721735Z",
+   "url": "https://hex.pm/api/packages/plug_crypto/releases/1.2.3",
+   "version": "1.2.3"
+  },
+  {
+   "has_docs": true,
+   "inserted_at": "2021-03-25T07:47:56.716098Z",
+   "url": "https://hex.pm/api/packages/plug_crypto/releases/1.2.2",
+   "version": "1.2.2"
+  },
+  {
+   "has_docs": true,
+   "inserted_at": "2021-02-17T08:29:45.770783Z",
+   "url": "https://hex.pm/api/packages/plug_crypto/releases/1.2.1",
+   "version": "1.2.1"
+  },
+  {
+   "has_docs": true,
+   "inserted_at": "2020-10-07T14:03:09.438699Z",
+   "url": "https://hex.pm/api/packages/plug_crypto/releases/1.2.0",
+   "version": "1.2.0"
+  },
+  {
+   "has_docs": true,
+   "inserted_at": "2020-02-15T20:27:32.564010Z",
+   "url": "https://hex.pm/api/packages/plug_crypto/releases/1.1.2",
+   "version": "1.1.2"
+  },
+  {
+   "has_docs": true,
+   "inserted_at": "2020-02-14T10:27:59.119244Z",
+   "url": "https://hex.pm/api/packages/plug_crypto/releases/1.1.1",
+   "version": "1.1.1"
+  },
+  {
+   "has_docs": true,
+   "inserted_at": "2020-02-11T08:58:57.081290Z",
+   "url": "https://hex.pm/api/packages/plug_crypto/releases/1.1.0",
+   "version": "1.1.0"
+  },
+  {
+   "has_docs": true,
+   "inserted_at": "2018-10-03T10:19:35.457298Z",
+   "url": "https://hex.pm/api/packages/plug_crypto/releases/1.0.0",
+   "version": "1.0.0"
+  }
+ ],
+ "repository": "hexpm",
+ "retirements": {
+  "1.1.1": {
+   "message": "Wrong default value is used for salt on encrypt",
+   "reason": "invalid"
+  }
+ },
+ "security_advisories": [
+  {
+   "affected": [
+    ">= 1.0.0 and < 2.2.1"
+   ],
+   "aliases": [
+    "CVE-2026-105963",
+    "GHSA-ffw9-w85g-f2vh"
+   ],
+   "api_url": "https://api.osv.dev/v1/vulns/EEF-CVE-2026-105963",
+   "cvss_rating": "medium",
+   "cvss_score": 5.1,
+   "cvss_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:H/UI:N/VC:L/VI:N/VA:N/SC:N/SI:N/SA:N",
+   "html_url": "https://osv.dev/vulnerability/EEF-CVE-2026-105963",
+   "id": "EEF-CVE-2026-105963",
+   "modified_at": "2026-11-25T06:30:07Z",
+   "published_at": "2026-10-23T09:56:58Z",
+   "references": [
+    {
+     "type": "ADVISORY",
+     "url": "https://github.com/elixir-plug/plug/security/advisories/GHSA-ffw9-w85g-f2vh"
+    },
+    {
+     "type": "WEB",
+     "url": "https://cna.erlef.org/cves/CVE-2026-105963.html"
+    },
+    {
+     "type": "WEB",
+     "url": "https://github.com/elixir-plug/plug/commit/56000c33d8a0a2fbac491f8be06b9c5112bc2276"
+    },
+    {
+     "type": "FIX",
+     "url": "https://github.com/elixir-plug/plug/commit/aeaa90e76b73ea90c3ecca9aae16fce71bd2a8d4"
+    },
+    {
+     "type": "WEB",
+     "url": "https://github.com/elixir-plug/plug_crypto/commit/2d078b7b8264c565f0ff71235c515f4f46882dcf"
+    },
+    {
+     "type": "FIX",
+     "url": "https://github.com/elixir-plug/plug_crypto/commit/981887493dada0fce7003c61861c00dfbb0fc8c5"
+    },
+    {
+     "type": "PACKAGE",
+     "url": "https://hex.pm/packages/plug"
+    },
+    {
+     "type": "PACKAGE",
+     "url": "https://hex.pm/packages/plug_crypto"
+    }
+   ],
+   "summary": "Secret key base exposed in stack trace arguments on wrong-typed Plug.Crypto arguments",
+   "withdrawn_at": null
+  }
+ ],
+ "updated_at": "2026-11-24T10:25:02.439059Z",
+ "url": "https://hex.pm/api/packages/plug_crypto"
+}

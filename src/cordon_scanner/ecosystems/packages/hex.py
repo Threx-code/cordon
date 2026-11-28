@@ -22,6 +22,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import HexArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -29,6 +30,9 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
+from cordon_scanner.ecosystems.launchers import NoLauncher
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.hex_literals import ElixirLiterals
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -391,8 +395,6 @@ class BeamTerms:
             if self.peek() == ",":
                 self.position += 1
                 continue
-            if self.peek() == "|" and closing == "]":
-                raise self.fail("an improper list is not data")
             self.expect(closing)
             return out
 
@@ -773,11 +775,26 @@ class HexEcosystem(BaseEcosystem):
     """Hex, through mix and rebar3."""
 
     id = "hex"
+    consumer_hooks = NoConsumerHooks(
+        "mix.exs and a dependency's compile steps are Elixir code, not command strings in a manifest field"
+    )
+    private_mark = NoPrivateMark(
+        "a Hex package is published only by `mix hex.publish`; mix.exs has no flag that marks it unpublishable"
+    )
+    own_name = OwnName(
+        ("mix.exs", "metadata.config"),
+        readers=(("metadata.config", "hex_metadata"),),
+        parsers=(("metadata.config", "hex_manifest"),),
+    )
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         return name.split("/", 1)[0] if "/" in name else None
 
     purl_type = "hex"
+    published_archive = (HexArchive(),)
+    mcp_launch = NoLauncher(
+        "`mix escript.install hex <package>` installs an escript and a later command runs it: two steps (https://hexdocs.pm/mix/Mix.Tasks.Escript.Install.html)"
+    )
     manifest_globs: tuple[str, ...] = ("**/mix.exs", "**/rebar.config")
     lockfile_globs: tuple[str, ...] = ("**/mix.lock", "**/rebar.lock")
     registry_hosts: frozenset[str] = frozenset({"hex.pm", "repo.hex.pm"})

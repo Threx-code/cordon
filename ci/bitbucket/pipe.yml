@@ -16,6 +16,14 @@ variables:
   - name: UPLOAD
     default: "false"
     description: Upload results to Cordon Cloud. Add `oidc: true` to the step; no secret is needed.
+  - name: DEPENDENCY_REVIEW
+    default: "true"
+    description: >-
+      On a pull request, review what the dependency update adds compared with the destination branch and post it
+      to Code Insights; each blocking change is an annotation titled with its reason code.
+  - name: DEPENDENCY_REVIEW_ONLINE
+    default: "false"
+    description: Also fetch each changed package's old and new releases, verify and compare them.
 tags:
   - security
   - supply-chain

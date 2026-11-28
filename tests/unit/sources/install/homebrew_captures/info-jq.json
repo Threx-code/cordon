@@ -1,0 +1,211 @@
+{
+ "formulae": [
+  {
+   "name": "jq",
+   "full_name": "jq",
+   "tap": "homebrew/core",
+   "oldnames": [],
+   "aliases": [],
+   "versioned_formulae": [],
+   "desc": "Lightweight and flexible command-line JSON processor",
+   "license": "MIT",
+   "homepage": "https://jqlang.github.io/jq/",
+   "versions": {
+    "stable": "1.8.2",
+    "head": "HEAD",
+    "bottle": true
+   },
+   "urls": {
+    "stable": {
+     "url": "https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-1.8.2.tar.gz",
+     "tag": null,
+     "revision": null,
+     "using": null,
+     "checksum": "71b8d6e8f5fe81f6c6d0d110e3892251f6ce76ed095abd315e26e6e1193af3af"
+    },
+    "head": {
+     "url": "https://github.com/jqlang/jq.git",
+     "branch": "master",
+     "using": null
+    }
+   },
+   "patches": [],
+   "local_patch_checksums": {},
+   "revision": 0,
+   "version_scheme": 0,
+   "compatibility_version": 1,
+   "autobump": true,
+   "no_autobump_message": null,
+   "skip_livecheck": false,
+   "bottle": {
+    "stable": {
+     "rebuild": 1,
+     "root_url": "https://ghcr.io/v2/homebrew/core",
+     "files": {
+      "arm64_golden_gate": {
+       "cellar": ":any",
+       "url": "https://ghcr.io/v2/homebrew/core/jq/blobs/sha256:d048dd4c28d867e939065a3bc8209f37e2a5be3e2c18d18c8c7da8f4d1629a4a",
+       "sha256": "d048dd4c28d867e939065a3bc8209f37e2a5be3e2c18d18c8c7da8f4d1629a4a"
+      }
+     }
+    }
+   },
+   "pour_bottle_only_if": null,
+   "keg_only": false,
+   "keg_only_reason": null,
+   "options": [],
+   "build_dependencies": [],
+   "dependencies": [
+    "oniguruma"
+   ],
+   "test_dependencies": [],
+   "recommended_dependencies": [],
+   "optional_dependencies": [],
+   "no_linkage_dependencies": [],
+   "uses_from_macos": [],
+   "uses_from_macos_bounds": [],
+   "requirements": [],
+   "conflicts_with": [],
+   "conflicts_with_reasons": [],
+   "link_overwrite": [],
+   "caveats": null,
+   "installed": [],
+   "linked_keg": null,
+   "pinned": false,
+   "outdated": false,
+   "deprecated": false,
+   "deprecation_date": null,
+   "deprecation_reason": null,
+   "deprecation_replacement_formula": null,
+   "deprecation_replacement_cask": null,
+   "deprecate_args": null,
+   "disabled": false,
+   "disable_date": null,
+   "disable_reason": null,
+   "disable_replacement_formula": null,
+   "disable_replacement_cask": null,
+   "disable_args": null,
+   "post_install_steps": [],
+   "post_install_defined": false,
+   "service": null,
+   "tap_git_head": "aa2355fbd7243b45c1e156f76b1148370e5e47b5",
+   "ruby_source_path": "Formula/j/jq.rb",
+   "ruby_source_checksum": {
+    "sha256": "0081a3a8d8afaa165b4bfa9b222723916b56f4d04b975d7aad35e8cdad0b0296"
+   },
+   "head_dependencies": {
+    "build_dependencies": [
+     "autoconf",
+     "automake",
+     "libtool"
+    ],
+    "dependencies": [
+     "oniguruma"
+    ],
+    "test_dependencies": [],
+    "recommended_dependencies": [],
+    "optional_dependencies": [],
+    "no_linkage_dependencies": [],
+    "uses_from_macos": [],
+    "uses_from_macos_bounds": []
+   }
+  },
+  {
+   "name": "oniguruma",
+   "full_name": "oniguruma",
+   "tap": "homebrew/core",
+   "oldnames": [],
+   "aliases": [],
+   "versioned_formulae": [],
+   "desc": "Regular expressions library",
+   "license": "BSD-2-Clause",
+   "homepage": "https://github.com/kkos/oniguruma/",
+   "versions": {
+    "stable": "6.9.10",
+    "head": "HEAD",
+    "bottle": true
+   },
+   "urls": {
+    "stable": {
+     "url": "https://github.com/kkos/oniguruma/releases/download/v6.9.10/onig-6.9.10.tar.gz",
+     "tag": null,
+     "revision": null,
+     "using": null,
+     "checksum": "2a5cfc5ae259e4e97f86b68dfffc152cdaffe94e2060b770cb827238d769fc05"
+    },
+    "head": {
+     "url": "https://github.com/kkos/oniguruma.git",
+     "branch": "master",
+     "using": null
+    }
+   },
+   "patches": [],
+   "local_patch_checksums": {},
+   "revision": 0,
+   "version_scheme": 0,
+   "compatibility_version": 1,
+   "autobump": true,
+   "no_autobump_message": null,
+   "skip_livecheck": false,
+   "bottle": {
+    "stable": {
+     "rebuild": 0,
+     "root_url": "https://ghcr.io/v2/homebrew/core",
+     "files": {
+      "arm64_golden_gate": {
+       "cellar": ":any",
+       "url": "https://ghcr.io/v2/homebrew/core/oniguruma/blobs/sha256:faabe05d9d5379c42d47deba427021e4f40b551b3b95b74675d42e00a8321c23",
+       "sha256": "faabe05d9d5379c42d47deba427021e4f40b551b3b95b74675d42e00a8321c23"
+      }
+     }
+    }
+   },
+   "pour_bottle_only_if": null,
+   "keg_only": false,
+   "keg_only_reason": null,
+   "options": [],
+   "build_dependencies": [
+    "autoconf",
+    "automake",
+    "libtool"
+   ],
+   "dependencies": [],
+   "test_dependencies": [],
+   "recommended_dependencies": [],
+   "optional_dependencies": [],
+   "no_linkage_dependencies": [],
+   "uses_from_macos": [],
+   "uses_from_macos_bounds": [],
+   "requirements": [],
+   "conflicts_with": [],
+   "conflicts_with_reasons": [],
+   "link_overwrite": [],
+   "caveats": null,
+   "installed": [],
+   "linked_keg": null,
+   "pinned": false,
+   "outdated": false,
+   "deprecated": false,
+   "deprecation_date": null,
+   "deprecation_reason": null,
+   "deprecation_replacement_formula": null,
+   "deprecation_replacement_cask": null,
+   "deprecate_args": null,
+   "disabled": false,
+   "disable_date": null,
+   "disable_reason": null,
+   "disable_replacement_formula": null,
+   "disable_replacement_cask": null,
+   "disable_args": null,
+   "post_install_steps": [],
+   "post_install_defined": false,
+   "service": null,
+   "tap_git_head": "aa2355fbd7243b45c1e156f76b1148370e5e47b5",
+   "ruby_source_path": "Formula/o/oniguruma.rb",
+   "ruby_source_checksum": {
+    "sha256": "9cde5399ef049c1bae8c7c789a792d09074da95d3582d582f34f61b6830bf1fe"
+   }
+  }
+ ],
+ "casks": []
+}

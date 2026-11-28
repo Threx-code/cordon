@@ -593,6 +593,23 @@ class Writers:
         )
 
     @staticmethod
+    def vscode(root: Path, pkgs: list[Pkg]) -> None:
+        """A dev container installing each extension pinned to its version, as `publisher.name@version`."""
+        folder = root / ".devcontainer"
+        folder.mkdir(parents=True, exist_ok=True)
+        extensions = [f"{p.name}@{p.version}" for p in pkgs]
+        (folder / "devcontainer.json").write_text(
+            json.dumps(
+                {
+                    "name": "app",
+                    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+                    "customizations": {"vscode": {"extensions": extensions}},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    @staticmethod
     def ansible(root: Path, pkgs: list[Pkg]) -> None:
         """requirements.yml with each collection pinned; one with a source comes from a private
         Galaxy server (an Automation Hub)."""
@@ -1145,6 +1162,21 @@ PROFILES: tuple[EcosystemProfile, ...] = (
             "action.yml": "name: x\nruns:\n  using: node20\n  main: index.js\n",
             "index.js": f'require("fs").writeFileSync("{MARKER}", "")\n',
             ".github/workflows/run.yml": f"on: push\njobs:\n  x:\n    runs-on: ubuntu-latest\n    steps:\n      - run: touch {MARKER}\n",
+        },
+    ),
+    EcosystemProfile(
+        id="vscode",
+        names=("acme.leftpad", "acme.is-number", "acme.msecs"),
+        versions=("1.0.0", "1.3.0", "2.0.0"),
+        write=Writers.vscode,
+        typosquat=("ms-python.python", "ms-pyhton.python", "ms-python.debugpy"),
+        executable={
+            # An extension's entry point runs in the editor when it activates, and its prepublish
+            # script when it is packaged: never when a workspace naming it is scanned.
+            "extension/package.json": '{"name": "x", "publisher": "acme", "version": "1.0.0", '
+            '"engines": {"vscode": "^1.80.0"}, "main": "./extension.js", '
+            f'"scripts": {{"vscode:prepublish": "touch {MARKER}"}}}}\n',
+            "extension/extension.js": f'require("fs").writeFileSync("{MARKER}", "")\n',
         },
     ),
     EcosystemProfile(

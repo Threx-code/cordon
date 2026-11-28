@@ -108,7 +108,8 @@ inputs:
     description: >
       On a pull request, also report what the dependency update adds compared with the base
       branch (`cordon-scanner review`): packages added, upgraded, downgraded and removed, and the
-      known-malicious or vulnerable releases among them. Written to the job summary.
+      known-malicious or vulnerable releases among them. Written to the job summary, and each change
+      that blocks is an error annotation titled with its reason code (R100, R404, R400, R401).
     required: false
     default: "false"
   dependency-review-online:
@@ -385,11 +386,23 @@ runs:
         fi
         # A shallow checkout may not have the base commit; fetch exactly it.
         git cat-file -e "${REVIEW_BASE}^{commit}" 2>/dev/null || git fetch --no-tags --depth=1 origin "$REVIEW_BASE"
-        args=( review . --base "$REVIEW_BASE" --format markdown --quiet )
+        # Outside the checkout, and removed first: a file of that name in the pull request is never printed.
+        notes="$RUNNER_TEMP/cordon-review.annotations"
+        rm -f "$notes"
+        args=( review . --base "$REVIEW_BASE" --format markdown --quiet --annotations "$notes" )
         [ "$REVIEW_ONLINE" = "true" ] && args+=( --online )
-        cordon-scanner "${args[@]}" > cordon-review.md
+        # stderr to a file: the runner reads workflow commands from both streams.
+        cordon-scanner "${args[@]}" > cordon-review.md 2> "$RUNNER_TEMP/cordon-review.err"
         code=$?
         cat cordon-review.md >> "$GITHUB_STEP_SUMMARY"
+        # Each blocking change as an annotation titled with its reason code, so the failed check says why; only
+        # from a review that finished (0 clean, 1 findings), never from one that died part way.
+        if [ "$code" -le 1 ] && [ -f "$notes" ]; then cat "$notes"; fi
+        # A review that died says why, with any line it printed kept from acting as a workflow command.
+        if [ "$code" -gt 1 ] && [ -s "$RUNNER_TEMP/cordon-review.err" ]; then
+          echo "::error::the dependency review stopped (exit $code); its last messages follow"
+          tail -n 20 "$RUNNER_TEMP/cordon-review.err" | sed 's/^[[:space:]]*::/: :/'
+        fi
         if [ "$REVIEW_COMMENT" = "true" ]; then
           gh pr comment "$REVIEW_PR" --body-file cordon-review.md --edit-last 2>/dev/null \
             || gh pr comment "$REVIEW_PR" --body-file cordon-review.md

@@ -1,6 +1,6 @@
 """Advisories for ecosystems no advisory source covers, matched through each package's upstream.
 
-OSV publishes no Bazel, vcpkg, Conan, Homebrew, CocoaPods, Terraform or Nix ecosystem (its
+OSV publishes no Bazel, vcpkg, Conan, Homebrew, CocoaPods, Terraform, Nix, Helm or container-image ecosystem (its
 `ecosystems.txt`, October 2026). Each of those packages is built from an upstream repository the
 ecosystem's own data names exactly, and OSV does cover upstream repositories: its GIT ecosystem
 keys advisories by repository and tag (`https://github.com/madler/zlib` at `v1.2.11` names
@@ -15,6 +15,8 @@ ecosystem covers. So a package is matched through what its own ecosystem says it
                of its `vcpkg_from_github`
     terraform  the registry's provider record: its source repository, as a Go module
     nix        a flake input's locked commit
+    helm       the chart's `sources` and `appVersion`: the repository's index, or the OCI chart's config
+    image      the image configuration's OCI labels: its source, and the commit or version it was built from
     conda      the recipe inside the package itself (`info/recipe`): its source URL, or git URL and rev
 
 Nothing is guessed. An archive URL is read only in GitHub's and GitLab's fixed forms; a ref that is
@@ -55,6 +57,7 @@ from cordon_scanner.intel.advisories.upstream.homebrew import HomebrewBottles, H
 from cordon_scanner.intel.advisories.upstream.inference import Inference
 from cordon_scanner.intel.advisories.upstream.tags import TagInference
 from cordon_scanner.intel.advisories.upstream.vcpkg import VcpkgPorts, VcpkgVersions
+from cordon_scanner.version import USER_AGENT
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -74,8 +77,11 @@ WORKERS: Final = 8
 """Packages resolved per scan. Past it the rest are reported unchecked, never silently skipped."""
 MAX_EXPORT_BYTES: Final = 1 << 20
 SUPPORTED: Final = frozenset(
-    {"bazel", "conan", "cocoapods", "homebrew", "vcpkg", "terraform", "nix", "conda", "ansible"}
-)
+    {
+        "bazel", "conan", "cocoapods", "homebrew", "vcpkg", "terraform", "nix", "conda", "ansible",
+        "helm", "image",
+    }
+)  # fmt: skip
 
 
 @dataclass
@@ -721,6 +727,20 @@ class Upstreams:
         )
 
     @staticmethod
+    def helm(dependency: Dependency) -> Upstream | Unnamed:
+        """A chart: its application's source and version, from the repository's index or the OCI chart's own config."""
+        from cordon_scanner.intel.advisories.upstream.charts_images import ChartsImages
+
+        return ChartsImages.helm(dependency)
+
+    @staticmethod
+    def image(dependency: Dependency) -> Upstream | Unnamed:
+        """An image: the source and the commit or version its configuration's OCI labels name."""
+        from cordon_scanner.intel.advisories.upstream.charts_images import ChartsImages
+
+        return ChartsImages.image(dependency)
+
+    @staticmethod
     def nix(dependency: Dependency) -> Upstream | Unnamed:
         commit = dependency.version or ""
         if not re.fullmatch(r"[0-9a-f]{40}", commit):
@@ -775,7 +795,7 @@ class UpstreamAdvisories:
         request = urllib.request.Request(  # noqa: S310 - a fixed https URL
             url,
             data=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json", "User-Agent": "cordon-scanner"},
+            headers={"Content-Type": "application/json", "User-Agent": USER_AGENT},
         )
         with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310
             data = json.loads(Download.read(response, 64 << 20))

@@ -15,8 +15,10 @@ The Podfile and podspecs are Ruby, read statically like a Gemfile (`ecosystems/r
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import NoArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -24,6 +26,9 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import ConsumerHooks, NoPrivateMark
+from cordon_scanner.ecosystems.launchers import NoLauncher
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.rubygems import RubySource
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -503,12 +508,40 @@ class PodfileLock:
 
 class CocoaPodsEcosystem(BaseEcosystem):
     id = "cocoapods"
+    consumer_hooks = ConsumerHooks(("prepare_command",))
+    private_mark = NoPrivateMark(
+        "a pod is published only by `pod trunk push`; a podspec has no field that marks it unpublishable"
+    )
+    own_name = OwnName(
+        ("*.podspec", "*.podspec.json"),
+        readers=(("*.podspec.json", "podspec_json"),),
+        parsers=(("*.podspec.json", "podspec_json_manifest"),),
+    )
     purl_type = "cocoapods"
+    published_archive = NoArchive(
+        "a pod is a podspec whose `source` names a git repository or an upstream archive; the spec repository publishes no archive of the pod (captured: cocoapods/podspec)"
+    )
+    mcp_launch = NoLauncher(
+        "a pod is a library linked into an app, and `pod` has no command that runs one (https://guides.cocoapods.org/terminal/commands.html)"
+    )
     manifest_globs: tuple[str, ...] = ("**/Podfile", "**/*.podspec")
     lockfile_globs: tuple[str, ...] = ("**/Podfile.lock",)
     registry_hosts: frozenset[str] = frozenset(
         {"cdn.cocoapods.org", "trunk.cocoapods.org", "github.com/CocoaPods/Specs"}
     )
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A Podfile.lock resolving these pods: `{path: content}`."""
+        pods = "".join(f"  - {name} ({version})\n" for name, version in pins)
+        direct = "".join(f"  - {name}\n" for name, _ in pins)
+        return {"Podfile.lock": f"PODS:\n{pods}\nDEPENDENCIES:\n{direct}\nCOCOAPODS: 1.15.2\n"}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A Podfile naming these pods with no version: `{path: content}`."""
+        pods = "".join(f"  pod '{name}'\n" for name in names)
+        return {"Podfile": f"target 'Check' do\n{pods}end\n"}
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()

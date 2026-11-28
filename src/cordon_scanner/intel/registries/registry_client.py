@@ -43,17 +43,15 @@ from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.intel.base import PackageArchive, PackageFacts
 from cordon_scanner.intel.registries.registry_request import (
-    ARCHIVE_HOSTS,
     MAX_RESPONSE_BYTES,
     RETRY_ATTEMPTS,
     RETRY_BACKOFF_SECONDS,
     RETRY_STATUSES,
     TIMEOUT_SECONDS,
-    USER_AGENT,
     PackageNotFound,
     RegistryError,
-    RegistryRequest,
 )
+from cordon_scanner.version import USER_AGENT
 
 MAX_REDIRECTS = 0
 """Redirects are not followed.
@@ -192,34 +190,73 @@ class RegistryClient:
         """
         return value if isinstance(value, dict) else {}
 
+    #: The reader that answers for each ecosystem: npm and PyPI have their own; every other ecosystem is read by `MoreRegistries`.
+    CLIENTS: ClassVar[dict[str, str]] = {
+        "actions": "more",
+        "ansible": "more",
+        "bazel": "more",
+        "cargo": "more",
+        "cocoapods": "more",
+        "composer": "more",
+        "conan": "more",
+        "conda": "more",
+        "cran": "more",
+        "gomod": "more",
+        "gradle": "more",
+        "hackage": "more",
+        "helm": "more",
+        "hex": "more",
+        "homebrew": "more",
+        "image": "more",
+        "julia": "more",
+        "maven": "more",
+        "nix": "more",
+        "npm": "npm",
+        "nuget": "more",
+        "opam": "more",
+        "pub": "more",
+        "pypi": "pypi",
+        "rubygems": "more",
+        "swift": "more",
+        "terraform": "more",
+        "vcpkg": "more",
+        "vscode": "more",
+    }
+
     @staticmethod
     @functools.lru_cache(maxsize=2048)
     def _cached_facts(
         ecosystem: str, name: str, version: str | None, source: str | None = None
     ) -> PackageFacts:
-        if ecosystem == "pypi":
-            return RegistryClient._pypi(name, version)
-        if ecosystem == "npm":
-            return RegistryClient._npm(name, version)
-        from cordon_scanner.intel.registries.more_registries import MoreRegistries
         from cordon_scanner.intel.registries.registry_hosts import ALIASES
 
-        if ecosystem in ALIASES:
-            # crates.io, RubyGems, NuGet, the Go proxy and Maven Central (G5).
-            facts = (
-                MoreRegistries.facts(ecosystem, name, version, source)
-                if source
-                else MoreRegistries.facts(ecosystem, name, version)
-            )
-            if ecosystem in RegistryClient._ATTESTED_SEPARATELY and version and not facts.yanked:
-                # Sigstore bundles published through trusted publishing; absent (404) for most.
-                try:
-                    attested = RegistryClient.attestation_payload(ecosystem, name, version)
-                except RegistryError:
-                    attested = None
-                facts = dataclasses.replace(facts, attested=attested is not None)
-            return facts
-        raise RegistryError(f"no registry configured for {ecosystem}")
+        reader = RegistryClient.CLIENTS.get(ecosystem) or RegistryClient.CLIENTS.get(
+            ALIASES.get(ecosystem, "")
+        )
+        if reader is None:
+            raise RegistryError(f"no registry configured for {ecosystem}")
+        if reader == "more":
+            return RegistryClient._more(ecosystem, name, version, source)
+        return getattr(RegistryClient, f"_{reader}")(name, version)  # type: ignore[no-any-return]
+
+    @staticmethod
+    def _more(ecosystem: str, name: str, version: str | None, source: str | None) -> PackageFacts:
+        from cordon_scanner.intel.registries.more_registries import MoreRegistries
+
+        # crates.io, RubyGems, NuGet, the Go proxy, Maven Central and the rest (G5).
+        facts = (
+            MoreRegistries.facts(ecosystem, name, version, source)
+            if source
+            else MoreRegistries.facts(ecosystem, name, version)
+        )
+        if ecosystem in RegistryClient._ATTESTED_SEPARATELY and version and not facts.yanked:
+            # Sigstore bundles published through trusted publishing; absent (404) for most.
+            try:
+                attested = RegistryClient.attestation_payload(ecosystem, name, version)
+            except RegistryError:
+                attested = None
+            facts = dataclasses.replace(facts, attested=attested is not None)
+        return facts
 
     @staticmethod
     def facts(
@@ -648,83 +685,6 @@ class RegistryClient:
             f"{REGISTRY_HOSTS['npm']}/{quoted}/{urllib.parse.quote(version, safe='')}"
         )
 
-    @staticmethod
-    def package_archive(ecosystem: str, name: str, version: str | None) -> PackageArchive:
-        """Download the archive a registry publishes for a version (`None` means the latest).
-
-        Never installed and never run: the bytes are returned for a scan to read. The download is
-        host-pinned, size-bounded, redirect-free, and compared with the digest the registry
-        publishes (npm's `integrity`, PyPI's sha256) before it is returned.
-        """
-        if ecosystem == "npm":
-            return RegistryClient._npm_archive(name, version)
-        if ecosystem == "pypi":
-            return RegistryClient._pypi_archive(name, version)
-        from cordon_scanner.intel.registries.more_registries import MoreRegistries
-
-        if ecosystem in MoreRegistries.ARCHIVE_ECOSYSTEMS:
-            return MoreRegistries.archive(ecosystem, name, version)
-        raise RegistryError(f"no archive support for {ecosystem}")
-
-    @staticmethod
-    def _fetch_bytes(url: str, ecosystem: str) -> bytes:
-        return RegistryRequest.fetch_bytes(url, ecosystem)
-
-    @staticmethod
-    def _npm_archive(name: str, version: str | None) -> PackageArchive:
-        import base64
-        import hashlib
-
-        quoted = urllib.parse.quote(name, safe="@/")
-        # The version's own document (a few kilobytes) rather than the whole packument, which runs
-        # to tens of megabytes for the packages people most often ask about. `latest` is a tag the
-        # registry resolves the same way.
-        selector = urllib.parse.quote(version, safe="") if version else "latest"
-        entry = RegistryClient._fetch(f"{REGISTRY_HOSTS['npm']}/{quoted}/{selector}")
-        resolved = str(entry.get("version") or version or "")
-        dist = RegistryClient._mapping(entry.get("dist"))
-        url = dist.get("tarball")
-        if not resolved or not isinstance(url, str):
-            raise RegistryError(f"npm has no tarball for {name}@{version or 'latest'}")
-        data = RegistryClient._fetch_bytes(url, "npm")
-        integrity = str(dist.get("integrity", ""))
-        if integrity.startswith("sha512-"):
-            expected = base64.b64decode(integrity[len("sha512-") :])
-            if hashlib.sha512(data).digest() != expected:
-                raise RegistryError(f"{name}@{resolved} does not match the integrity npm publishes")
-        else:
-            raise RegistryError(f"npm publishes no sha512 integrity for {name}@{resolved}")
-        return PackageArchive("npm", name, resolved, url.rsplit("/", 1)[-1], data)
-
-    @staticmethod
-    def _pypi_archive(name: str, version: str | None) -> PackageArchive:
-        import hashlib
-
-        quoted = urllib.parse.quote(name, safe="")
-        path = (
-            f"/pypi/{quoted}/{urllib.parse.quote(version, safe='')}/json"
-            if version
-            else f"/pypi/{quoted}/json"
-        )
-        document = RegistryClient._fetch(f"{REGISTRY_HOSTS['pypi']}{path}")
-        resolved = str(
-            RegistryClient._mapping(document.get("info")).get("version") or version or ""
-        )
-        files = [f for f in document.get("urls") or () if isinstance(f, dict)]
-        # The sdist first: it is what a source install runs, including its build hooks.
-        chosen = next((f for f in files if f.get("packagetype") == "sdist"), None) or next(
-            (f for f in files if f.get("packagetype") == "bdist_wheel"), None
-        )
-        if chosen is None or not isinstance(chosen.get("url"), str):
-            raise RegistryError(f"PyPI has no archive for {name}=={resolved}")
-        data = RegistryClient._fetch_bytes(str(chosen["url"]), "pypi")
-        expected = str(RegistryClient._mapping(chosen.get("digests")).get("sha256", ""))
-        if not expected or hashlib.sha256(data).hexdigest() != expected:
-            raise RegistryError(f"{name}=={resolved} does not match the sha256 PyPI publishes")
-        return PackageArchive(
-            "pypi", name, resolved, str(chosen.get("filename") or "package.tar.gz"), data
-        )
-
 
 #: Archive extensions a PyPI source distribution is published under. The
 #: version is the last field before one of these, so the set is what decides
@@ -743,7 +703,6 @@ NPM_DOWNLOADS_HOST = "https://api.npmjs.org"
 
 
 __all__ = [
-    "ARCHIVE_HOSTS",
     "ATTESTATION_HOSTS",
     "MAX_RESPONSE_BYTES",
     "REGISTRY_HOSTS",

@@ -30,6 +30,7 @@ from cordon_scanner.foundation.dependencies import (
     OS_ECOSYSTEMS,
     PROVENANCE_ECOSYSTEMS,
     PROVENANCE_INVALID_RULES,
+    PROVENANCE_NOT_PUBLISHED,
     RUNTIME_ECOSYSTEM,
     CheckLog,
 )
@@ -100,6 +101,9 @@ class DependencyRecords:
                     malware_status=DependencyRecords._malware(dependency, own, context),
                     integrity_status=DependencyRecords._integrity(dependency, own, context),
                     provenance_status=DependencyRecords._provenance(dependency, own, context),
+                    provenance_reason=DependencyRecords._provenance_reason(
+                        dependency, own, context
+                    ),
                     licence_status=DependencyRecords._licence(dependency, own),
                     finding_ids=tuple(sorted({f.fingerprint for f in own if f.fingerprint})),
                 )
@@ -128,7 +132,9 @@ class DependencyRecords:
             return "no_matching_advisory" if dependency.version else "skipped"
         if dependency.ecosystem == RUNTIME_ECOSYSTEM:
             return "unavailable_feed"
-        if dependency.ecosystem == "image" and not database.covers("image"):
+        if RegistryFacts.vulnerabilities_by_contents(dependency.ecosystem) and not database.covers(
+            dependency.ecosystem
+        ):
             # An image's vulnerabilities are its packages', reported by scanning the image.
             return "not_applicable"
         if not database.covers(dependency.ecosystem):
@@ -200,6 +206,20 @@ class DependencyRecords:
         if dependency.ecosystem not in PROVENANCE_ECOSYSTEMS or dependency.local:
             return "unsupported"
         return "not_checked"
+
+    @staticmethod
+    def _provenance_reason(
+        dependency: Dependency, own: list[Finding], context: InventoryContext
+    ) -> str | None:
+        """Why a dependency's provenance is unsupported, when its registry publishes none (`PROVENANCE_NOT_PUBLISHED`, the
+        registry's own documentation as read and dated there): the reason, in the table's words. None for every other status,
+        for a local dependency and for a platform requirement, which are not a registry's package."""
+        if (
+            dependency.local
+            or DependencyRecords._provenance(dependency, own, context) != "unsupported"
+        ):
+            return None
+        return PROVENANCE_NOT_PUBLISHED.get(dependency.ecosystem)
 
     @staticmethod
     def _licence(dependency: Dependency, own: list[Finding]) -> str:

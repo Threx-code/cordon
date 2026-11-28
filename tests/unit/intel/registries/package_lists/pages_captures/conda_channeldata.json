@@ -1,0 +1,94 @@
+{
+ "channeldata_version": 1,
+ "packages": {
+  "21cmfast": {
+   "activate.d": false,
+   "binary_prefix": true,
+   "deactivate.d": false,
+   "description": "21cmFAST provides a simple and fast simulation package for the cosmological 21cm signal as either coeval cubes or full lightcones.",
+   "dev_url": "https://github.com/21cmFAST/21cmFAST",
+   "doc_url": "https://21cmFAST.readthedocs.io/",
+   "home": "https://github.com/21cmFAST/21cmFAST",
+   "license": "MIT",
+   "post_link": false,
+   "pre_link": false,
+   "pre_unlink": false,
+   "run_exports": {},
+   "source_url": "https://pypi.io/packages/source/2/21cmFAST/21cmFAST-3.3.1.tar.gz",
+   "subdirs": [
+    "linux-64",
+    "osx-64"
+   ],
+   "summary": "A semi-numerical cosmological simulation code for the 21cm signal",
+   "text_prefix": true,
+   "timestamp": 1651260314,
+   "version": "3.3.1"
+  },
+  "2dfatmic": {
+   "activate.d": false,
+   "binary_prefix": true,
+   "deactivate.d": false,
+   "description": "This model simulates subsurface flow, fate, and transport of contaminants that are undergoing chemical or biological transformations. This model is applicable to transient conditions in both saturated and unsaturated zones.",
+   "doc_url": "https://nepis.epa.gov/Adobe/PDF/P1006YEP.pdf",
+   "home": "https://www.epa.gov/water-research/two-dimensional-subsurface-flow-fate-and-transport-microbes-and-chemicals-2dfatmic",
+   "license": "Public Domain",
+   "post_link": false,
+   "pre_link": false,
+   "pre_unlink": false,
+   "run_exports": {},
+   "subdirs": [
+    "linux-64",
+    "osx-64"
+   ],
+   "summary": "Two-Dimensional Subsurface Flow, Fate and Transport of Microbes and Chemicals Model",
+   "text_prefix": false,
+   "timestamp": 1602245771,
+   "version": "1.0"
+  },
+  "4ti2": {
+   "activate.d": false,
+   "binary_prefix": false,
+   "deactivate.d": false,
+   "dev_url": "https://github.com/4ti2/4ti2",
+   "doc_url": "https://4ti2.github.io/",
+   "home": "https://4ti2.github.io/",
+   "license": "GPL-2.0-or-later",
+   "post_link": false,
+   "pre_link": false,
+   "pre_unlink": false,
+   "run_exports": {},
+   "source_url": "https://github.com/4ti2/4ti2/releases/download/Release_1_6_15/4ti2-1.6.15.tar.gz",
+   "subdirs": [
+    "linux-64",
+    "linux-aarch64",
+    "linux-ppc64le",
+    "osx-64",
+    "osx-arm64",
+    "win-64"
+   ],
+   "summary": "A software package for algebraic, geometric and combinatorial problems on linear spaces",
+   "text_prefix": false,
+   "timestamp": 1795338190,
+   "version": "1.6.16"
+  },
+  "7za": {
+   "activate.d": false,
+   "binary_prefix": false,
+   "deactivate.d": false,
+   "home": "https://www.7-zip.org/",
+   "license": "LGPL v2.1",
+   "post_link": false,
+   "pre_link": false,
+   "pre_unlink": false,
+   "run_exports": {},
+   "source_url": "https://sourceforge.net/projects/sevenzip/files/7-Zip/9.20/7za920.zip/download",
+   "subdirs": [
+    "win-64"
+   ],
+   "summary": "A file archiver with a high compression ratio",
+   "text_prefix": false,
+   "timestamp": 1566699632,
+   "version": "9.20"
+  }
+ }
+}

@@ -2,8 +2,9 @@
 
 A delivery vehicle is a package with nothing to catch in its own files: it declares a dependency,
 and the dependency carries the payload, so installing the vehicle installs the malware. Scanning the
-vehicle alone can never see it. With a dependency source, each dependency the npm package declares
-(`dependencies`, `optionalDependencies`) is resolved to the highest version its range accepts,
+vehicle alone can never see it. With a dependency source, each dependency the package declares for
+install (npm's `dependencies` and `optionalDependencies`; in every other ecosystem, the runtime and
+optional dependencies its own manifest declares) is resolved to the highest version its range accepts,
 scanned with the same detectors, and when that scan calls the dependency's own content malicious
 the vehicle is blocked too, naming the dependency:
 
@@ -22,18 +23,15 @@ be resolved is skipped, never treated as clean or as malware.
 
 from __future__ import annotations
 
-import base64
 import functools
-import hashlib
 import json
 import re
 import tarfile
-import urllib.parse
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
-from cordon_scanner.foundation.models import Category, Confidence, Severity
+from cordon_scanner.foundation.models import Category, Confidence, Scope, Severity
 
 if TYPE_CHECKING:
     import argparse
@@ -51,125 +49,6 @@ MAX_MANIFEST_BYTES = 1 << 20
 NOT_CONTENT = ("SECRET.", "POLICY.", "VULNERABLE.", "OPERATIONAL.", "SUSPECT.RELEASE.", RULE_ID)
 
 
-class NpmRange:
-    """npm's version-range grammar, the subset published manifests use: exact, `^`, `~`, the
-    comparators, x-ranges, hyphen ranges, `||` and space-joined sets. Anything else (a git URL, a
-    file path, an `npm:` alias, a tag other than `latest`) is not a registry range: None."""
-
-    _VERSION = re.compile(
-        r"^v?(\d+|[xX*])(?:\.(\d+|[xX*]))?(?:\.(\d+|[xX*]))?(?:-([0-9A-Za-z.-]+))?(?:\+.*)?$"
-    )
-
-    @classmethod
-    def satisfies(cls, version: str, spec: str) -> bool | None:
-        spec = spec.strip()
-        if spec in ("", "*", "latest", "x", "X"):
-            return "-" not in version
-        if re.search(r"[:/#]", spec) or spec.startswith(
-            ("file", "git", "http", "link", "workspace")
-        ):
-            return None
-        alternatives = []
-        for alternative in spec.split("||"):
-            comparators = cls._comparators(alternative.strip())
-            if comparators is None:
-                return None
-            alternatives.append(comparators)
-        exact = any(any(op == "=" for op, _ in c) for c in alternatives)
-        if "-" in version.split("+")[0] and not exact:
-            return False
-        return any(all(cls._holds(version, op, bound) for op, bound in c) for c in alternatives)
-
-    @classmethod
-    def _comparators(cls, text: str) -> list[tuple[str, str]] | None:
-        hyphen = re.fullmatch(r"(\S+)\s+-\s+(\S+)", text)
-        if hyphen:
-            low, high = cls._parts(hyphen.group(1)), cls._parts(hyphen.group(2))
-            if low is None or high is None:
-                return None
-            return [(">=", cls._floor(low)), *cls._upper(high, inclusive=True)]
-        out: list[tuple[str, str]] = []
-        for token in re.findall(r"(?:[<>]=?|=|\^|~>?)?\s*[^\s<>=^~]+", text) or [""]:
-            match = re.fullmatch(r"([<>]=?|=|\^|~>?)?\s*(\S*)", token.strip())
-            if match is None:
-                return None
-            op, raw = match.group(1) or "", match.group(2)
-            parts = cls._parts(raw)
-            if parts is None:
-                return None
-            out.extend(cls._expand(op, parts, raw))
-        return out
-
-    @classmethod
-    def _parts(cls, raw: str) -> tuple[int | None, int | None, int | None, str] | None:
-        match = cls._VERSION.match(raw)
-        if match is None:
-            return None
-        nums = [None if g is None or g in "xX*" else int(g) for g in match.groups()[:3]]
-        return nums[0], nums[1], nums[2], match.group(4) or ""
-
-    @staticmethod
-    def _floor(parts: tuple[int | None, int | None, int | None, str]) -> str:
-        major, minor, patch, pre = parts
-        text = f"{major or 0}.{minor or 0}.{patch or 0}"
-        return f"{text}-{pre}" if pre else text
-
-    @classmethod
-    def _upper(
-        cls, parts: tuple[int | None, int | None, int | None, str], *, inclusive: bool
-    ) -> list[tuple[str, str]]:
-        major, minor, patch, _ = parts
-        if major is None:
-            return []
-        if minor is None:
-            return [("<", f"{major + 1}.0.0-0")]
-        if patch is None:
-            return [("<", f"{major}.{minor + 1}.0-0")]
-        return [("<=" if inclusive else "<", cls._floor(parts))]
-
-    @classmethod
-    def _expand(
-        cls, op: str, parts: tuple[int | None, int | None, int | None, str], raw: str
-    ) -> list[tuple[str, str]]:
-        major, minor, patch, _ = parts
-        floor = cls._floor(parts)
-        if major is None:
-            return []
-        if op == "^":
-            if major > 0 or minor is None:
-                return [(">=", floor), ("<", f"{major + 1}.0.0-0")]
-            if minor > 0 or patch is None:
-                return [(">=", floor), ("<", f"0.{minor + 1}.0-0")]
-            return [(">=", floor), ("<", f"0.0.{patch + 1}-0")]
-        if op in ("~", "~>"):
-            if minor is None:
-                return [(">=", floor), ("<", f"{major + 1}.0.0-0")]
-            return [(">=", floor), ("<", f"{major}.{minor + 1}.0-0")]
-        if op in ("", "="):
-            if minor is None or patch is None:
-                return [(">=", floor), *cls._upper(parts, inclusive=True)]
-            return [("=", floor)]
-        if op in (">", "<="):
-            if minor is None or patch is None:
-                upper = cls._upper(parts, inclusive=True)
-                return [(">=" if op == ">" else "<", upper[0][1])] if upper else []
-            return [(op, floor)]
-        return [(op, floor)]
-
-    @staticmethod
-    def _holds(version: str, op: str, bound: str) -> bool:
-        from cordon_scanner.intel.advisories.versions import Versions
-
-        order = Versions.compare("npm", version, bound)
-        return {
-            "=": order == 0,
-            ">": order > 0,
-            ">=": order >= 0,
-            "<": order < 0,
-            "<=": order <= 0,
-        }[op]
-
-
 @dataclass(frozen=True)
 class Resolved:
     name: str
@@ -177,8 +56,118 @@ class Resolved:
     path: Path
 
 
+class EcosystemDependencies:
+    """The same question for a package of any other ecosystem: its declared dependencies are what
+    the scan read from its own manifest, each range is read in the ecosystem's own syntax
+    (`VersionRanges`), and each release is fetched from the ecosystem's verified archive source."""
+
+    #: The scopes an install of the package installs.
+    INSTALLED: Final = frozenset({Scope.RUNTIME, Scope.OPTIONAL})
+
+    @staticmethod
+    def ecosystem_of(result: ScanResult) -> str | None:
+        """The ecosystem of the package scanned: the one its own manifest's dependencies are in."""
+        counts: dict[str, int] = {}
+        for d in result.dependencies:
+            if d.direct and "!" in (d.declared_in or ""):
+                counts[d.ecosystem] = counts.get(d.ecosystem, 0) + 1
+        return max(counts, key=lambda e: (counts[e], e)) if counts else None
+
+    @classmethod
+    def declared(cls, result: ScanResult, ecosystem: str) -> dict[str, str]:
+        """`{name: range}` of what installing the package installs, from its own manifest."""
+        out = {
+            d.name: (d.declared_spec or "").strip()
+            for d in result.dependencies
+            if d.direct
+            and d.ecosystem == ecosystem
+            and d.scope in cls.INSTALLED
+            and "!" in (d.declared_in or "")
+            and not d.local
+        }
+        return dict(sorted(out.items())[:MAX_DEPENDENCIES])
+
+    @staticmethod
+    def admitted(ecosystem: str, spec: str, versions: list[str]) -> list[str]:
+        """The versions an install resolves the declaration to: those its range admits, or, where
+        the ecosystem resolves no range upward (`NO_RANGES`), the version the declaration names."""
+        from cordon_scanner.intel.advisories.ranges import VersionRanges
+
+        if ecosystem in VersionRanges.NO_RANGES:
+            return [v for v in versions if v == spec.lstrip("=v ") or v == spec]
+        if not spec:
+            return list(versions)
+        return [v for v in versions if VersionRanges.admits(ecosystem, spec, v)]
+
+    @classmethod
+    def resolve(
+        cls, ecosystem: str, name: str, spec: str, store: Path | None, into: Path
+    ) -> Resolved | None:
+        """The highest release the declaration admits, from the store or the verified source."""
+        from cordon_scanner.intel.advisories.versions import Versions
+
+        held = cls._held(store, ecosystem).get(name, {}) if store else {}
+        if store:
+            versions = list(held)
+        else:
+            from cordon_scanner.intel.registries.archive_sources.table import ArchiveSources
+            from cordon_scanner.intel.registries.registry_client import RegistryError
+
+            try:
+                versions = ArchiveSources.versions(ecosystem, name)
+            except (RegistryError, OSError, ValueError):
+                return None
+        accepted = cls.admitted(ecosystem, spec, versions)
+        if not accepted:
+            return None
+        version = max(accepted, key=lambda v: Versions.sort_key(ecosystem, v))
+        if store:
+            return Resolved(name, version, held[version])
+        return cls._fetched(ecosystem, name, version, into)
+
+    @staticmethod
+    def _fetched(ecosystem: str, name: str, version: str, into: Path) -> Resolved | None:
+        from cordon_scanner.intel.registries.archive_sources.table import ArchiveSources
+        from cordon_scanner.intel.registries.registry_client import RegistryError
+        from cordon_scanner.sources.package import PackageTarget
+
+        try:
+            archive = ArchiveSources.package_archive(ecosystem, name, version)
+        except (RegistryError, OSError, ValueError):
+            return None
+        path = into / PackageTarget.safe_filename(archive.filename, ecosystem)
+        path.write_bytes(archive.data)
+        return Resolved(name, version, path)
+
+    @staticmethod
+    @functools.lru_cache(maxsize=8)
+    def _held(store: Path, ecosystem: str) -> dict[str, dict[str, Path]]:
+        """`{name: {version: path}}` of a store's `<ecosystem>/<name>@<version>.<suffix>` files (a
+        `/` in a name written `_`), listed once."""
+        held: dict[str, dict[str, Path]] = {}
+        folder = store / ecosystem
+        for path in folder.iterdir() if folder.is_dir() else ():
+            stem = re.sub(r"\.(?:tar\.gz|tgz|crate|gem|whl|nupkg|zip|tar|jar)$", "", path.name)
+            for name, version in EcosystemDependencies._splits(stem):
+                for key in {name, name.replace("_", "/")}:
+                    held.setdefault(key, {}).setdefault(version, path)
+        return held
+
+    @staticmethod
+    def _splits(stem: str) -> list[tuple[str, str]]:
+        """Every `(name, version)` a stored file's stem can be: split at an `@` or a `-` that starts
+        a version (`a-b-1.0.0` is `a-b` at 1.0.0, never `a` at `b-1.0.0`)."""
+        out = []
+        start = 1 if stem.startswith("@") else 0
+        for index in range(start, len(stem)):
+            if stem[index] in "@-" and stem[index + 1 : index + 2].isdigit():
+                out.append((stem[:index], stem[index + 1 :]))
+        return out
+
+
 class DependencyPayload:
-    """Resolves and scans the dependencies one npm archive declares."""
+    """Resolves and scans the dependencies one package archive declares: npm's read from its
+    tarball, every other ecosystem's through `EcosystemDependencies`."""
 
     @staticmethod
     def add_argument(group: Any) -> None:
@@ -186,7 +175,7 @@ class DependencyPayload:
             "--dependency-store",
             metavar="DIR",
             help=(
-                "a directory of npm archives (npm/<name>@<version>.tgz, a scope's / written _) to "
+                "a directory of package archives (<ecosystem>/<name>@<version>.<suffix>, a / written _) to "
                 "resolve the scanned package's declared dependencies from; each is scanned, and "
                 "one whose own content is malicious blocks this package "
                 "(MALWARE.DEPENDENCY.PAYLOAD.001). With --online the registry is asked instead"
@@ -194,22 +183,22 @@ class DependencyPayload:
         )
 
     @staticmethod
-    def declared(target: Path) -> dict[str, str]:
-        """`{name: range}` from an npm archive's own top-level package.json."""
+    def declared(target: Path) -> tuple[str, dict[str, str]]:
+        """`(ecosystem, {name: range})` from an npm archive's own top-level package.json."""
         try:
             with tarfile.open(target) as archive:
                 for entry in archive:
                     parts = entry.name.split("/")
                     if entry.isfile() and len(parts) == 2 and parts[1] == "package.json":
                         if entry.size > MAX_MANIFEST_BYTES:
-                            return {}
+                            return "npm", {}
                         handle = archive.extractfile(entry)
                         manifest = json.loads(handle.read() if handle else b"{}")
                         break
                 else:
-                    return {}
+                    return "npm", {}
         except (OSError, tarfile.TarError, ValueError, UnicodeDecodeError):
-            return {}
+            return "npm", {}
         out: dict[str, str] = {}
         for key in ("dependencies", "optionalDependencies"):
             section = manifest.get(key) if isinstance(manifest, dict) else None
@@ -217,73 +206,7 @@ class DependencyPayload:
                 out.update({str(n): str(r) for n, r in section.items() if isinstance(r, str)})
         if isinstance(manifest, dict) and manifest.get("name") in out:
             out.pop(str(manifest["name"]))
-        return dict(sorted(out.items())[:MAX_DEPENDENCIES])
-
-    @staticmethod
-    @functools.lru_cache(maxsize=4)
-    def _held(store: Path) -> dict[str, dict[str, Path]]:
-        """`{archive stem: {version: path}}` for a store, listed once: a store holds tens of
-        thousands of archives, and listing it per dependency made one scan take minutes."""
-        held: dict[str, dict[str, Path]] = {}
-        for path in (store / "npm").iterdir() if (store / "npm").is_dir() else ():
-            if not path.name.endswith(".tgz"):
-                continue
-            stem = path.name[: -len(".tgz")]
-            for sep in ("@", "-"):
-                # Every place the name could end: `a-b-1.0.0.tgz` is `a-b` at 1.0.0, never `a` at
-                # `b-1.0.0`, which is not a version and is dropped below.
-                start = 1 if stem.startswith("@") else 0
-                index = stem.find(sep, start)
-                while index > 0:
-                    version = stem[index + 1 :]
-                    if NpmRange._parts(version) is not None:
-                        held.setdefault(stem[:index], {}).setdefault(version, path)
-                    index = stem.find(sep, index + 1)
-        return held
-
-    @staticmethod
-    def from_store(store: Path, name: str, spec: str) -> Resolved | None:
-        """The highest held version the range accepts."""
-        from cordon_scanner.intel.advisories.versions import Versions
-
-        held = {
-            v: p
-            for v, p in DependencyPayload._held(store).get(name.replace("/", "_"), {}).items()
-            if NpmRange.satisfies(v, spec)
-        }
-        if not held:
-            return None
-        best = max(held, key=lambda v: Versions.sort_key("npm", v))
-        return Resolved(name, best, held[best])
-
-    @staticmethod
-    def from_registry(name: str, spec: str, into: Path) -> Resolved | None:
-        """The highest published version the range accepts, sha512-checked."""
-        from cordon_scanner.intel.advisories.versions import Versions
-        from cordon_scanner.sources.previous import PreviousRelease
-
-        document = PreviousRelease._document(
-            f"https://registry.npmjs.org/{urllib.parse.quote(name, safe='@')}"
-        )
-        versions = document.get("versions") or {}
-        if spec.strip() == "latest":
-            spec = str((document.get("dist-tags") or {}).get("latest") or "")
-        accepted = [
-            v for v in versions if NpmRange._parts(v) is not None and NpmRange.satisfies(v, spec)
-        ]
-        if not accepted:
-            return None
-        version = max(accepted, key=lambda v: Versions.sort_key("npm", v))
-        dist = versions[version].get("dist") or {}
-        integrity = str(dist.get("integrity") or "")
-        if not integrity.startswith("sha512-"):
-            return None
-        blob = PreviousRelease._artefact(str(dist.get("tarball") or ""), "npm")
-        if base64.b64encode(hashlib.sha512(blob).digest()).decode() != integrity[7:]:
-            return None
-        path = into / PreviousRelease._safe(f"{name.replace('/', '__')}-{version}.tgz")
-        path.write_bytes(blob)
-        return Resolved(name, version, path)
+        return "npm", dict(sorted(out.items())[:MAX_DEPENDENCIES])
 
     @staticmethod
     def blocking(result: ScanResult, config: Any) -> list[Finding]:
@@ -338,14 +261,14 @@ class DependencyPayload:
 
         store = getattr(args, "dependency_store", None)
         online = bool(args.online) and not args.offline and not FeedClient.offline_requested()
-        if (
-            not target.is_file()
-            or not (store or online)
-            or not target.name.endswith((".tgz", ".tar.gz"))
-        ):
+        if not target.is_file() or not (store or online):
             return result
-        declared = cls.declared(target)
-        if not declared:
+        ecosystem = EcosystemDependencies.ecosystem_of(result)
+        declared = EcosystemDependencies.declared(result, ecosystem) if ecosystem else {}
+        if not declared and target.name.endswith((".tgz", ".tar.gz")):
+            # A tarball whose scan recorded no manifest dependencies: read its package.json.
+            ecosystem, declared = cls.declared(target)
+        if not declared or not ecosystem:
             return result
         archive = next(
             (f.location.path.partition("!")[0] for f in result.findings if "!" in f.location.path),
@@ -356,10 +279,8 @@ class DependencyPayload:
         with tempfile.TemporaryDirectory(prefix="cordon-deps-") as work:
             for name, spec in declared.items():
                 try:
-                    found = (
-                        cls.from_store(Path(store), name, spec)
-                        if store
-                        else cls.from_registry(name, spec, Path(work))
+                    found = EcosystemDependencies.resolve(
+                        ecosystem, name, spec, Path(store) if store else None, Path(work)
                     )
                 except (OSError, ValueError, KeyError):
                     found = None

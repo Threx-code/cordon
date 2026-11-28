@@ -68,6 +68,11 @@ class CoverageHelpers:
         return f"on: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n{steps}"
 
 
+#: A known-malicious extension a workspace names is an editor-extension dependency: the dependency rule
+#: reports it, once (the agent rules keep the note for an unpinned one with only some bad releases).
+KNOWN = "MALWARE.DEPENDENCY.KNOWN.001"
+
+
 class TestEditorExtensionRecords:
     """OSV's VSCode records (Marketplace and Open VSX) wherever an extension is named."""
 
@@ -81,23 +86,23 @@ class TestEditorExtensionRecords:
                 tmp_path, {".vscode/extensions.json": '{"recommendations": ["ellacrity.recoil"]}'}
             )
         )
-        [hit] = found["MALWARE.EXTENSION.KNOWN.001"]
+        [hit] = found[KNOWN]
         assert hit.severity is Severity.CRITICAL
-        assert "every release" in hit.message
+        assert "every version" in hit.message
 
     def test_the_publisher_and_name_are_case_insensitive(self, tmp_path) -> None:
         doc = '{"recommendations": ["CodeInKlingon.Git-Worktree-Menu"]}'
         found = CoverageHelpers.rules(
             CoverageHelpers.scan(tmp_path, {".vscode/extensions.json": doc})
         )
-        assert found["MALWARE.EXTENSION.KNOWN.001"]
+        assert found[KNOWN]
 
     def test_a_pinned_affected_release(self, tmp_path) -> None:
         doc = '{"customizations": {"vscode": {"extensions": ["checkmarx.ast-results@2.56.0"]}}}'
         found = CoverageHelpers.rules(
             CoverageHelpers.scan(tmp_path, {".devcontainer/devcontainer.json": doc})
         )
-        assert found["MALWARE.EXTENSION.KNOWN.001"]
+        assert found[KNOWN]
 
     def test_a_pinned_clean_release_is_quiet(self, tmp_path) -> None:
         doc = '{"customizations": {"vscode": {"extensions": ["checkmarx.ast-results@2.58.0"]}}}'
@@ -115,7 +120,7 @@ class TestEditorExtensionRecords:
                 {".vscode/extensions.json": '{"recommendations": ["checkmarx.ast-results"]}'},
             )
         )
-        assert "MALWARE.EXTENSION.KNOWN.001" not in found
+        assert KNOWN not in found and "MALWARE.EXTENSION.KNOWN.001" not in found
         [hit] = found["SUSPECT.EXTENSION.MALICIOUS_VERSIONS.001"]
         assert hit.severity is Severity.LOW
 
@@ -124,7 +129,7 @@ class TestEditorExtensionRecords:
             {"folders": [{"path": "."}], "extensions": {"recommendations": ["ellacrity.recoil"]}}
         )
         found = CoverageHelpers.rules(CoverageHelpers.scan(tmp_path, {"team.code-workspace": doc}))
-        assert found["MALWARE.EXTENSION.KNOWN.001"]
+        assert found[KNOWN]
 
     def test_gitpod_installs_from_open_vsx(self, tmp_path) -> None:
         doc = (
@@ -132,7 +137,7 @@ class TestEditorExtensionRecords:
             "    - ellacrity.recoil@0.7.4\n    - https://example.com/some.vsix\n"
         )
         found = CoverageHelpers.rules(CoverageHelpers.scan(tmp_path, {".gitpod.yml": doc}))
-        [hit] = found["MALWARE.EXTENSION.KNOWN.001"]
+        [hit] = found[KNOWN]
         assert "ellacrity.recoil" in hit.message
 
     def test_ordinary_recommendations_stay_quiet(self, tmp_path) -> None:

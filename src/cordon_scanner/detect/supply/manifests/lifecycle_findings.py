@@ -16,6 +16,7 @@ from cordon_scanner.detect.base import FileUnit, ScanContext
 from cordon_scanner.detect.supply.manifests.findings import ManifestFinding
 from cordon_scanner.detect.supply.manifests.install_hook_shapes import InstallHookShapes
 from cordon_scanner.detect.supply.manifests.scripts import ManifestScripts
+from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.foundation.capabilities import Capability
 from cordon_scanner.foundation.dependencies import EcosystemFactsProvider, HookKinds
 from cordon_scanner.foundation.models import (
@@ -107,8 +108,6 @@ class LifecycleFindings:
     #: Ecosystems whose manifest hooks are the project's own build steps (a Dockerfile's RUN),
     #: judged by the rules that read them in context, not as a dependency's install script.
     BUILD_STEP_HOOKS: ClassVar[frozenset[str]] = frozenset({"image"})
-    #: Ecosystems whose manifest can mark a package unpublishable (npm's `"private": true`).
-    PRIVATE_FLAG: ClassVar[frozenset[str]] = frozenset({"npm"})
 
     @classmethod
     def lifecycle_findings(
@@ -152,7 +151,13 @@ class LifecycleFindings:
     ) -> Iterator[Finding]:
         """The findings for one lifecycle hook: what its command runs, and whether that is install-time payload."""
         command = hook.command
-        if not command or HookKinds.action_step(hook):
+        if command and HookKinds.action_step(hook):
+            # A composite action's `run:` is graded as CI, not as install-time code (review 98); the install-hook shapes
+            # are read off it all the same, where the ecosystem declares those steps as consumer-time hooks.
+            programs = InlinePrograms.found(unit.path, hook.name, command)
+            yield from InstallHookShapes.findings(hook, command, programs, manifest, unit, ctx)
+            return
+        if not command:
             return
         loader = _REQUIRE_ONLY.match(command.strip())
         if loader:
@@ -364,9 +369,8 @@ class LifecycleFindings:
         # separate question the file detectors answer -- and cannot
         # answer at all if nothing points at it.
         first_party = ManifestScripts._is_first_party(unit.path, ctx) or (
-            manifest.ecosystem in LifecycleFindings.PRIVATE_FLAG
-            and not ManifestScripts._is_vendored(unit.path)
-            and ManifestScripts.unpublishable(unit)
+            not ManifestScripts._is_vendored(unit.path)
+            and EcosystemRegistry.unpublishable(manifest.ecosystem, unit.path, unit.content)
         )
         vendored = not first_party
         in_tree = (

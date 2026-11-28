@@ -277,20 +277,45 @@ class TestALossOfAnyKindBlocks:
 
 
 class TestNoWorkerCanStart:
-    def test_it_is_a_scanner_error(self, tmp_path, monkeypatch) -> None:
+    @staticmethod
+    def scan(tmp_path, monkeypatch, names):
         from cordon_scanner.engine import engine as engine_module
-        from cordon_scanner.engine.isolation.supervisor import IsolationUnavailable
-        from cordon_scanner.foundation.errors import ExitCode
 
         def broken(self):
             return Template.start(lambda sock: os._exit(3))  # every worker ends before it is ready
 
         monkeypatch.setattr(engine_module.Engine, "_start_template", broken)
-        with pytest.raises(IsolationUnavailable) as raised:
-            Scanner(Config.default().with_overrides(use_cache=False)).scan(
-                Tree.make(tmp_path / "pkg", ["a.txt"])
-            )
-        assert raised.value.exit_code == ExitCode.SCANNER_ERROR
+        return Scanner(Config.default().with_overrides(use_cache=False)).scan(
+            Tree.make(tmp_path / "pkg", names)
+        )
+
+    def test_the_scan_ends_incomplete_naming_the_files_and_blocks(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from cordon_scanner.decide.policy import PolicyGate
+        from cordon_scanner.foundation.errors import ExitCode
+
+        names = ["a.txt", "b.txt", "c.txt"]
+        result = self.scan(tmp_path, monkeypatch, names)
+        isolation = [f for f in result.findings if f.rule_id == "OPERATIONAL.FILE.WORKER_ISOLATION"]
+        assert isolation, {f.rule_id for f in result.findings}
+        assert {f.location.path for f in isolation} >= set(names)
+        assert PolicyGate.evaluate(result, Config.default().policy).exit_code is not ExitCode.CLEAN
+
+    def test_a_large_scan_has_one_finding_with_the_cause_and_the_count_and_names_the_first_files(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from cordon_scanner.engine.pipeline.detection import Detection
+
+        monkeypatch.setattr(Detection, "NAMED_UNAVAILABLE", 2)
+        names = [f"f{k}.txt" for k in range(6)]
+        result = self.scan(tmp_path, monkeypatch, names)
+        isolation = [f for f in result.findings if f.rule_id == "OPERATIONAL.FILE.WORKER_ISOLATION"]
+        per_file = [f for f in isolation if f.location.path in names]
+        scope = [f for f in isolation if f.location.path not in names]
+        assert len(per_file) == 2 and len(scope) == 1
+        assert "6 file(s)" in scope[0].message and "4 more" in scope[0].message
+        assert result.content_complete is False
 
 
 class Slow(Planted):

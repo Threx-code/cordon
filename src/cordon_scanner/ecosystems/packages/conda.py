@@ -20,6 +20,7 @@ import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import CondaArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -28,6 +29,9 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
+from cordon_scanner.ecosystems.launchers import Launcher
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Scope
 
@@ -508,11 +512,26 @@ class CondaEcosystem(BaseEcosystem):
     """Conda: environment files, recipes, conda-lock files and explicit exports."""
 
     id = "conda"
+    consumer_hooks = NoConsumerHooks(
+        "pre-link and post-link scripts are files of the package, not command strings in its metadata"
+    )
+    private_mark = NoPrivateMark(
+        "a package is uploaded only by `anaconda upload` or a channel's own tooling; its recipe has no flag that marks it unpublishable"
+    )
+    own_name = OwnName(
+        ("info/index.json",),
+        readers=(("info/index.json", "conda_index"),),
+        parsers=(("info/index.json", "conda_manifest"),),
+    )
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         return name.split("::", 1)[0] if "::" in name else None
 
     purl_type = "conda"
+    published_archive = (CondaArchive(),)
+    mcp_launch = (
+        Launcher((("pixi", "exec"),), "conda", "https://pixi.sh/latest/reference/cli/pixi/exec/"),
+    )
     manifest_globs: tuple[str, ...] = (
         "**/environment.yml",
         "**/environment.yaml",
@@ -528,6 +547,22 @@ class CondaEcosystem(BaseEcosystem):
     registry_hosts: frozenset[str] = frozenset(
         {"anaconda.org", "conda.anaconda.org", "repo.anaconda.com"}
     )
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """An environment file pinning these packages: `{path: content}`."""
+        deps = "".join(f"  - {name}={version}\n" for name, version in pins)
+        return {
+            "environment.yml": f"name: check\nchannels:\n  - conda-forge\ndependencies:\n{deps}"
+        }
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """An environment file naming these packages with no version: `{path: content}`."""
+        deps = "".join(f"  - {name}\n" for name in names)
+        return {
+            "environment.yml": f"name: check\nchannels:\n  - conda-forge\ndependencies:\n{deps}"
+        }
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()

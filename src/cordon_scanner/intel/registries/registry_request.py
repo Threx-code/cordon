@@ -8,10 +8,13 @@ import http.client
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
+from cordon_scanner.foundation.network.pinned import PinnedHTTPS
 from cordon_scanner.foundation.network.redirects import NoRedirects
+from cordon_scanner.version import USER_AGENT
 
 TIMEOUT_SECONDS = 5.0
 
@@ -41,8 +44,6 @@ RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 """Statuses that mean "ask again". Everything else is a decision: a 404 is the
 registry saying it does not have the package, and asking twice does not help."""
 
-USER_AGENT = "cordon-scanner (+https://github.com/Threx-code/cordon)"
-
 
 class RegistryError(RuntimeError):
     """A question that could not be answered.
@@ -63,22 +64,6 @@ class PackageNotFound(RegistryError):
     """
 
 
-#: Hosts a package archive may be downloaded from, by ecosystem. The registry names the URL, so
-#: it is confined to the registry's own file hosts before it is fetched.
-ARCHIVE_HOSTS = {
-    "npm": frozenset({"registry.npmjs.org"}),
-    "pypi": frozenset({"files.pythonhosted.org"}),
-    "cargo": frozenset({"static.crates.io"}),
-    "rubygems": frozenset({"rubygems.org"}),
-    "nuget": frozenset({"api.nuget.org"}),
-    "gomod": frozenset({"proxy.golang.org"}),
-    "hex": frozenset({"repo.hex.pm"}),
-    "pub": frozenset({"pub.dev"}),
-    "maven": frozenset({"repo.maven.apache.org"}),
-    "openvsx": frozenset({"openvsx.eclipsecontent.org"}),
-    "conda": frozenset({"conda.anaconda.org", "repo.anaconda.com"}),
-    "composer": frozenset({"codeload.github.com"}),
-}
 MAX_ARCHIVE_BYTES = 64 << 20
 
 
@@ -87,21 +72,19 @@ class RegistryRequest:
     hosts, over https, without redirects, bounded in size."""
 
     @staticmethod
-    def fetch_bytes(url: str, ecosystem: str) -> bytes:
+    def headers(url: str, allow: Callable[[str], bool], *, public: bool = False) -> dict[str, str]:
+        """The response headers of `HEAD url` (names lower-cased), from a host `allow` admits, https, no redirect."""
         parsed = urllib.parse.urlsplit(url)
-        if parsed.scheme != "https" or (parsed.hostname or "") not in ARCHIVE_HOSTS.get(
-            ecosystem, frozenset()
-        ):
-            raise RegistryError(
-                f"refusing an archive URL off the {ecosystem} allowlist: {parsed.hostname!r}"
-            )
+        if parsed.scheme != "https" or not allow(parsed.hostname or ""):
+            raise RegistryError(f"refusing an archive URL off the allowlist: {parsed.hostname!r}")
         request = urllib.request.Request(  # noqa: S310 - scheme and host checked above
-            url, headers={"User-Agent": USER_AGENT}, method="GET"
+            url, headers={"User-Agent": USER_AGENT}, method="HEAD"
         )
-        opener = urllib.request.build_opener(NoRedirects)
         try:
-            with opener.open(request, timeout=TIMEOUT_SECONDS * 6) as response:
-                body = Download.read(response, MAX_ARCHIVE_BYTES + 1)
+            with urllib.request.build_opener(NoRedirects, PinnedHTTPS(public_only=public)).open(
+                request, timeout=TIMEOUT_SECONDS * 2
+            ) as response:
+                return {k.lower(): str(v) for k, v in response.headers.items()}
         except urllib.error.HTTPError as exc:
             NetworkFailure.release(exc)
             raise RegistryError(f"HTTP {exc.code} from {parsed.netloc}") from exc
@@ -109,20 +92,53 @@ class RegistryRequest:
             raise RegistryError(
                 f"{NetworkFailure.reason(exc)} fetching from {parsed.netloc}"
             ) from exc
-        if len(body) > MAX_ARCHIVE_BYTES:
-            raise RegistryError(f"archive from {parsed.netloc} exceeded {MAX_ARCHIVE_BYTES} bytes")
-        return bytes(body)
+
+    @staticmethod
+    def fetch_bytes(
+        url: str, allow: Callable[[str], bool], *, redirects: int = 0, public: bool = False
+    ) -> bytes:
+        """The bytes at `url`, from a host `allow` admits. `redirects` is how many redirects may be followed, each only to an https
+        address on a host `allow` admits (a registry that signs a storage URL answers with one); none by default. With `public`,
+        the name is resolved once and every address it gives must be a public one (the connection goes to the address checked)."""
+        for hop in range(redirects + 1):
+            parsed = urllib.parse.urlsplit(url)
+            if parsed.scheme != "https" or not allow(parsed.hostname or ""):
+                raise RegistryError(
+                    f"refusing an archive URL off the allowlist: {parsed.hostname!r}"
+                )
+            request = urllib.request.Request(  # noqa: S310 - scheme and host checked above
+                url, headers={"User-Agent": USER_AGENT}, method="GET"
+            )
+            opener = urllib.request.build_opener(NoRedirects, PinnedHTTPS(public_only=public))
+            try:
+                with opener.open(request, timeout=TIMEOUT_SECONDS * 6) as response:
+                    body = Download.read(response, MAX_ARCHIVE_BYTES + 1)
+            except urllib.error.HTTPError as exc:
+                NetworkFailure.release(exc)
+                where = str(exc.headers.get("Location", "")) if exc.headers else ""
+                if exc.code in (301, 302, 303, 307, 308) and where and hop < redirects:
+                    url = urllib.parse.urljoin(url, where)
+                    continue
+                raise RegistryError(f"HTTP {exc.code} from {parsed.netloc}") from exc
+            except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
+                raise RegistryError(
+                    f"{NetworkFailure.reason(exc)} fetching from {parsed.netloc}"
+                ) from exc
+            if len(body) > MAX_ARCHIVE_BYTES:
+                raise RegistryError(
+                    f"archive from {parsed.netloc} exceeded {MAX_ARCHIVE_BYTES} bytes"
+                )
+            return bytes(body)
+        raise RegistryError(f"too many redirects fetching from {parsed.netloc}")
 
 
 __all__ = [
-    "ARCHIVE_HOSTS",
     "MAX_ARCHIVE_BYTES",
     "MAX_RESPONSE_BYTES",
     "RETRY_ATTEMPTS",
     "RETRY_BACKOFF_SECONDS",
     "RETRY_STATUSES",
     "TIMEOUT_SECONDS",
-    "USER_AGENT",
     "PackageNotFound",
     "RegistryError",
     "RegistryRequest",

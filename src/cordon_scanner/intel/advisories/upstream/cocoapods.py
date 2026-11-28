@@ -21,6 +21,7 @@ from cordon_scanner.intel.advisories.upstream.base import (
 from cordon_scanner.intel.advisories.upstream.fetch import Fetch
 from cordon_scanner.intel.advisories.upstream.inference import Inference
 from cordon_scanner.intel.advisories.upstream.tags import TagInference
+from cordon_scanner.version import USER_AGENT
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -48,7 +49,7 @@ class PodSiblings:
     @staticmethod
     def http(text: str, version: str) -> str | None:
         """A podspec's `source = { :http => '...' }`, `#{s.version}` read as the version."""
-        found = re.search(r"\.source\s*=\s*\{((?:[^{}]|#\{[^{}]*\})*)\}", text)
+        found = re.search(r"\.source\s*=\s*\{((?:#\{[^{}]*+\}|[^{}])*+)\}", text)
         if not found:
             return None
         for entry in NpmPodspec.FIELD.finditer(found.group(1)):
@@ -216,7 +217,7 @@ class NpmPodspec:
         if not url.startswith("https://"):
             raise ValueError("not an https tarball")
         request = urllib.request.Request(  # noqa: S310 - https, from the registry's own record
-            url, headers={"User-Agent": "cordon-scanner", "Accept-Encoding": "identity"}
+            url, headers={"User-Agent": USER_AGENT, "Accept-Encoding": "identity"}
         )
         with urllib.request.urlopen(request, timeout=120) as response:  # noqa: S310
             body: bytes = Download.read(response, NpmPodspec.MAX_TARBALL + 1)
@@ -337,7 +338,7 @@ class NpmPodspec:
         `#{<spec>.version}` is the locked version and a bare name a resolved variable; anything
         else computed is unknown, never guessed."""
         # The hash may hold interpolations (`"v#{spec.version}"`), whose braces are not its own.
-        found = re.search(r"\.source\s*=\s*\{((?:[^{}]|#\{[^{}]*\})*)\}", text)
+        found = re.search(r"\.source\s*=\s*\{((?:#\{[^{}]*+\}|[^{}])*+)\}", text)
         if not found:
             return Unnamed("its podspec's source is computed")
         fields: dict[str, str] = {}

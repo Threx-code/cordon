@@ -194,6 +194,25 @@ class TestARederivedRuleIsNotCoveredByTheOldSuppression:
         new = self.fingerprints(tmp_path / "b", self.SAME_ID_NEW_PREDICATE)
         assert old and new and not old & new
 
+    @staticmethod
+    def learned(root, rule: str):
+        root.mkdir(parents=True, exist_ok=True)
+        result = PackageKit.scan(root, index="module.exports = (a, b) => a + b;\n", rule=rule)
+        return [f for f in result.findings if f.rule_id.startswith("LEARNED.")]
+
+    def test_a_baseline_of_the_old_predicate_suppresses_it_and_does_not_cover_the_new_one(
+        self, tmp_path
+    ) -> None:
+        from cordon_scanner.decide.policy import Baseline
+
+        old = self.learned(tmp_path / "a", RULE)
+        baseline = Baseline.from_fingerprints([f.fingerprint for f in old])
+        assert old and all(f.is_suppressed for f in baseline.apply(old))
+        again = self.learned(tmp_path / "b", RULE)
+        assert all(f.is_suppressed for f in baseline.apply(again))
+        new = self.learned(tmp_path / "c", self.SAME_ID_NEW_PREDICATE)
+        assert new and not any(f.is_suppressed for f in baseline.apply(new))
+
 
 LEARNED_BLOCK = """    learned:
       families: 4

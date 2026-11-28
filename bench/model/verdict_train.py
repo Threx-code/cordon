@@ -66,6 +66,8 @@ except ImportError:  # pragma: no cover - script invocation puts bench/model on 
 
 from bench.model.area_lines import AreaLines
 from bench.model.capacity import Capacity
+from bench.model.established import Established
+from bench.model.split_weights import SplitWeights
 
 #: Findings the benign measure does not count: a secret, a policy choice, a known vulnerability or
 #: the scan's own notes are not a malware verdict (review 98).
@@ -132,6 +134,8 @@ LABELLED = {
 
 class VerdictTrain:
     POLICY = Config.default().policy
+    #: The benign units `load` left out because `--established` did not show them established (`bench/model/established.py`).
+    not_established: list[str] = []  # noqa: RUF012 -- one run's list, replaced at each `load`
 
     @staticmethod
     def half(key: str) -> str:
@@ -330,6 +334,9 @@ class VerdictTrain:
             for eco in replaced:
                 half.pop(eco, None)
         seen: set[str] = set()
+        established = getattr(a, "established", None)
+        ages = Established.load(established) if established else None
+        cls.not_established = []
         for row in itertools.chain(cls.rows(a.benign), *(cls.rows(p) for p in a.registry_scans)):
             if row["file"] in seen:
                 continue
@@ -339,6 +346,11 @@ class VerdictTrain:
                 continue
             eco = a.eco or ECOSYSTEM.get(raw_eco, raw_eco)
             key = "pkg:" + cls.package_name(row["file"])
+            if ages is not None and not Established.accepts(
+                eco, key.removeprefix("pkg:"), ages.get(row["file"])
+            ):
+                cls.not_established.append(row["file"])
+                continue
             add(row, 0, eco, key, "corpus", key)
         if a.benchmark:
             # Every ecosystem's real malware, on the benchmark's own split: its holdout is never
@@ -581,6 +593,13 @@ class VerdictTrain:
         p.add_argument("--corpus", type=Path, required=True, help="every benign corpus unit")
         p.add_argument("--benign", type=Path, required=True)
         p.add_argument(
+            "--established",
+            type=Path,
+            default=None,
+            help="JSON lines of {file, first_published}: a benign unit trains only if it is established "
+            "(first published 90 days ago or more, or on a shipped list of popular or real names)",
+        )
+        p.add_argument(
             "--malware", type=Path, help="npm/PyPI malware scans (superseded by --benchmark)"
         )
         p.add_argument(
@@ -665,6 +684,33 @@ class VerdictTrain:
             default=None,
             help="hold every area's line so that the upper end of the 95% interval of the legitimate "
             "work-set share it blocks is within this fraction (0.005), and record the bound per area",
+        )
+        p.add_argument(
+            "--hard-legit-factor",
+            type=float,
+            default=None,
+            help="weight a legitimate unit whose out-of-fold score is at least --hard-legit-from by this "
+            "factor (above 1) in the final fit, and record the rule and the numbers in the report",
+        )
+        p.add_argument(
+            "--hard-legit-from",
+            type=float,
+            default=None,
+            help="the out-of-fold score from which a legitimate unit is hard (0.5 when not given)",
+        )
+        p.add_argument(
+            "--time-cutoff",
+            metavar="YYYY-MM-DD",
+            type=SplitWeights.day,
+            default=None,
+            help="report, in the report file, how many malicious work-half units dated on or after this "
+            "day the gate blocks (counts and recall); out of time only under --split time, else out of fold",
+        )
+        p.add_argument(
+            "--families-one-side",
+            action="store_true",
+            help="refuse to train when a malicious family has units on both halves of the split as assigned "
+            "(--split family keeps a datadog family on one side); the count is always in the report",
         )
         p.add_argument(
             "--capacity-search",
@@ -771,6 +817,8 @@ class VerdictTrain:
             "build. Without it the report is the WORK half (out-of-fold recall, work false-block rate).",
         )
         a = p.parse_args()
+        if a.hard_legit_from is not None and not a.hard_legit_factor:
+            p.error("--hard-legit-from needs --hard-legit-factor")
 
         if not (a.malware or a.benchmark):
             raise SystemExit("--malware or --benchmark is required")
@@ -807,6 +855,25 @@ class VerdictTrain:
             print(f"dropped {len(unstable)} version-unstable features: {sorted(unstable)[:40]}")
             for r in data:
                 r["f"] = {k: v for k, v in r["f"].items() if k not in unstable}
+        # Malicious families on both halves of the split as it was assigned (work and holdout, before they are cut): a count, never names.
+        split_records: dict[str, Any] = {
+            "families_on_both_halves": {
+                "split": a.split,
+                "count": SplitWeights.families_split(
+                    [r for r in data if r["label"] and r["half"] in ("work", "holdout")], "half"
+                ),
+            }
+        }
+        crossing = split_records["families_on_both_halves"]["count"]
+        if crossing and not a.families_one_side:
+            print(
+                f"{crossing} malicious families have units on both halves under --split {a.split}"
+            )
+        if a.families_one_side and split_records["families_on_both_halves"]["count"]:
+            raise SystemExit(
+                f"{split_records['families_on_both_halves']['count']} malicious families have units on both halves under "
+                f"--split {a.split}: use --split family"
+            )
         work = [r for r in data if r["half"] == "work" and r["eco"] != a.leave_out]
         test = [r for r in data if r["half"] == "holdout"]
         if a.split == "p8":
@@ -1238,8 +1305,34 @@ class VerdictTrain:
                     legit_scores[r["area"]].append(float(r["score"]))
             lines, line_bounds = AreaLines.enforce(lines, legit_scores, a.line_upper)
 
-        fitted = {x: model().fit(xw[idx], yw[idx]) for x, idx in groups.items()}
+        weights = hard = None
+        if a.hard_legit_factor:
+            listed, hard = SplitWeights.hard_legit(
+                work,
+                [r["score"] for r in work],
+                factor=a.hard_legit_factor,
+                from_score=a.hard_legit_from,
+            )
+            weights = np.array(listed)
+
+        def fit_group(idx):
+            if weights is None:
+                return model().fit(xw[idx], yw[idx])
+            return model().fit(xw[idx], yw[idx], sample_weight=weights[idx])
+
+        fitted = {x: fit_group(idx) for x, idx in groups.items()}
         exported = cls.export(fitted["*"], names)
+        # The records of how the data was weighted and cut go to the report, not into the model: the model is trees and feature names only.
+        if hard is not None:
+            split_records["hard_legit"] = hard
+        if a.time_cutoff:
+            over = [blocked(r, lines) for r in work]
+            late = SplitWeights.time_check(work, over, a.time_cutoff)
+            # Only a time split is out of time; any other leaves these units in the training folds, so the number is out-of-fold.
+            split_records["time_split" if a.split == "time" else "late_units"] = {
+                **late,
+                "out_of": "time" if a.split == "time" else "fold",
+            }
         if capacity is not None:
             exported = Capacity.attach(exported, capacity)
         if line_bounds is not None:
@@ -1312,6 +1405,8 @@ class VerdictTrain:
             "add_only": sorted(add_only_areas),
             "lift_areas": sorted(lift_areas),
             "keep": sorted(rare_rules | NAME_PROVENANCE_RULES),
+            **split_records,
+            **({"not_established": len(cls.not_established)} if a.established else {}),
             "benign_blocked": {},
             "malware_caught": {},
         }

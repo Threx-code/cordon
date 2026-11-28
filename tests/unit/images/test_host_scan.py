@@ -11,9 +11,14 @@ the root is followed.
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
+
+import pytest
 
 from cordon_scanner import Scanner
 from cordon_scanner.foundation.config.settings import Config
+from cordon_scanner.images import host as host_module
 from cordon_scanner.images.host import HostFilesystem
 from kits.imagekit import ImageKit
 
@@ -110,3 +115,97 @@ class TestTheScan:
         # PyYAML 5.3 runs arbitrary code from yaml.load (CVE-2020-1747); requests 2.25.0 leaks
         # Proxy-Authorization (CVE-2023-32681).
         assert {"pkg:pypi/pyyaml", "pkg:pypi/requests"} <= vulnerable
+
+
+PACMAN_DESC = b"%NAME%\nacl\n\n%VERSION%\n2.4.0-1\n\n%ARCH%\nx86_64\n"
+
+
+class TestPackageDatabasesOnDisk:
+    def test_pacman_and_dpkg_status_directories_are_read(self, tmp_path: Path) -> None:
+        root = tmp_path / "root"
+        desc = root / "var/lib/pacman/local/acl-2.4.0-1/desc"
+        desc.parent.mkdir(parents=True)
+        desc.write_bytes(PACMAN_DESC)
+        status_d = root / "var/lib/dpkg/status.d/base"
+        status_d.parent.mkdir(parents=True)
+        status_d.write_bytes(ImageKit.dpkg_stanza("distroless-base", "1.2").encode())
+        inventory = HostFilesystem(root).inventory()
+        assert {(p.manager, p.name, p.version) for p in inventory.packages} == {
+            ("pacman", "acl", "2.4.0-1"),
+            ("dpkg", "distroless-base", "1.2"),
+        }
+
+    def test_a_file_over_its_size_limit_is_not_read(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        root = tmp_path / "root"
+        (root / "var/lib/dpkg").mkdir(parents=True)
+        (root / "var/lib/dpkg/status").write_bytes(ImageKit.dpkg_stanza("big", "1").encode())
+        monkeypatch.setattr(host_module, "MAX_DATABASE_BYTES", 10)
+        assert HostFilesystem(root).inventory().packages == []
+
+    def test_a_file_that_cannot_be_read_is_skipped(self, tmp_path: Path) -> None:
+        root = tmp_path / "root"
+        status = root / "var/lib/dpkg/status"
+        status.parent.mkdir(parents=True)
+        status.write_bytes(ImageKit.dpkg_stanza("locked", "1").encode())
+        status.chmod(0)
+        try:
+            if os.access(status, os.R_OK):
+                pytest.skip("this account reads files whatever their mode")
+            assert HostFilesystem(root).inventory().packages == []
+        finally:
+            status.chmod(0o600)
+
+    def test_a_scan_that_reaches_the_file_cap_says_the_rest_were_not_read(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        root = tmp_path / "root"
+        (root / "var/lib/dpkg").mkdir(parents=True)
+        (root / "var/lib/dpkg/status").write_bytes(ImageKit.dpkg_stanza("a", "1").encode())
+        (root / "etc").mkdir()
+        (root / "etc/os-release").write_bytes(b"ID=debian\nVERSION_ID=12\n")
+        monkeypatch.setattr(host_module, "MAX_FILES", 1)
+        inventory = HostFilesystem(root).inventory()
+        assert [p.name for p in inventory.packages] in (["a"], [])
+        assert any(
+            "more than 1 metadata files; the rest were not read" in p for p in inventory.problems
+        )
+
+
+class TestHomeTools:
+    def test_a_crate_record_that_is_not_json_names_no_crates(self, tmp_path: Path) -> None:
+        home = tmp_path / "home"
+        (home / ".cargo").mkdir(parents=True)
+        for text in ("{not json", "[1, 2]", json.dumps({"installs": ["x"]})):
+            (home / ".cargo/.crates2.json").write_text(text, encoding="utf-8")
+            inventory = HostFilesystem(tmp_path / "root", home).inventory()
+            assert inventory.language_packages == []
+
+    def test_only_crates_from_the_public_index_are_named(self, tmp_path: Path) -> None:
+        home = tmp_path / "home"
+        (home / ".cargo").mkdir(parents=True)
+        installs = {
+            "ripgrep 14.1.0 (registry+https://github.com/rust-lang/crates.io-index)": {},
+            "mine 1.0.0 (path+file:///src/mine)": {},
+            "weird name 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)": {},
+        }
+        (home / ".cargo/.crates2.json").write_text(
+            json.dumps({"installs": installs}), encoding="utf-8"
+        )
+        found = HostFilesystem(tmp_path / "root", home).inventory().language_packages
+        assert [(p.ecosystem, p.name, p.version) for p in found] == [("cargo", "ripgrep", "14.1.0")]
+
+    def test_go_binaries_in_the_home_are_read_for_their_modules(self, tmp_path: Path) -> None:
+        home = tmp_path / "home"
+        (home / "go/bin").mkdir(parents=True)
+        (home / "go/bin/tool").write_bytes(
+            ImageKit.go_binary("dep\tgolang.org/x/net\tv0.17.0\th1:abc=\n")
+        )
+        (home / "go/bin/notes.txt").write_bytes(b"not a binary")
+        found = HostFilesystem(tmp_path / "root", home).inventory().language_packages
+        assert {(p.ecosystem, p.name, p.version) for p in found} == {
+            ("gomod", "stdlib", "1.21.5"),
+            ("gomod", "golang.org/x/net", "0.17.0"),
+        }
+        assert {p.path for p in found} == {"~/go/bin/tool"}

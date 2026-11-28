@@ -24,14 +24,17 @@ A digest pins an image; a tag names one the registry can re-point.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import DockerSaveArchive, OciLayoutArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.infra.ci_images import CiFiles, CiImages
 from cordon_scanner.ecosystems.infra.references import (
     HUB_HOSTS,
     ImageReference,
@@ -39,6 +42,9 @@ from cordon_scanner.ecosystems.infra.references import (
     PublicRegistries,
     ReferenceGrammar,
 )
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
+from cordon_scanner.ecosystems.launchers import Launcher
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.formats.scanned_json import ScannedJson
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -570,6 +576,17 @@ class ImageEcosystem(BaseEcosystem):
     """Container images a build pulls, a Compose file runs, and a Kubernetes manifest deploys."""
 
     id = "image"
+    consumer_hooks = NoConsumerHooks(
+        "an image's build steps are its own Dockerfile's (the project's build); a pulled image runs nothing when it is pulled"
+    )
+    private_mark = NoPrivateMark(
+        "an image is published only by pushing it; no file it is built from marks it unpublishable"
+    )
+    own_name = OwnName(
+        ("blobs/sha256/*", "?" * 64 + ".json"),
+        readers=(("blobs/sha256/*", "image_config"), ("?" * 64 + ".json", "image_config")),
+        parsers=(("blobs/sha256/*", "image_manifest"), ("?" * 64 + ".json", "image_manifest")),
+    )
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         return name.rsplit("/", 1)[0] if "/" in name else None
@@ -577,7 +594,24 @@ class ImageEcosystem(BaseEcosystem):
     def pinned_by_digest(self) -> bool:
         return True
 
+    def vulnerabilities_by_contents(self) -> bool:
+        return True
+
+    def manifest_runs_at_build(self) -> bool:
+        return True
+
+    def name_carries_registry(self) -> bool:
+        return True
+
     purl_type = "docker"
+    published_archive = (OciLayoutArchive(), DockerSaveArchive())
+    mcp_launch = (
+        Launcher(
+            (("docker",), ("podman",)),
+            "image",
+            "https://docs.docker.com/reference/cli/docker/container/run/",
+        ),
+    )
     manifest_globs: tuple[str, ...] = (
         "**/Dockerfile",
         "**/Dockerfile.*",
@@ -624,10 +658,25 @@ class ImageEcosystem(BaseEcosystem):
             for kind in ("deployment", "statefulset", "daemonset", "cronjob", "job", "pod")
             for suffix in ("yaml", "yml")
         ),
+        # CI pipeline files and chart folders: `CiFiles.KINDS` says which reader takes which.
+        *CiFiles.globs(),
     )
     lockfile_globs: tuple[str, ...] = ()
     registry_hosts: frozenset[str] = HUB_HOSTS
     records_integrity = False
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A Dockerfile with one stage from each of these images at these tags: `{path: content}`."""
+        stages = "".join(
+            f"FROM {name}:{version} AS stage{index}\n" for index, (name, version) in enumerate(pins)
+        )
+        return {"Dockerfile": stages}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A Dockerfile with one stage from each of these images, untagged: `{path: content}`."""
+        return {"Dockerfile": "".join(f"FROM {name} AS stage{i}\n" for i, name in enumerate(names))}
 
     def normalize_name(self, name: str) -> str:
         reference = ImageReference.parse(name)
@@ -665,7 +714,10 @@ class ImageEcosystem(BaseEcosystem):
 
         if ImageEcosystem.is_compose(content.path):
             return Compose.parse(content, self.id, {})
-        if ImageEcosystem.is_kubernetes(content.path):
+        ci = CiFiles.reader(content.path)
+        if ci is not None and ci != "kubernetes":
+            return CiImages.parse(content, self.id, ci)
+        if ImageEcosystem.is_kubernetes(content.path) or ci == "kubernetes":
             return Kubernetes.parse(content, self.id)
         return Dockerfile.parse(content, self.id)
 
@@ -673,6 +725,9 @@ class ImageEcosystem(BaseEcosystem):
         """A Compose file with the `.env` beside it, which Compose reads for `${VAR}`."""
         from cordon_scanner.ecosystems.infra.compose import Compose
 
+        ci = CiFiles.reader(content.path)
+        if ci is not None and ci != "kubernetes":
+            return CiImages.parse(content, self.id, ci)
         if ImageEcosystem.is_kubernetes(content.path):
             return Kubernetes.parse(content, self.id)
         if not ImageEcosystem.is_compose(content.path):

@@ -34,6 +34,32 @@ if TYPE_CHECKING:
 PROFILE_BYTES = 1_000_000
 
 
+class ExecutableFacts:
+    """A native file's executable record (SI-T9), read in the worker from its own bytes and sent as a fact: the parent never parses a
+    binary. One canonical JSON string; `ExecutableShapes.record` checks what the parent accepts."""
+
+    @staticmethod
+    def produce(unit: Any) -> None:
+        import json
+
+        from cordon_scanner.detect.registry import ExecutableRecord
+        from cordon_scanner.engine.isolation.facts import WorkerFacts
+        from cordon_scanner.foundation.files.native import NativeFile
+
+        content = unit.content
+        if not NativeFile.is_native(unit.path, content.raw[:8]):
+            return
+        record = ExecutableRecord.of(
+            content.raw,
+            whole=not content.truncated,
+            reason="truncated" if content.truncated else None,
+        )
+        if record is not None:
+            WorkerFacts.add(
+                "executable.record", json.dumps(record, sort_keys=True, separators=(",", ":"))
+            )
+
+
 class WorkerAnalysis:
     """The worker's side: the facts for one unit, into `WorkerFacts`."""
 
@@ -133,6 +159,29 @@ class CapabilityNames:
             WorkerFacts.add("net.host", digest)
         for digest in sorted(domains):
             WorkerFacts.add("net.domain", digest)
+
+
+class CampaignFacts:
+    """The worker's side of a campaign fingerprint: the root manifest's facets, read with its ecosystem's parser here,
+    so the parent never parses it."""
+
+    @staticmethod
+    def produce(unit: Any, ctx: ScanContext) -> None:
+        from cordon_scanner.engine.isolation.facts import WorkerFacts
+        from cordon_scanner.intel.registry import CampaignFingerprint
+
+        if not getattr(ctx.config, "reuse_keys", False) or unit.content.truncated:
+            return
+        ecosystem = CampaignFingerprint.root_manifest(unit.path)
+        if ecosystem is None:
+            return
+        try:
+            facets = CampaignFingerprint.content_facets(ecosystem, unit.content)
+        except Exception:  # noqa: BLE001  # S2: one parser's failure costs this manifest's facets, never the scan
+            return
+        for facet in ("manifest", "deps"):
+            if facets.get(facet):
+                WorkerFacts.add("campaign.facet", [facet, facets[facet]])
 
 
 class ParentAnalysis:

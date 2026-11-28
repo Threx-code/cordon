@@ -14,6 +14,11 @@ from cordon_scanner.version import PROGRAM
 
 
 class AgentCommand:
+    VERIFY_HELP = (
+        "asks open-vsx.org about each installed extension of an editor that installs from it (VSCodium, Cursor, Windsurf) and "
+        "compares its files with the package Open VSX signed; off by default, so nothing is asked of any registry"
+    )
+
     @staticmethod
     def add_parser(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
         agent = sub.add_parser(
@@ -33,10 +38,16 @@ class AgentCommand:
             ),
         )
         inventory.add_argument("--url", default=None, help="Cordon Cloud API base (with --signed)")
+        inventory.add_argument(
+            "--verify-extensions", action="store_true", help=AgentCommand.VERIFY_HELP
+        )
         agent_report = agent.add_parser(
             "report", help="send the inventory with the MDM's device token"
         )
         agent_report.add_argument("--url", default=None, help="Cordon Cloud API base")
+        agent_report.add_argument(
+            "--verify-extensions", action="store_true", help=AgentCommand.VERIFY_HELP
+        )
         approve = agent.add_parser(
             "mcp-approve",
             help="record the tools each remote MCP server in the repository serves now (.cordon/mcp-tools.json)",
@@ -67,7 +78,8 @@ class AgentCommand:
         from cordon_scanner.cloud.agent.collection_status import CollectionStatus
 
         payload = device.DeviceInventory.collect(
-            collection=CollectionStatus.payload(CollectionStatus.reason())
+            collection=CollectionStatus.payload(CollectionStatus.reason()),
+            verify_extensions=bool(getattr(args, "verify_extensions", False)),
         )
         if action == "inventory" and getattr(args, "signed", False):
             return cls._signed(payload, getattr(args, "url", None))

@@ -74,7 +74,7 @@ class P256Signer:
             s = pow(k, -1, n) * (z + r * self._d) % n
             if s != 0:
                 return r, s
-        raise RuntimeError("unreachable: the nonce generator does not end")  # pragma: no cover
+        raise RuntimeError("unreachable")  # pragma: no cover - the loop above always returns
 
     # -- RFC 6979 3.2 --------------------------------------------------------
 

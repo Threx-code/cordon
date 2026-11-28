@@ -28,7 +28,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Final
 
-REQUIRED_COVERAGE: Final = 0.98
+REQUIRED_COVERAGE: Final = 1.0
 
 UNIVERSAL: Final[dict[str, str]] = {
     "UNI-01": "Discovery: every manifest, lockfile, workspace and configuration file is recognised",
@@ -603,6 +603,35 @@ CONTRACTS: Final[tuple[EcosystemContract, ...]] = (
         },
     ),
     EcosystemContract(
+        "vscode",
+        "Editor extensions (VS Code Marketplace and Open VSX)",
+        _files(
+            "manifest",
+            ".vscode/extensions.json",
+            "app.code-workspace",
+            ".devcontainer/python/devcontainer.json",
+            ".devcontainer.json",
+            ".gitpod.yml",
+            "extension.vsixmanifest",
+        ),
+        {
+            "vscode.recommendations": "a workspace's recommended extensions",
+            "vscode.unwanted": "unwanted recommendations are never read as dependencies",
+            "vscode.workspace-file": "a multi-root workspace file's recommendations, beside each folder's own",
+            "vscode.devcontainer": "a dev container's extensions, in the current and the older layout",
+            "vscode.exclusions": "an extension a dev container asks not to install is not a dependency",
+            "vscode.pins": "an extension pinned to a version told apart from one that names none",
+            "vscode.gitpod": "a Gitpod configuration's extensions: ids, pins and .vsix archives by URL",
+            "vscode.vsix-identity": "an extension's own identity read from its .vsix manifest",
+            "vscode.vsix-dependencies": "the extensions an extension depends on or packs",
+            "vscode.case-insensitive": "extension ids compared without case, as the editor compares them",
+        },
+        {
+            "UNI-15": "no file a workspace writes records an extension's digest: the editor checks a downloaded .vsix against its gallery, and a pin names a version only",
+            "UNI-14": "the editor installs from the single gallery its product configuration names: there is no second registry an internal id could fall through to",
+        },
+    ),
+    EcosystemContract(
         "ansible",
         "Ansible",
         _files(
@@ -781,6 +810,7 @@ RECORD_FIELDS: Final = (
     "malware_status",
     "integrity_status",
     "provenance_status",
+    "provenance_reason",
     "licence_status",
     "findings",
 )

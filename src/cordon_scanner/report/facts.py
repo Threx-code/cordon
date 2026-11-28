@@ -253,6 +253,7 @@ class ScanFacts:
             },
             "files": files,
         }
+        record["package"].update(ScanFacts.reuse(result))
         record["digest"] = hashlib.sha256(ScanFacts.canonical(record)).hexdigest()
         return record
 
@@ -298,6 +299,24 @@ class ScanFacts:
         entries = sorted(entries[:MAX_FILES], key=lambda f: (f["key"], f["ext"]))
 
         return entries, unreached_capability_files, omitted, len(unread)
+
+    @staticmethod
+    def reuse(result: ScanResult) -> dict[str, Any]:
+        """`{"reuse": ...}`: the package's code-reuse keys (fingerprint crix1) and whether they are all of them, only
+        when the scan was asked for them (`reuse_keys`); `{}` otherwise, so every other record's bytes are unchanged."""
+        if result.reuse_code is None:
+            return {}
+        out: dict[str, Any] = {
+            "reuse": {
+                "fingerprint": "crix1",
+                "code": list(result.reuse_code),
+                "hook": list(result.reuse_hooks or ()),
+                "complete": result.reuse_complete,
+            }
+        }
+        if result.campaign is not None:
+            out["campaign"] = dict(result.campaign)
+        return out
 
     @staticmethod
     def binaries(result: ScanResult) -> list[str] | None:

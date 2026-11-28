@@ -42,10 +42,22 @@ class InstallRegistries:
         return cls(PrivateRegistries.parse(given))
 
     @staticmethod
-    def public(ecosystem: str) -> frozenset[str]:
-        from cordon_scanner.intel.registries.registry_request import ARCHIVE_HOSTS
+    def trusts(ecosystem: str, host: str) -> bool:
+        """Whether the ecosystem's public registry serves from `host`: a host it names, or, for a registry that records each
+        project's own archive on the project's host (Bazel's, opam's), any public host."""
+        from cordon_scanner.intel.registries.archive_sources.table import ArchiveSources
 
-        return ARCHIVE_HOSTS.get(ecosystem, frozenset())
+        source = ArchiveSources.of(ecosystem)
+        if source is None:
+            return False
+        return host in source.HOSTS or source.allows(host)
+
+    @staticmethod
+    def public(ecosystem: str) -> frozenset[str]:
+        from cordon_scanner.intel.registries.archive_sources.table import ArchiveSources
+
+        source = ArchiveSources.of(ecosystem)
+        return source.HOSTS if source is not None else frozenset()
 
     def canonical(self, url: str) -> str:
         """`url` on the host Cordon fetches it from (an alias replaced by its registry)."""
@@ -73,7 +85,7 @@ class InstallRegistries:
             )
         fetched = self.canonical(url)
         host = (urllib.parse.urlsplit(fetched).hostname or "").lower()
-        if host in self.public(ecosystem) or self.registry_for(fetched) is not None:
+        if self.trusts(ecosystem, host) or self.registry_for(fetched) is not None:
             return fetched
         raise InstallRefused(
             f"{label} resolves to {host}, which Cordon has not been told to trust",
@@ -91,7 +103,7 @@ class InstallRegistries:
 
         registry = self.registry_for(url)
         if registry is None:
-            return RegistryRequest.fetch_bytes(url, ecosystem)
+            return RegistryRequest.fetch_bytes(url, lambda host: self.trusts(ecosystem, host))
         credential = PrivateRegistries.credential(registry)
         if credential is None:
             raise InstallRefused(

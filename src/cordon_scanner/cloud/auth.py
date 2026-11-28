@@ -6,9 +6,10 @@ the job's own OIDC identity token -- GitHub Actions, GitLab, Buildkite, CircleCI
 one -- is exchanged for a fifteen-minute Cordon token (OAuth 2.0 Token Exchange, RFC 8693), and
 the cloud maps it to an organisation through a trust rule on the issuer and claims.
 
-The stored credential lives in the user's config directory with mode 0600 and holds the tokens,
-the organisation, and the organisation's policy signing keys -- pinned at sign-in, which is what
-the policy bundle is later verified against.
+The stored credential holds the tokens, the organisation, and the organisation's policy signing
+keys -- pinned at sign-in, which is what the policy bundle is later verified against. It lives in the
+operating system's credential store (`foundation.secrets.keychain`) where there is one, and otherwise
+in the user's config directory with mode 0600.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from typing import Any, Final
 from cordon_scanner.cloud import CloudEndpoint, CloudError
 from cordon_scanner.cloud.transport import CloudTransport, Transport
 from cordon_scanner.foundation.files.atomic import AtomicFile
+from cordon_scanner.foundation.secrets.keychain import SecretStore, SystemKeychain
 from cordon_scanner.version import PROGRAM
 
 CLIENT_ID: Final = "cordon-cli"
@@ -37,6 +39,7 @@ JWT_TYPE: Final = "urn:ietf:params:oauth:token-type:jwt"
 AUDIENCE: Final = "cordon"
 SCOPES: Final = "scans:write policy:read"
 CREDENTIALS_NAME: Final = "credentials.json"
+KEYCHAIN_SERVICE: Final = "cordon-scanner"
 REFRESH_MARGIN_SECONDS: Final = 60
 
 
@@ -76,23 +79,60 @@ class CloudAuth:
         return Path(root) / "cordon"
 
     @staticmethod
-    def load() -> Credentials | None:
-        path = CloudAuth.config_dir() / CREDENTIALS_NAME
+    def keychain() -> SecretStore | None:
+        """The operating system's credential store, unless `CORDON_CREDENTIAL_STORE=file` asks for the file."""
+        if os.environ.get("CORDON_CREDENTIAL_STORE", "").strip().lower() == "file":
+            return None
+        return SystemKeychain.found()
+
+    @staticmethod
+    def _account() -> str:
+        """One keychain entry per configuration folder, as one file per folder before it."""
+        return str(CloudAuth.config_dir().resolve())
+
+    @staticmethod
+    def _parsed(text: str) -> Credentials | None:
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(text)
             return Credentials(
                 **{k: data[k] for k in Credentials.__dataclass_fields__ if k in data}
             )
-        except (OSError, ValueError, TypeError, KeyError):
+        except (ValueError, TypeError, KeyError):
             return None
 
     @staticmethod
-    def save(credentials: Credentials) -> Path:
+    def load() -> Credentials | None:
+        """The stored credential: the keychain's, else the file's. A file found where a keychain is available is
+        moved into the keychain and deleted, so an older sign-in stops lying on disk."""
+        store = CloudAuth.keychain()
+        if store is not None:
+            text = store.read(KEYCHAIN_SERVICE, CloudAuth._account())
+            if text:
+                return CloudAuth._parsed(text)
+        path = CloudAuth.config_dir() / CREDENTIALS_NAME
+        try:
+            credentials = CloudAuth._parsed(path.read_text(encoding="utf-8"))
+        except OSError:
+            return None
+        if credentials is not None and store is not None:
+            CloudAuth.save(credentials)
+        return credentials
+
+    @staticmethod
+    def save(credentials: Credentials) -> str:
+        """Store the credential, and say where: the system keychain where there is one, else a file only this user
+        can read (mode 0600)."""
+        text = json.dumps(asdict(credentials), indent=2, sort_keys=True)
+        store = CloudAuth.keychain()
+        if store is not None and store.write(KEYCHAIN_SERVICE, CloudAuth._account(), text):
+            with contextlib.suppress(FileNotFoundError):
+                (CloudAuth.config_dir() / CREDENTIALS_NAME).unlink()
+            return "the system keychain"
         directory = CloudAuth.config_dir()
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         target = directory / CREDENTIALS_NAME
-        AtomicFile.write(target, json.dumps(asdict(credentials), indent=2, sort_keys=True))
-        return target
+        AtomicFile.write(target, text)
+        return f"{target} (mode 0600)"
 
     @staticmethod
     def revoke(credentials: Credentials, *, transport: Transport | None = None) -> bool:
@@ -126,10 +166,13 @@ class CloudAuth:
 
     @staticmethod
     def forget() -> bool:
+        """Delete the stored credential from the keychain and the file alike; True when either held one."""
+        store = CloudAuth.keychain()
+        removed = store is not None and store.delete(KEYCHAIN_SERVICE, CloudAuth._account())
         try:
             (CloudAuth.config_dir() / CREDENTIALS_NAME).unlink()
         except FileNotFoundError:
-            return False
+            return removed
         return True
 
     @staticmethod

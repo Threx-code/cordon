@@ -17,7 +17,6 @@ from typing import ClassVar, Final
 
 from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
-from cordon_scanner.version import __version__
 
 
 @dataclass(frozen=True)
@@ -36,7 +35,6 @@ class HttpsTransport:
     """POST over HTTPS without following redirects."""
 
     TIMEOUT_SECONDS: Final = 5.0
-    USER_AGENT: Final = f"cordon-scanner/{__version__} (+https://github.com/Threx-code/cordon)"
 
     @staticmethod
     def post(url: str, body: bytes, headers: Mapping[str, str]) -> Reply:

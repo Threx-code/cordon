@@ -17,7 +17,7 @@ HOSTS: Final = {
     "rubygems": "https://rubygems.org",
     "nuget": "https://api.nuget.org",
     "gomod": "https://proxy.golang.org",
-    "gosum": "https://sum.golang.org",
+    "gomod-sum": "https://sum.golang.org",
     "maven": "https://repo.maven.apache.org",
     "composer": "https://repo.packagist.org",
     "pub": "https://pub.dev",
@@ -36,7 +36,10 @@ HOSTS: Final = {
     "terraform": "https://registry.terraform.io",
     "bazel": "https://bcr.bazel.build",
     "homebrew": "https://formulae.brew.sh",
+    "nix": "https://cache.nixos.org",
     "image": "https://registry-1.docker.io",
+    "swift": "https://swift-registry.invalid",
+    "vscode": "https://open-vsx.org",
 }
 
 
@@ -69,6 +72,9 @@ ALIASES: Final = {
     "brew": "homebrew",
     "image": "image",
     "docker": "image",
+    "swift": "swift",
+    "nix": "nix",
+    "vscode": "vscode",
 }
 
 
@@ -107,6 +113,8 @@ PUBLIC_HOSTS: Final = frozenset(
         "bcr.bazel.build",
         "formulae.brew.sh",
         "releases.hashicorp.com",
+        "open-vsx.org",
+        "cache.nixos.org",
     }
 )
 

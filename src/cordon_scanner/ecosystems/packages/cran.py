@@ -22,6 +22,7 @@ import re
 from collections.abc import Collection, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import CranArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -29,6 +30,9 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
+from cordon_scanner.ecosystems.launchers import NoLauncher
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
@@ -503,7 +507,18 @@ class CranEcosystem(BaseEcosystem):
     """CRAN, Bioconductor and R remotes, through DESCRIPTION and renv."""
 
     id = "cran"
+    consumer_hooks = NoConsumerHooks(
+        "`configure` and `cleanup` are files of the package, not command strings in its DESCRIPTION"
+    )
+    private_mark = NoPrivateMark(
+        "a CRAN package is submitted through a web form; DESCRIPTION has no field that marks it unpublishable"
+    )
+    own_name = OwnName(("DESCRIPTION",))
     purl_type = "cran"
+    published_archive = (CranArchive(),)
+    mcp_launch = NoLauncher(
+        "`install.packages` downloads a package and R then loads it: two steps, and R has no command that fetches a named release and runs it (https://cran.r-project.org/doc/manuals/r-release/R-admin.html)"
+    )
     manifest_globs: tuple[str, ...] = ("**/DESCRIPTION", "**/renv/settings.json", "**/PACKAGES")
     lockfile_globs: tuple[str, ...] = ("**/renv.lock",)
     registry_hosts: frozenset[str] = frozenset(
@@ -588,7 +603,7 @@ class CranEcosystem(BaseEcosystem):
     def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
         """A project naming these packages with no version: `{path: content}`."""
         return {
-            "DESCRIPTION": "Package: cordoncheck\nVersion: 0.0.0\nImports: "
+            "DESCRIPTION": "Package: cordoncheck\nVersion: 0.0.0\nLicense: Unlimited\nImports: "
             + ", ".join(names)
             + "\n"
         }

@@ -496,6 +496,56 @@ class ReleaseChecks:
         return out
 
     @staticmethod
+    def extension_not_as_signed(units: Sequence[FileUnit], ctx: ScanContext) -> list[Finding]:
+        """A vendored `.vsix` whose files are not the files Open VSX signed for the release its manifest names.
+
+        Online only: the signed package is the registry's. An extension that Open VSX does not publish is not judged; one it
+        does is judged file by file, so a rebuilt, patched or repackaged copy under a known name and version is the finding."""
+        import hashlib
+
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+        from cordon_scanner.foundation.dependencies import PROVENANCE_INVALID_RULE
+        from cordon_scanner.intel.registry import OpenVsxSignature
+
+        if ctx.config.offline:
+            return []
+        identities, _ = ReleaseChecks.release_identities(units)
+        out: list[Finding] = []
+        for ecosystem, name, version, path in identities:
+            archive, bang, _member = path.rpartition("!")
+            if ecosystem != EcosystemRegistry.EXTENSIONS or not bang:
+                continue
+            members = [u for u in units if u.path.startswith(f"{archive}!")]
+            if any(u.content.truncated for u in members):
+                continue
+            files = {
+                u.path[len(archive) + 1 :]: hashlib.sha256(u.content.raw).hexdigest()
+                for u in members
+            }
+            found = OpenVsxSignature.compare(name, version, files)
+            if found.outcome != "invalid":
+                continue
+            out.append(
+                replace(
+                    OperationalFinding.build(
+                        path=path,
+                        rule_id=PROVENANCE_INVALID_RULE,
+                        message=f"The vendored extension {name} {version} is not the package Open VSX signed: {found.detail}.",
+                        remediation=(
+                            "Do not install it. Take the extension from its registry, or find who rebuilt it and why: "
+                            "a copy that differs under the same name and version is the shape of a trojaned extension."
+                        ),
+                        category=Category.VULNERABLE,
+                        severity=Severity.CRITICAL,
+                    ),
+                    confidence=Confidence.HIGH,
+                    risk=ctx.scorer.score(Severity.CRITICAL, Confidence.HIGH),
+                    detector="provenance",
+                )
+            )
+        return out
+
+    @staticmethod
     def known_malicious_release(units: Sequence[FileUnit], ctx: ScanContext) -> list[Finding]:
         """The scanned package is itself a recorded malicious release.
 

@@ -26,9 +26,11 @@ from __future__ import annotations
 import dataclasses
 import json
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import ProviderArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -36,8 +38,11 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import ConsumerHooks, NoPrivateMark
+from cordon_scanner.ecosystems.launchers import NoLauncher
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.collector import ScanCaches
-from cordon_scanner.foundation.models import Scope
+from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -130,12 +135,9 @@ class HclLexer:
             elif char == '"':
                 index, value, literal = HclLexer.string(text, index)
                 out.append(("str" if literal else "template", value))
-            elif text.startswith("<<", index) and re.match(
-                r"<<-?[A-Za-z_][A-Za-z0-9_]*\n", text[index:]
+            elif text.startswith("<<", index) and (
+                heredoc := re.match(r"<<-?([A-Za-z_][A-Za-z0-9_]*)\n", text[index:])
             ):
-                heredoc = re.match(r"<<-?([A-Za-z_][A-Za-z0-9_]*)\n", text[index:])
-                if heredoc is None:
-                    raise HclError("a heredoc without its marker")
                 marker = heredoc.group(1)
                 closing = re.compile(rf"(?m)^[ \t]*{re.escape(marker)}[ \t]*$").search(
                     text, index + heredoc.end()
@@ -562,7 +564,34 @@ class TerraformConfiguration:
             ecosystem=ecosystem,
             dependencies=tuple(declared),
             sources=tuple(sources),
+            hooks=tuple(TerraformConfiguration.provisioners(root, content.path, ecosystem)),
         )
+
+    @staticmethod
+    def provisioners(block: Block, path: str, ecosystem: str) -> list[Hook]:
+        """Each `provisioner "local-exec"` with a `command`, wherever it is nested: a command run on the machine that applies the
+        configuration, which for a module is the machine of whoever uses it. A command written as an expression (a reference to
+        another value) is surfaced as the expression's text."""
+        found: list[Hook] = []
+        for child in block.blocks:
+            command = child.attributes.get("command")
+            text = command if isinstance(command, str) else getattr(command, "text", None)
+            if (
+                child.type == "provisioner"
+                and child.labels[:1] == ["local-exec"]
+                and isinstance(text, str)
+            ):
+                found.append(
+                    Hook(
+                        kind="build",
+                        path=path,
+                        name="local-exec",
+                        command=text[:400],
+                        ecosystem=ecosystem,
+                    )
+                )
+            found.extend(TerraformConfiguration.provisioners(child, path, ecosystem))
+        return found
 
     @staticmethod
     def local_names(root: Block) -> tuple[set[str], set[str]]:
@@ -698,15 +727,48 @@ class TerraformEcosystem(BaseEcosystem):
     """Terraform providers and modules."""
 
     id = "terraform"
+    consumer_hooks = ConsumerHooks(("local-exec",))
+    private_mark = NoPrivateMark(
+        "a module is published by pushing a tag to a repository the registry follows; no .tf block marks it unpublishable"
+    )
+    # A provider's release holds one binary, `terraform-provider-<type>_v<version>...`, which names the provider. A module is
+    # named by the address it is published at (namespace/name/provider) and its .tf files declare no name: it has no file to read.
+    own_name = OwnName(
+        ("terraform-provider-*",),
+        readers=(("terraform-provider-*", "provider_binary"),),
+    )
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         parts = name.split("/")
         return parts[-2] if len(parts) >= 2 else None
 
     purl_type = "terraform"
+    published_archive = (ProviderArchive(),)
+    mcp_launch = NoLauncher(
+        "`terraform init` downloads the providers and modules of a configuration; a provider is a plugin Terraform starts itself, not a command a configuration can name (https://developer.hashicorp.com/terraform/cli/commands/init)"
+    )
     manifest_globs: tuple[str, ...] = ("**/*.tf", "**/*.tf.json")
     lockfile_globs: tuple[str, ...] = ("**/.terraform.lock.hcl",)
     registry_hosts: frozenset[str] = frozenset({"registry.terraform.io", "registry.opentofu.org"})
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A dependency lock file pinning these providers: `{path: content}`."""
+        body = "".join(
+            f'provider "registry.terraform.io/{name}" {{\n  version     = "{version}"\n'
+            f'  constraints = "{version}"\n  hashes = [\n    "h1:{"0" * 44}",\n  ]\n}}\n\n'
+            for name, version in pins
+        )
+        return {".terraform.lock.hcl": body}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A configuration requiring these providers with no version: `{path: content}`."""
+        rows = "".join(
+            f'    {name.rsplit("/", 1)[-1]} = {{\n      source = "{name}"\n    }}\n'
+            for name in names
+        )
+        return {"main.tf": f"terraform {{\n  required_providers {{\n{rows}  }}\n}}\n"}
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()

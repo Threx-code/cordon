@@ -1,0 +1,17 @@
+{
+ "dist": {
+  "fileCount": 10,
+  "integrity": "sha512-XI5MPzVNApjAyhQzphX8BkmKsKUxD4LdyK24iZeQGinBN9yTQT3bFlCBy/aVx2HrNcqQGsdot8ghrjyrvMCoEA==",
+  "shasum": "5b8a3a7765dfe001261dde915589e782f8c94d1e",
+  "signatures": [
+   {
+    "keyid": "SHA256:jl3bwswu80PjjokCgh0o2w5c2U4LhQAE57gj9cz1kzA",
+    "sig": "MEYCIQD6P3wA64go2fjiRW+yNvdi0x7Jtge3eAxAlwNaK2wyfQIhAKMCJXCFKygnFmsVuppuZIuNzTCYx2WlrJSg8B6wMqZk"
+   }
+  ],
+  "tarball": "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz",
+  "unpackedSize": 9752
+ },
+ "name": "left-pad",
+ "version": "1.3.0"
+}

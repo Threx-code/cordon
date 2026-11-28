@@ -102,7 +102,20 @@ _NIX: Final = frozenset(
 )
 
 
+#: Editor extensions whose look-alikes are published to catch the people who install them: the most-installed
+#: language, lint and format extensions, as `publisher.name`. The refreshed Open VSX list adds the rest.
+_VSCODE: Final = frozenset(
+    {
+        "ms-python.python", "ms-python.vscode-pylance", "ms-toolsai.jupyter", "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode", "redhat.java", "redhat.vscode-yaml", "golang.go", "rust-lang.rust-analyzer",
+        "ms-vscode.cpptools", "ms-azuretools.vscode-docker", "eamodio.gitlens", "github.copilot",
+        "vscodevim.vim", "ritwickdey.liveserver", "pkief.material-icon-theme", "dracula-theme.theme-dracula",
+        "hashicorp.terraform", "ms-kubernetes-tools.vscode-kubernetes-tools", "rebornix.ruby",
+    }
+)  # fmt: skip
+
 _CURATED: Final[dict[str, frozenset[str]]] = {
+    "vscode": _VSCODE,
     "npm": _NPM,
     "pypi": _PYPI,
     "cargo": _CARGO,
@@ -216,7 +229,13 @@ class _Mapping:
         return bool(RealPackages.real_packages(ecosystem))
 
     def __iter__(self) -> Iterator[str]:
-        return iter({*_CURATED, *_SHARED_DATA})
+        """Every registered ecosystem with any established name, shipped or curated: an ecosystem whose
+        only list is the shipped file (pub, image) is one of them too."""
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+        return iter(
+            sorted(eco for eco in EcosystemRegistry.BY_ID if RealPackages.real_packages(eco))
+        )
 
 
 REAL_PACKAGES: Final = _Mapping()

@@ -588,6 +588,29 @@ _BAZEL_POPULAR: Final = frozenset(
     }
 )
 
+#: Editor extensions, as `publisher.name`: the most-installed ones on Open VSX, the registry the refreshed list
+#: (`intel/data/vscode.txt`) is read from -- every name below is in that list. A look-alike of one of these is what a
+#: squatter publishes to catch the people who install it.
+_VSCODE_POPULAR: Final = frozenset(
+    {
+        "dbaeumer.vscode-eslint",
+        "eamodio.gitlens",
+        "esbenp.prettier-vscode",
+        "golang.go",
+        "hashicorp.terraform",
+        "ms-azuretools.vscode-docker",
+        "ms-kubernetes-tools.vscode-kubernetes-tools",
+        "ms-python.debugpy",
+        "ms-python.python",
+        "ms-toolsai.jupyter",
+        "pkief.material-icon-theme",
+        "redhat.java",
+        "redhat.vscode-yaml",
+        "rust-lang.rust-analyzer",
+        "vscodevim.vim",
+    }
+)
+
 _PUB_POPULAR: Final = frozenset(
     {
         "bloc",
@@ -736,6 +759,7 @@ class PackageIntel:
         "pub": _PUB_POPULAR,
         "cocoapods": _COCOAPODS_POPULAR,
         "actions": _ACTIONS_POPULAR,
+        "vscode": _VSCODE_POPULAR,
     }
 
     # Kept as the hand-curated supplement to `intel/real.py`, which carries the

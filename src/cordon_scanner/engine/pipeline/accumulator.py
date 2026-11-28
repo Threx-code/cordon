@@ -64,9 +64,23 @@ class Accumulator:
     binaries_complete: bool = True
     """False when a native file could not be hashed whole (a truncated one with no digest of its whole) or there were
     more than `MAX_BINARIES`: the list is then a part, and says so."""
-    executables: dict[str, dict[str, Any]] = field(default_factory=dict)
-    """The record of each native executable scanned (`ExecutableRecord`), by the file's digest: one per distinct file, at most
-    `MAX_BINARIES`. Read by the facts export (`package.executables`)."""
+    reuse_keys: bool = False
+    """Whether to collect the package's code-reuse keys (`Config.reuse_keys`): off, nothing below is computed."""
+    reuse_code: set[str] = field(default_factory=set)
+    """Each code file's `ReuseIndex.fingerprint` (hex), when `reuse_keys`. Read by the facts export (`package.reuse`)."""
+    reuse_hooks: set[str] = field(default_factory=set)
+    """Each install hook's `HookShape` key (hex) in the package's own package.json, when `reuse_keys`."""
+    reuse_complete: bool = True
+    """False when a code file could not be hashed whole, or past `MAX_REUSE` keys: the keys are then a part, and say so."""
+    campaign_paths: list[str] = field(default_factory=list)
+    """Every member path of the package, for its campaign fingerprint's layout (`reuse_keys`); bounded."""
+    campaign_paths_complete: bool = True
+    """False once a package has more members than `MAX_CAMPAIGN_PATHS`: its layout facet is then not computed."""
+    campaign_manifest: tuple[str, str] | None = None
+    """`(ecosystem, path)` of the package's root manifest; its facets come from the worker that read it."""
+    native_paths: dict[str, str] = field(default_factory=dict)
+    """Each native file's digest by its path, at most `MAX_BINARIES` of them: where its executable record (`executable.record`,
+    read in the worker, never here) is found among the facts."""
     tool_lists: list[list[dict[str, Any]]] = field(default_factory=list)
     """Each JSON file that declares a whole MCP tool list (`DeclaredTools`), for the facts export (`package.tool_list`)."""
     files_skipped: int = 0
@@ -228,8 +242,17 @@ class Accumulator:
 
     MAX_EXTENSIONS: ClassVar[int] = 256
     MAX_BINARIES: ClassVar[int] = 4096
+    MAX_REUSE: ClassVar[int] = 4096
+    MAX_CAMPAIGN_PATHS: ClassVar[int] = 20_000
 
-    def scanned(self, path: str, content: FileContent | None = None) -> None:
+    @classmethod
+    def for_config(cls, config: Any) -> Accumulator:
+        """A scan's accumulator under `config`: its finding cap, and reuse keys when it asks for them."""
+        return cls(finding_cap=config.limits.max_findings, reuse_keys=config.reuse_keys)
+
+    def scanned(
+        self, path: str, content: FileContent | None = None, opens: str | None = None
+    ) -> None:
         """One more file scanned, counted under its extension; past `MAX_EXTENSIONS` distinct ones, the rest count as `other`.
         With its content, a native file is also recorded by the digest of the whole file (`binaries`), and a JSON file
         that declares a whole tool list is kept (`tool_lists`)."""
@@ -254,19 +277,114 @@ class Accumulator:
                 self.binaries.add(content.sha256)
             elif content.sha256 not in self.binaries:
                 self.binaries_complete = False
-            if content.sha256 not in self.executables and len(self.executables) < self.MAX_BINARIES:
-                from cordon_scanner.detect.registry import ExecutableRecord
-
-                record = ExecutableRecord.of(
-                    content.raw,
-                    whole=not content.truncated,
-                    reason="truncated" if content.truncated else None,
-                )
-                if record is not None:
-                    self.executables[content.sha256] = record
+            if path not in self.native_paths and len(self.native_paths) < self.MAX_BINARIES:
+                self.native_paths[path] = content.sha256
+        if self.reuse_keys:
+            self._reuse(path, content, opens)
+            self._campaign(path)
         declared = DeclaredTools.of(path, content.raw) if not content.truncated else None
         if declared is not None:
             self.tool_lists.append(declared)
+
+    def _reuse(self, path: str, content: FileContent, opens: str | None = None) -> None:
+        """The file's reuse keys, by the rule and from the bytes the code-reuse detector looks them up by (`ReuseKeys`):
+        the whole file, from what is held, its spill, or its file on disk (`opens`)."""
+        from cordon_scanner.analysis.shared.languages import LanguageRegistry
+        from cordon_scanner.foundation.formats.scanned_json import ScannedJson
+        from cordon_scanner.intel.registry import ReuseIndex, ReuseKeys
+
+        keys: list[bytes] = []
+        if ReuseKeys.is_code(path, content.is_binary, LanguageRegistry.of_file(path, content)):
+            digest: bytes | None = None
+            if not content.truncated:
+                digest = ReuseIndex.fingerprint(content.raw)
+            elif content.streamed is not None:
+                digest = ReuseIndex.fingerprint(content.streamed)
+            else:
+                source = content.spill.path if content.spill is not None else opens
+                if source is None:
+                    self.reuse_complete = (
+                        False  # the whole file is nowhere to be read: its key is unknown
+                    )
+                else:
+                    try:
+                        digest = ReuseKeys.fingerprint_file(source)
+                    except OSError:
+                        self.reuse_complete = False
+            if digest is not None:
+                self._keep(self.reuse_code, digest.hex())
+        if ReuseKeys.is_root_manifest(path):
+            if content.truncated or content.size > ReuseKeys.MAX_MANIFEST:
+                self.reuse_complete = False
+                return
+            try:
+                manifest = ScannedJson.loads(content.raw)
+            except (ValueError, RecursionError):
+                self.reuse_complete = (
+                    False  # unreadable here (malformed or too deep): its hooks are unknown
+                )
+                return
+            keys = [key for _, key in ReuseKeys.hook_keys(manifest)]
+        for key in keys:
+            self._keep(self.reuse_hooks, key.hex())
+
+    def _campaign(self, path: str) -> None:
+        """What the package's campaign fingerprint needs from the parent: member paths and which one is the root
+        manifest. Never the manifest's content: the worker that read it sends its facets (`campaign.facet`)."""
+        from cordon_scanner.intel.registry import CampaignFingerprint
+
+        _, bang, member = path.partition("!")
+        if bang and "!" not in member:
+            if len(self.campaign_paths) < self.MAX_CAMPAIGN_PATHS:
+                self.campaign_paths.append(member)
+            else:
+                self.campaign_paths_complete = False
+        if self.campaign_manifest is None:
+            ecosystem = CampaignFingerprint.root_manifest(path)
+            if ecosystem is not None:
+                self.campaign_manifest = (ecosystem, path)
+
+    def campaign(self) -> dict[str, Any] | None:
+        """The package's campaign fingerprint, in any ecosystem: `{ecosystem, manifest, layout, deps}`; None when the
+        scan was not asked for package keys or found no root manifest. The layout is None past `MAX_CAMPAIGN_PATHS`
+        members, never a facet of part of the tree that could not match a whole one."""
+        from cordon_scanner.intel.registry import CampaignFingerprint
+
+        if not self.reuse_keys or self.campaign_manifest is None:
+            return None
+        ecosystem, path = self.campaign_manifest
+        facets: dict[str, Any] = {"manifest": None, "deps": None}
+        for fact in self.facts.get(path, {}).get("campaign.facet", ()):
+            facets[fact[0]] = fact[1]
+        layout = (
+            CampaignFingerprint.layout_of(ecosystem, self.campaign_paths)
+            if self.campaign_paths_complete
+            else None
+        )
+        return {
+            "ecosystem": ecosystem,
+            "manifest": facets["manifest"],
+            "layout": layout,
+            "deps": facets["deps"],
+        }
+
+    def _keep(self, into: set[str], key: str) -> None:
+        if len(self.reuse_code) + len(self.reuse_hooks) < self.MAX_REUSE:
+            into.add(key)
+        elif key not in into:
+            self.reuse_complete = False
+
+    def executable_records(self) -> tuple[dict[str, Any], ...]:
+        """The record of each native executable, from its worker's `executable.record` fact (the parent reads no executable): one per
+        distinct file by its digest, at most `MAX_BINARIES`, in digest order."""
+        import json
+
+        found: dict[str, dict[str, Any]] = {}
+        for path, digest in sorted(self.native_paths.items()):
+            for text in self.facts.get(path, {}).get("executable.record", ()):
+                if digest not in found and len(found) < self.MAX_BINARIES:
+                    found[digest] = json.loads(text)
+        return tuple(found[k] for k in sorted(found))
 
     def tool_list(self) -> tuple[dict[str, Any], ...] | None:
         """The one tool list the package declares as data, or None when there is none or more than one."""
@@ -282,8 +400,12 @@ class Accumulator:
             "instruction_files": self.instruction_files,
             "binaries": tuple(sorted(self.binaries)),
             "binaries_complete": self.binaries_complete,
-            "executables": tuple(self.executables[k] for k in sorted(self.executables)),
+            "executables": self.executable_records(),
             "tool_list": self.tool_list(),
+            "reuse_code": tuple(sorted(self.reuse_code)) if self.reuse_keys else None,
+            "reuse_hooks": tuple(sorted(self.reuse_hooks)) if self.reuse_keys else None,
+            "reuse_complete": self.reuse_complete,
+            "campaign": self.campaign(),
         }
 
     def destinations(self) -> dict[str, tuple[tuple[str, ...], tuple[str, ...]]]:

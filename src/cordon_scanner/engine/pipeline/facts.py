@@ -79,7 +79,7 @@ class TreeFacts:
 
         try:
             info = GitRepository.discover(root)
-        except (SourceError, OSError):  # pragma: no cover - defensive
+        except (SourceError, OSError):
             return (False, None, None, False)
         if info is None:
             return (False, None, None, False)
@@ -88,7 +88,7 @@ class TreeFacts:
         # symlinked or relative target does not read as a subdirectory of itself.
         try:
             at_root = Path(info.root).resolve() == Path(root).resolve()
-        except OSError:  # pragma: no cover - defensive
+        except OSError:
             at_root = False
         return (True, info.revision, info.remote, at_root)
 

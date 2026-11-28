@@ -207,7 +207,11 @@ class TestDeviceFlow(CloudFixtures):
             auth.CloudAuth.finish_device_flow(code, API, sleep=lambda _: None, clock=lambda: NOW)
 
     def test_the_stored_credential_is_private(self, cloud) -> None:
-        path = auth.CloudAuth.save(auth.CloudAuth._credentials_from(API, cloud.token_response, NOW))
+        where = auth.CloudAuth.save(
+            auth.CloudAuth._credentials_from(API, cloud.token_response, NOW)
+        )
+        path = auth.CloudAuth.config_dir() / auth.CREDENTIALS_NAME
+        assert where == f"{path} (mode 0600)"
         if (
             os.name != "nt"
         ):  # POSIX permission bits; Windows has ACLs instead and reports every file as 0o666.

@@ -22,6 +22,7 @@ import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import SwiftArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -29,6 +30,9 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
+from cordon_scanner.ecosystems.launchers import Launcher
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
@@ -337,11 +341,24 @@ class SwiftResolved:
 
 class SwiftEcosystem(BaseEcosystem):
     id = "swift"
+    consumer_hooks = NoConsumerHooks(
+        "Package.swift is Swift code and plugins are targets, not command strings in a manifest field"
+    )
+    private_mark = NoPrivateMark(
+        "a Swift package is published by pushing a git tag; Package.swift has no field that marks it unpublishable"
+    )
+    own_name = OwnName(("Package.swift",))
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         return name.rsplit("/", 1)[0] if "/" in name else None
 
     purl_type = "swift"
+    published_archive = (SwiftArchive(),)
+    mcp_launch = (
+        Launcher(
+            (("mint", "run"),), "swift", "https://github.com/yonaskolb/Mint#running-a-package"
+        ),
+    )
     manifest_globs: tuple[str, ...] = ("**/Package.swift",)
     lockfile_globs: tuple[str, ...] = ("**/Package.resolved",)
     registry_hosts: frozenset[str] = frozenset({"github.com", "gitlab.com", "bitbucket.org"})

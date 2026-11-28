@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from cordon_scanner.intel.provenance.bazel_provenance import ModuleCheck
     from cordon_scanner.intel.provenance.helm_provenance import ChartCheck
     from cordon_scanner.intel.provenance.homebrew_provenance import BottleCheck
+    from cordon_scanner.intel.provenance.terraform_provenance import ProviderCheck
     from cordon_scanner.intel.store.live_mcp import ServedTool
 
 # Engine-facing ports: what the engine uses of this layer, as protocols. `registry` hands the engine
@@ -214,6 +215,21 @@ class ReuseIndexes(Protocol):
     def hook_key(self, command: str) -> bytes | None: ...
 
 
+class ReuseKeyRules(Protocol):
+    """What the engine and the code-reuse detector use of the class `ReuseKeys`: which files and hooks have a reuse
+    key, and the key of a file on disk."""
+
+    MAX_MANIFEST: int
+    NOT_CODE: frozenset[str]
+    NOT_CODE_SUFFIXES: tuple[str, ...]
+    INSTALL_HOOKS: tuple[str, ...]
+
+    def is_code(self, path: str, is_binary: bool, language: str | None) -> bool: ...
+    def is_root_manifest(self, path: str) -> bool: ...
+    def hook_keys(self, manifest: object) -> list[tuple[str, bytes]]: ...
+    def fingerprint_file(self, path: str) -> bytes | None: ...
+
+
 class FeedStatus(Protocol):
     """What the engine uses of the class `FeedClient`."""
 
@@ -302,12 +318,6 @@ class RegistryRecords(Protocol):
     ) -> RegistryRecordFacts | None: ...
 
 
-class RegistryVersions(Protocol):
-    """What the engine uses of the class `MoreRegistries`."""
-
-    def versions(self, ecosystem: str, name: str) -> list[str]: ...
-
-
 class ReleaseBaseline(Protocol):
     """What the engine uses of instances of `Baseline`."""
 
@@ -380,7 +390,13 @@ class ArtifactQueries(Protocol):
     def attestation_payload(
         self, ecosystem: str, name: str, version: str | None, digest: str | None = None
     ) -> dict[str, Any] | None: ...
+
+
+class VerifiedArchives(Protocol):
+    """A release's archive, fetched from its registry and checked against what the registry (or the code host) states."""
+
     def package_archive(self, ecosystem: str, name: str, version: str | None) -> PackageArchive: ...
+    def versions(self, ecosystem: str, name: str) -> list[str]: ...
 
 
 class PublishedManifestQueries(Protocol):
@@ -400,7 +416,12 @@ class PrivateRegistryQueries(Protocol):
         resolved_from: str | None,
     ) -> PrivateRegistry | None: ...
     def facts(
-        self, registry: PrivateRegistry, ecosystem: str, name: str, version: str | None
+        self,
+        registry: PrivateRegistry,
+        ecosystem: str,
+        name: str,
+        version: str | None,
+        source: str | None = None,
     ) -> PackageFacts: ...
 
 
@@ -434,6 +455,18 @@ class ModuleProvenance(Protocol):
     def check(self, name: str, version: str, integrity: str | None) -> ModuleCheck: ...
 
 
+class ExtensionSignatures(ModuleProvenance, Protocol):
+    """Whether an editor extension's files are the ones its registry signed for the release."""
+
+    def compare(
+        self, name: str, version: str, files: Mapping[str, str], *, added: bool = True
+    ) -> ModuleCheck: ...
+
+    def signed_package(
+        self, name: str, version: str
+    ) -> tuple[bytes, dict[str, str]] | ModuleCheck: ...
+
+
 class ChartProvenance(Protocol):
     """Whether a Helm chart is signed by a key the user trusts."""
 
@@ -445,6 +478,14 @@ class ChartProvenance(Protocol):
         integrity: str | None,
         keyring: Keyring,
     ) -> ChartCheck: ...
+
+
+class ProviderProvenance(Protocol):
+    """Whether a Terraform provider's checksums are signed, and list the zip the lock file pinned."""
+
+    def check(
+        self, name: str, version: str, integrity: str | None, keyring: Keyring
+    ) -> ProviderCheck: ...
 
 
 class BottleProvenance(Protocol):
@@ -503,6 +544,27 @@ class CollectionSignatureQueries(Protocol):
     def remote(
         self, name: str, version: str, sources: tuple[str, ...], keyring: Keyring
     ) -> CollectionCheck: ...
+
+
+class PublishedRelease(Protocol):
+    """One release as its registry states it: the version, when it was published, and by which account."""
+
+    @property
+    def version(self) -> str: ...
+    @property
+    def published(self) -> datetime: ...
+    @property
+    def publisher(self) -> str: ...
+
+
+class ReleaseLedgerQueries(Protocol):
+    """What a detector uses of the class `ArchiveFetch` to read a name's release history."""
+
+    def releases(self, ecosystem: str, name: str, version: str) -> Sequence[PublishedRelease]: ...
+
+    def previous_release(
+        self, ecosystem: str, name: str, version: str
+    ) -> PublishedRelease | None: ...
 
 
 class ReleaseAgeQueries(Protocol):
@@ -582,6 +644,12 @@ class CampaignFacets(Protocol):
     """What a detector uses of the class `CampaignFingerprint`."""
 
     def of(self, manifest: Mapping[str, Any], paths: Iterable[str]) -> dict[str, str | None]: ...
+    def of_manifest(
+        self, ecosystem: str, content: Any, paths: Iterable[str]
+    ) -> dict[str, str | None]: ...
+    def root_manifest(self, path: str) -> str | None: ...
+    def content_facets(self, ecosystem: str, content: Any) -> dict[str, str | None]: ...
+    def layout_of(self, ecosystem: str, paths: Iterable[str]) -> str | None: ...
 
 
 class CampaignSiblings(Protocol):
@@ -694,6 +762,8 @@ class PrivateRegistry(NamedTuple):
     """`https://host[:port]/path`, without a trailing slash."""
     variable: str
     """The environment variable holding the token: `token` (bearer) or `user:token` (basic)."""
+    scheme: str = ""
+    """`basic` or `bearer` when the operator stated it; empty: a secret with a colon is `user:token` (basic)."""
 
     @property
     def host(self) -> str:
@@ -754,6 +824,9 @@ class PackageArchive:
     version: str
     filename: str
     data: bytes
+    strength: str = ""
+    """What the archive was checked with when it is weaker than a SHA-2 digest the registry publishes (`md5`, `git-commit`,
+    `git-tag`); empty for a SHA-2 digest and for the registries whose readers predate this field."""
 
 
 # A value both the feed and the rule packs it delivers raise, so neither imports the other for it.
@@ -780,6 +853,7 @@ __all__ = [
     "BundledAdvisoryDatabase",
     "ChartProvenance",
     "DataFiles",
+    "ExtensionSignatures",
     "FeedError",
     "FeedStatus",
     "InstallerChecks",
@@ -794,11 +868,11 @@ __all__ = [
     "RangeMatching",
     "RegistryRecordFacts",
     "RegistryRecords",
-    "RegistryVersions",
     "ReleaseBaseline",
     "ReleaseHistories",
     "RepositoryHeads",
     "SignatureCheck",
     "ToolApprovals",
+    "VerifiedArchives",
     "VersionOrdering",
 ]

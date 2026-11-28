@@ -22,14 +22,19 @@ this module reads dependencies only.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import ActionArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import ConsumerHooks, NoPrivateMark
+from cordon_scanner.ecosystems.launchers import NoLauncher
+from cordon_scanner.ecosystems.own_names import NoOwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
@@ -421,6 +426,13 @@ class GitHubActionsEcosystem(BaseEcosystem):
     """The actions and reusable workflows a repository's CI runs."""
 
     id = "actions"
+    consumer_hooks = ConsumerHooks(("steps-*",))
+    private_mark = NoPrivateMark(
+        "an action is published by pushing its repository; no field of action.yml marks it unpublishable"
+    )
+    own_name = NoOwnName(
+        "an action is named by the repository it is published from (`owner/repo`), which no file of the action states; the `name:` in action.yml is a display title (captured: actions/checkout action.yml)"
+    )
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         return name.split("/", 1)[0] if "/" in name else None
@@ -429,6 +441,10 @@ class GitHubActionsEcosystem(BaseEcosystem):
         return name.startswith("steps-")
 
     purl_type = "githubactions"
+    published_archive = (ActionArchive(),)
+    mcp_launch = NoLauncher(
+        "an action runs only inside a workflow job on a GitHub runner (`uses:` in a workflow file); no command on a machine downloads one and runs it (https://docs.github.com/en/actions/sharing-automations/creating-actions/about-custom-actions)"
+    )
     manifest_globs: tuple[str, ...] = (
         "**/.github/workflows/*.yml",
         "**/.github/workflows/*.yaml",
@@ -439,6 +455,21 @@ class GitHubActionsEcosystem(BaseEcosystem):
     registry_hosts: frozenset[str] = frozenset({"github.com"})
     records_integrity = False
     """A tag records no hash; a commit SHA pins one, and is kept as the record's integrity."""
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A workflow using these actions at these refs: `{path: content}`."""
+        steps = "".join(f"      - uses: {name}@{version}\n" for name, version in pins)
+        return {
+            ".github/workflows/check.yml": (
+                f"on: push\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n{steps}"
+            )
+        }
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """An action is used at a ref, so a name alone is no project."""
+        raise ValueError("an action is used at a version: a tag, a branch or a commit")
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()

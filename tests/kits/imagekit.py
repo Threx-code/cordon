@@ -13,6 +13,8 @@ import tarfile
 import tempfile
 from pathlib import Path
 
+from cordon_scanner.images.binmeta import GO_MAGIC
+
 DEBIAN_RELEASE = b'PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"\nID=debian\nVERSION_ID="12"\n'
 ALPINE_RELEASE = b'ID=alpine\nVERSION_ID=3.18.4\nPRETTY_NAME="Alpine Linux v3.18"\n'
 ROCKY_RELEASE = b'ID="rocky"\nVERSION_ID="9.3"\nPRETTY_NAME="Rocky Linux 9.3"\n'
@@ -35,6 +37,27 @@ class ImageKit:
             lines.append(f"Source: {source}")
         lines.append("Description: a package\n with a continuation line")
         return "\n".join(line for line in lines if line) + "\n"
+
+    @staticmethod
+    def go_binary(modules: str, version: str = "go1.21.5") -> bytes:
+        """A Go binary's build information block: header, toolchain version, module list."""
+
+        def varint(value: int) -> bytes:
+            out = b""
+            while True:
+                byte = value & 0x7F
+                value >>= 7
+                out += bytes([byte | (0x80 if value else 0)])
+                if not value:
+                    return out
+
+        modinfo = b"0" * 16 + modules.encode() + b"0" * 16
+        blob = (
+            GO_MAGIC + bytes([8, 2]) + b"\x00" * 16
+            + varint(len(version)) + version.encode()
+            + varint(len(modinfo)) + modinfo
+        )  # fmt: skip
+        return b"\x7fELF" + b"\x00" * 60 + blob + b"\x00" * 64
 
     @staticmethod
     def layer(files: dict[str, bytes | None], *, compress: str = "") -> bytes:

@@ -27,8 +27,11 @@ from __future__ import annotations
 
 import json
 import re
-from typing import TYPE_CHECKING, ClassVar
+from collections.abc import Sequence
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import BottleArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -36,10 +39,13 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import ConsumerHooks, NoPrivateMark
+from cordon_scanner.ecosystems.launchers import NoLauncher
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterator, Mapping
     from re import Match
     from typing import Any
 
@@ -209,6 +215,35 @@ class Formula:
     }
 
     @staticmethod
+    def _def_hook(name: str, path: str, ecosystem: str) -> Hook:
+        """The `def install` / `def post_install` a formula runs when it is built."""
+        return Hook(
+            kind="build",
+            path=path,
+            name=f"formula {name}",
+            command=f"def {name}",
+            ecosystem=ecosystem,
+        )
+
+    @staticmethod
+    def _system_hook(
+        stripped: str, stack: list[str], last_def: str, path: str, ecosystem: str
+    ) -> Hook | None:
+        """A `system "cmd", args` call inside `def install` or `def post_install`: what `brew install` runs on the machine of
+        whoever installs the formula."""
+        call = re.match(r"^system\s(.*)", stripped)
+        if not call or "def" not in stack or last_def not in ("install", "post_install"):
+            return None
+        words = re.findall(r'"([^"\n]*)"', call.group(1))
+        return Hook(
+            kind="build",
+            path=path,
+            name="system",
+            command=" ".join(words)[:400],
+            ecosystem=ecosystem,
+        )
+
+    @staticmethod
     def parse(content: FileContent, ecosystem: str) -> Manifest:
         text = content.text
         declared_class = re.search(
@@ -226,6 +261,7 @@ class Formula:
         stack: list[str] = []
         pending: dict[str, str] = {}
         version: str | None = None
+        last_def = ""
         for _number, line in Ruby.lines(text):
             stripped = line.strip()
             opener = re.match(
@@ -237,16 +273,10 @@ class Formula:
                 stack.append(
                     f"{kind}:{opener.group(2) or ''}" if kind in ("resource", "patch") else kind
                 )
-                if kind == "def" and re.match(r"^def\s+(install|post_install)\b", stripped):
-                    hooks.append(
-                        Hook(
-                            kind="build",
-                            path=content.path,
-                            name=f"formula {stripped.split()[1]}",
-                            command=f"def {stripped.split()[1]}",
-                            ecosystem=ecosystem,
-                        )
-                    )
+                if kind == "def":
+                    last_def = stripped.split()[1].split("(")[0]
+                    if last_def in ("install", "post_install"):
+                        hooks.append(Formula._def_hook(last_def, content.path, ecosystem))
                 pending = {}
                 continue
             if Ruby.opens_block(stripped) and not stripped.startswith("class "):
@@ -260,6 +290,9 @@ class Formula:
                     pending = {}
                 continue
             if any(s in ("test", "livecheck", "def", "service") for s in stack):
+                hook = Formula._system_hook(stripped, stack, last_def, content.path, ecosystem)
+                if hook is not None:
+                    hooks.append(hook)
                 continue
             head = re.match(rf"^head\s+{STRING}", stripped) if not stack else None
             if head:
@@ -549,7 +582,7 @@ class Cask:
 class Brewfile:
     ENTRY: ClassVar[re.Pattern[str]] = re.compile(
         # `brew "x"`, or the same call with its parentheses: `brew("swiftformat")` (fastlane).
-        rf"^\s*(tap|brew|cask|mas|vscode|whalebrew)(?:\s+|\s*\(\s*){STRING}(?P<rest>.*)$"
+        rf"^\s*(tap|brew|cask|mas|vscode|whalebrew|cargo|go|npm|uv|krew|flatpak|winget)(?:\s+|\s*\(\s*){STRING}(?P<rest>.*)$"
     )
     CORE_TAPS: ClassVar[frozenset[str]] = frozenset(
         {
@@ -612,6 +645,30 @@ class Brewfile:
             sources=tuple(sources),
         )
 
+    #: Bundle extensions whose packages no ecosystem here holds: named in the report's sources, never dropped.
+    UNCHECKED: ClassVar[Mapping[str, str]] = MappingProxyType(
+        {
+            "krew": "krew plugin (kubectl)",
+            "flatpak": "flatpak application",
+            "winget": "winget package (Windows)",
+        }
+    )
+
+    #: Brewfile keyword -> the adapter whose packages it installs: each adapter Homebrew Bundle has an extension for
+    #: declares `bundle_keyword` (`cargo "ripgrep"`). Filled by the ecosystem registry as it builds, so this
+    #: module never imports the registry that imports it.
+    BUNDLE_KEYWORDS: ClassVar[Mapping[str, Any]] = MappingProxyType({})
+
+    @staticmethod
+    def other_ecosystems() -> Mapping[str, str]:
+        """Brewfile keyword -> the ecosystem id whose packages it installs."""
+        return {keyword: adapter.id for keyword, adapter in Brewfile.BUNDLE_KEYWORDS.items()}
+
+    @staticmethod
+    def other_name(kind: str, value: str) -> str:
+        """The package's name as its own ecosystem spells it (an extension id in lower case)."""
+        return str(Brewfile.BUNDLE_KEYWORDS[kind].normalize_name(value.strip()))
+
     @staticmethod
     def _entry(
         kind: str | Any,
@@ -621,7 +678,7 @@ class Brewfile:
         conditions: tuple[str, ...],
         sources: list[str],
     ) -> None:
-        """One Brewfile entry: a tap and the source it adds, or a brew, cask, mas or vscode dependency."""
+        """One Brewfile entry: a tap and the source it adds, a brew or cask, or a package another manager installs."""
         if kind == "tap":
             custom = re.match(rf"\s*,\s*{STRING}", rest)
             tap = Brewfile.tap_name(value)
@@ -638,9 +695,22 @@ class Brewfile:
                         note="a tap: the repository of formulae brew follows at its default branch",
                     )
                 )
-        elif kind == "vscode":
-            # An editor extension: judged by the extension rules (detect/agents.py), not here.
-            sources.append(f"vscode extension {value}")
+        elif kind in Brewfile.BUNDLE_KEYWORDS:
+            # Installed by another package manager: its package, in its own ecosystem, at the latest
+            # version (go installs `name@latest`; the others take none).
+            declared.append(
+                DeclaredDependency(
+                    name=Brewfile.other_name(kind, value),
+                    spec="*",
+                    scope=Scope.DEV,
+                    field_name=kind,
+                    ecosystem=Brewfile.BUNDLE_KEYWORDS[kind].id,
+                    platform=conditions,
+                    note="brew bundle installs the current version: a Brewfile pins nothing",
+                )
+            )
+        elif kind in Brewfile.UNCHECKED:
+            sources.append(f"{Brewfile.UNCHECKED[kind]} {value}")
         elif kind == "whalebrew":
             from cordon_scanner.ecosystems.infra.image import ImageReference
 
@@ -829,6 +899,15 @@ class HomebrewEcosystem(BaseEcosystem):
         return NotRunAtInstall.spans(text) if path.endswith(".rb") else []
 
     id = "homebrew"
+    consumer_hooks = ConsumerHooks(("system",))
+    private_mark = NoPrivateMark(
+        "a formula is published by a pull request to its tap; the formula has no field that marks it unpublishable"
+    )
+    own_name = OwnName(
+        ("Formula/*.rb", "Formula/*/*.rb", ".brew/*.rb"),
+        readers=(("*.rb", "formula_stem"),),
+        parsers=(("*.rb", "formula_manifest"),),
+    )
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         # A formula from a named tap is recorded by its own name; its tap is the namespace its
@@ -837,6 +916,10 @@ class HomebrewEcosystem(BaseEcosystem):
         return full.rsplit("/", 1)[0] if full.count("/") >= 2 else None
 
     purl_type = "brew"
+    published_archive = (BottleArchive(),)
+    mcp_launch = NoLauncher(
+        "`brew install` installs a formula and a later command runs it; brew has no command that runs a formula (https://docs.brew.sh/Manpage)"
+    )
     manifest_globs: tuple[str, ...] = (
         "**/Brewfile",
         # The names Brewfiles go by in real dotfiles: `brew bundle --global` reads ~/.Brewfile, and
@@ -866,6 +949,17 @@ class HomebrewEcosystem(BaseEcosystem):
     # A formula or cask in the tree does not take the place of the one a Brewfile names: an
     # unqualified name resolves from Homebrew's own taps first.
     defines_members = False
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A Brewfile.lock.json recording these formulae at these versions: `{path: content}`."""
+        entries = {name: {"version": version} for name, version in pins}
+        return {"Brewfile.lock.json": json.dumps({"entries": {"brew": entries}})}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A Brewfile naming these formulae: `{path: content}`."""
+        return {"Brewfile": "".join(f'brew "{name}"\n' for name in names)}
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()

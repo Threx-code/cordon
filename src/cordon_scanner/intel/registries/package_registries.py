@@ -594,7 +594,7 @@ class PackageRegistries:
         if canonical:
             try:
                 lookup = RegistryHttp.text(
-                    f"{HOSTS['gosum']}/lookup/{module}@{PackageRegistries.go_escape(canonical)}"
+                    f"{HOSTS['gomod-sum']}/lookup/{module}@{PackageRegistries.go_escape(canonical)}"
                 )
             except PackageNotFound:
                 lookup = ""

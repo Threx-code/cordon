@@ -21,6 +21,7 @@ from cordon_scanner.intel.advisories.upstream.base import (
     Unnamed,
     Upstream,
 )
+from cordon_scanner.version import USER_AGENT
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -79,7 +80,7 @@ class TagInference:
         base = repository if repository.endswith(".git") else f"{repository}.git"
         request = urllib.request.Request(  # noqa: S310 - https, from TagInference.repository
             f"{base}/info/refs?service=git-upload-pack",
-            headers={"User-Agent": "git/2.45.0 (cordon-scanner)"},
+            headers={"User-Agent": USER_AGENT},
         )
         found: dict[str, str] | None = None
         try:
@@ -162,7 +163,7 @@ class TagInference:
             f"{base}/git-upload-pack",
             data=body,
             headers={
-                "User-Agent": "git/2.45.0 (cordon-scanner)",
+                "User-Agent": USER_AGENT,
                 "Git-Protocol": "version=2",
                 "Content-Type": "application/x-git-upload-pack-request",
                 "Accept": "application/x-git-upload-pack-result",
@@ -600,7 +601,7 @@ class ContentProof:
             raise ValueError("not http(s)")
         import time
 
-        request = urllib.request.Request(url, headers={"User-Agent": "cordon-scanner"})  # noqa: S310
+        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})  # noqa: S310
         # Each connect and read has its own short timeout -- a host that drops packets fails in
         # seconds, not after the read timeout for every address it resolves to -- and the whole
         # download a deadline, so a server trickling bytes cannot hold a scan.

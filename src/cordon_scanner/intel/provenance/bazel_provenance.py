@@ -43,6 +43,7 @@ from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import ClosedErrors
 from cordon_scanner.intel.provenance import attest
+from cordon_scanner.version import USER_AGENT
 
 REGISTRY: Final = "https://bcr.bazel.build"
 
@@ -84,7 +85,7 @@ class BazelProvenance:
         parts = urllib.parse.urlsplit(url)
         if parts.scheme != "https":
             raise ValueError("not https")
-        request = urllib.request.Request(url, headers={"User-Agent": "cordon-scanner"})  # noqa: S310 - https only, hosts checked
+        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})  # noqa: S310 - https only, hosts checked
         opener = urllib.request.build_opener(_GitHubRedirects, ClosedErrors)
         with opener.open(request, timeout=TIMEOUT) as response:
             body: bytes = Download.read(response, MAX_BYTES + 1)

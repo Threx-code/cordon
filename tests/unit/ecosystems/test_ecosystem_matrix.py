@@ -11,8 +11,13 @@ from __future__ import annotations
 
 import pytest
 
+from cordon_scanner.detect.supply.provenance import SUPPORTED_ECOSYSTEMS
 from cordon_scanner.ecosystems.registry import EcosystemRegistry
-from cordon_scanner.foundation.dependencies import ECOSYSTEM_IDS
+from cordon_scanner.foundation.dependencies import (
+    ECOSYSTEM_IDS,
+    PROVENANCE_ECOSYSTEMS,
+    PROVENANCE_NOT_PUBLISHED,
+)
 from kits.ecosystems import EcosystemsPage
 from support import ROOT as REPO
 
@@ -55,3 +60,29 @@ class TestTheTableIsNotVacuous:
     def test_it_covers_every_registered_ecosystem(self) -> None:
         assert len(EcosystemsPage.rows()) == len(EcosystemRegistry.BY_ID)
         assert len(EcosystemsPage.rows()) >= 17
+
+
+class TestProvenanceIsAskedOrTheRegistryPublishesNone:
+    """S22: an ecosystem is verified for build provenance, or its registry is on the written list of registries that publish nothing to verify;
+    the rest are owed, and the structural guard (`coverage/`) keeps the owed list from growing."""
+
+    def test_the_inventory_and_the_detector_read_one_set(self) -> None:
+        assert SUPPORTED_ECOSYSTEMS is PROVENANCE_ECOSYSTEMS
+
+    def test_what_is_verified_is_a_real_ecosystem(self) -> None:
+        assert PROVENANCE_ECOSYSTEMS <= ECOSYSTEM_IDS
+
+    def test_a_reason_names_a_real_ecosystem_that_is_not_verified_and_says_what_was_read(
+        self,
+    ) -> None:
+        assert set(PROVENANCE_NOT_PUBLISHED) <= ECOSYSTEM_IDS
+        assert not set(PROVENANCE_NOT_PUBLISHED) & PROVENANCE_ECOSYSTEMS
+        assert all(
+            len(why) >= 60 and why.endswith(".") for why in PROVENANCE_NOT_PUBLISHED.values()
+        )
+
+    def test_a_registry_with_nothing_found_cites_a_page_a_date_and_says_so(self) -> None:
+        for eco in ("cargo", "composer", "cocoapods", "pub", "cran", "vcpkg", "julia"):
+            why = PROVENANCE_NOT_PUBLISHED[eco]
+            assert "no verifiable per-release signature was found" in why.lower(), eco
+            assert "checked 2026-" in why, eco

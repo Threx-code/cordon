@@ -13,6 +13,7 @@ import gzip
 import io
 import json
 import urllib.error
+import urllib.request
 from typing import Any, ClassVar
 
 import pytest
@@ -20,6 +21,7 @@ import pytest
 from cordon_scanner.detect.base import GraphUnit, ScanContext
 from cordon_scanner.detect.supply.registries.detector import (
     CONFUSABLE_ECOSYSTEMS,
+    NOT_CONFUSABLE,
     REGISTRY_ECOSYSTEMS,
     RegistryDetector,
 )
@@ -29,7 +31,7 @@ from cordon_scanner.foundation.config.settings import Config
 from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Scope
 from cordon_scanner.foundation.results import Dependency
-from cordon_scanner.intel.registries import more_registries, registry_http, registry_request
+from cordon_scanner.intel.registries import registry_http, registry_request
 from cordon_scanner.intel.registries.image_registries import ImageRegistries
 from cordon_scanner.intel.registries.infra_registries import InfraRegistries
 from cordon_scanner.intel.registries.more_registries import MoreRegistries
@@ -109,7 +111,7 @@ class TestTransport:
     def opener(self, monkeypatch):
         def install(*outcomes: Any) -> None:
             fake = self._Opener(list(outcomes))
-            monkeypatch.setattr(more_registries.urllib.request, "build_opener", lambda *a: fake)
+            monkeypatch.setattr(urllib.request, "build_opener", lambda *a: fake)
             monkeypatch.setattr(registry_http.time, "sleep", lambda s: None)
 
         return install
@@ -1934,7 +1936,7 @@ class TestTheDetectorAsksTheNewRegistries:
             self.dependency("nuget", "p", integrity=SHA512_B64)
         )
 
-    @pytest.mark.parametrize("ecosystem", ["gomod", "maven", "composer"])
+    @pytest.mark.parametrize("ecosystem", sorted(NOT_CONFUSABLE))
     def test_absence_is_not_dependency_confusion_where_names_are_owned(
         self, answer, ecosystem
     ) -> None:

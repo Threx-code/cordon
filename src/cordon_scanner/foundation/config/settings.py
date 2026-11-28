@@ -124,6 +124,10 @@ class Config:
     a large scan should not pay for unasked. When on, a vulnerability in a
     transitive dependency that first-party code does not import is lowered and
     tagged -- never removed. See `detect/reachability`."""
+    reuse_keys: bool = False
+    """Collect the package's code-reuse keys (each code file's `ReuseIndex.fingerprint`, each install
+    hook's `HookShape` key) for the facts export, so the platform can carry a condemned release's keys
+    in the feed. Off by default: an ordinary scan does not pay for hashing what it will not report."""
     intel_feed: bool = True
     """Refresh intel from Cordon's signed public feed before scanning.
 
@@ -135,8 +139,8 @@ class Config:
     """A local clamd to hand file bytes to (`--clamav`): a Unix socket path, or `tcp://` on a
     loopback address. Set only by the operator: never read from a repository's configuration,
     because the scan target must not choose where its own bytes are sent. See `detect/clamav`."""
-    private_registries: tuple[tuple[str, str], ...] = ()
-    """`(registry URL, environment variable)` for each registry the organisation runs: under
+    private_registries: tuple[tuple[str, ...], ...] = ()
+    """`(registry URL, environment variable[, scheme])` for each registry the organisation runs: under
     `--online`, a dependency resolved from one is asked about there, with the token in that
     variable (`--registry-token URL=VAR`, `CORDON_REGISTRY_TOKENS`). Set only by the operator,
     never from any configuration file: a repository naming one could send a credential to a host
@@ -846,6 +850,7 @@ class Config:
             "profile": self.profile,
             "offline": self.offline,
             "reachability": self.reachability,
+            "reuse_keys": self.reuse_keys,
             "expand_archives": self.expand_archives,
             "intel_feed": self.intel_feed,
             "max_intel_age": self.max_intel_age,
@@ -886,6 +891,7 @@ class Config:
                 "limits": self.limits.to_dict(),
                 "offline": self.offline,
                 "reachability": self.reachability,
+                "reuse_keys": self.reuse_keys,
                 "expand_archives": self.expand_archives,
                 "intel_feed": self.intel_feed,
                 "max_intel_age": self.max_intel_age,
@@ -935,6 +941,7 @@ class Config:
             "evidence": str(self.evidence),
             "offline": self.offline,
             "reachability": self.reachability,
+            "reuse_keys": self.reuse_keys,
             "expand_archives": self.expand_archives,
             "intel_feed": self.intel_feed,
             "max_intel_age": self.max_intel_age,

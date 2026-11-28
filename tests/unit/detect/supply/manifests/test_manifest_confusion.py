@@ -224,30 +224,76 @@ class TestCheck:
 
 
 class TestPreviousReleaseFetches:
-    def test_a_tarball_url_off_the_registry_hosts_is_refused_before_any_request(self):
-        with pytest.raises(ValueError, match="allowlist"):
-            PreviousRelease._artefact("https://attacker.example/left-pad.tgz", "npm")
-        with pytest.raises(ValueError, match="allowlist"):
-            PreviousRelease._artefact("http://registry.npmjs.org/left-pad.tgz", "npm")
+    @staticmethod
+    def serve(monkeypatch, documents: dict[str, dict], bytes_: bytes = b"blob") -> list[str]:
+        """The registry's documents, and the downloads asked for (the archive bytes are `bytes_`)."""
+        from cordon_scanner.intel.registries.registry_client import RegistryClient
+        from cordon_scanner.intel.registries.registry_request import RegistryRequest
+
+        downloads: list[str] = []
+        monkeypatch.setattr(RegistryClient, "_fetch", staticmethod(lambda url, **k: documents[url]))
+
+        def fetch(url, allow, **_k):
+            downloads.append(url)
+            return bytes_
+
+        monkeypatch.setattr(RegistryRequest, "fetch_bytes", staticmethod(fetch))
+        return downloads
+
+    @staticmethod
+    def packument(dist: dict) -> dict[str, dict]:
+        base = "https://registry.npmjs.org/x"
+        return {
+            base: {
+                "name": "x",
+                "time": {"1.0.0": "2020-01-01T00:00:00Z", "1.1.0": "2021-01-01T00:00:00Z"},
+                "versions": {"1.0.0": {}, "1.1.0": {}},
+            },
+            f"{base}/1.0.0": {"version": "1.0.0", "dist": dist},
+            f"{base}/1.1.0": {"version": "1.1.0", "dist": {}},
+        }
+
+    def test_a_tarball_url_off_the_registry_hosts_is_refused_before_any_request(
+        self, tmp_path, monkeypatch
+    ):
+        for url in (
+            "https://attacker.example/left-pad.tgz",
+            "http://registry.npmjs.org/left-pad.tgz",
+        ):
+            downloads = self.serve(
+                monkeypatch,
+                self.packument({"tarball": url, "integrity": "sha512-" + "A" * 86 + "=="}),
+            )
+            with pytest.raises(ValueError, match="no archive"):
+                PreviousRelease.fetch_previous(Identity("npm", "x", "1.1.0"), tmp_path)
+            assert downloads == []
 
     def test_a_release_with_only_a_legacy_sha1_is_not_trusted(self, tmp_path, monkeypatch):
-        packument = {
-            "time": {"1.0.0": "2020-01-01T00:00:00Z", "1.1.0": "2021-01-01T00:00:00Z"},
-            "versions": {
-                "1.0.0": {
-                    "dist": {
-                        "tarball": "https://registry.npmjs.org/x/-/x-1.0.0.tgz",
-                        "shasum": "0" * 40,
-                    }
-                },
-                "1.1.0": {"dist": {}},
-            },
-        }
-        monkeypatch.setattr(PreviousRelease, "_document", staticmethod(lambda url: packument))
-        monkeypatch.setattr(PreviousRelease, "_artefact", staticmethod(lambda url, eco: b"blob"))
-        with pytest.raises(ValueError, match="sha512"):
+        downloads = self.serve(
+            monkeypatch,
+            self.packument(
+                {"tarball": "https://registry.npmjs.org/x/-/x-1.0.0.tgz", "shasum": "0" * 40}
+            ),
+        )
+        with pytest.raises(ValueError, match="no archive"):
             PreviousRelease.fetch_previous(Identity("npm", "x", "1.1.0"), tmp_path)
+        assert downloads == []
 
-    def test_a_registry_chosen_filename_stays_inside_the_workspace(self):
-        assert "/" not in PreviousRelease._safe("../../etc/evil.whl")
-        assert PreviousRelease._safe("../../etc/evil.whl").endswith(".whl")
+    def test_a_registry_chosen_filename_stays_inside_the_workspace(self, tmp_path, monkeypatch):
+        import base64
+        import hashlib
+
+        integrity = "sha512-" + base64.b64encode(hashlib.sha512(b"blob").digest()).decode()
+        documents = self.packument(
+            {
+                "tarball": "https://registry.npmjs.org/x/-/..%2F..%2Fetc%2Fevil.tgz",
+                "integrity": integrity,
+            }
+        )
+        self.serve(monkeypatch, documents)
+        found = PreviousRelease.fetch_previous(Identity("npm", "x", "1.1.0"), tmp_path)
+        assert (
+            found is not None
+            and found.path.parent == tmp_path
+            and found.path.read_bytes() == b"blob"
+        )

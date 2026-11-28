@@ -33,13 +33,14 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import UTC, datetime
-from typing import Any, Final
+from typing import Final
 
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
-from cordon_scanner.foundation.network.redirects import ClosedErrors
+from cordon_scanner.foundation.network.redirects import ClosedErrors, HttpsRedirects
 from cordon_scanner.intel.base import CollectionCheck
 from cordon_scanner.intel.provenance import openpgp
+from cordon_scanner.version import USER_AGENT
 
 GALAXY: Final = "https://galaxy.ansible.com"
 
@@ -54,22 +55,13 @@ MAX_ARTIFACT_BYTES: Final = 128 << 20
 MAX_MANIFEST_BYTES: Final = 8 << 20
 
 
-class _HttpsRedirects(urllib.request.HTTPRedirectHandler):
-    def redirect_request(
-        self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str
-    ) -> Any:
-        if urllib.parse.urlsplit(newurl).scheme != "https":
-            return None
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
-
-
 class AnsibleSignatures:
     @staticmethod
     def _get(url: str, limit: int) -> bytes:
         if urllib.parse.urlsplit(url).scheme != "https":
             raise ValueError("not https")
-        request = urllib.request.Request(url, headers={"User-Agent": "cordon-scanner"})  # noqa: S310 - https only
-        with urllib.request.build_opener(_HttpsRedirects, ClosedErrors).open(
+        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})  # noqa: S310 - https only
+        with urllib.request.build_opener(HttpsRedirects, ClosedErrors).open(
             request, timeout=TIMEOUT
         ) as r:
             body: bytes = Download.read(r, limit + 1)

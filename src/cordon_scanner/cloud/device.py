@@ -261,7 +261,13 @@ class DeviceInventory:
         `version`), which is what the editor itself reads; the folder name is the fallback. Only
         that one small manifest per extension is read, never the extension's code.
         """
-        found: list[dict[str, str]] = []
+        return [entry for entry, _ in DeviceInventory.installed_folders(home)]
+
+    @staticmethod
+    def installed_folders(home: Path) -> list[tuple[dict[str, str], Path]]:
+        """Each installed extension, as `installed_extensions` reports it, with the folder it was read from (which never
+        leaves the machine: it is for the integrity check, not the payload)."""
+        found: list[tuple[dict[str, str], Path]] = []
         for editor, relative in DeviceInventory.EDITOR_EXTENSION_DIRS:
             directory = home / relative
             if not directory.is_dir():
@@ -275,7 +281,7 @@ class DeviceInventory:
             for folder in folders:
                 identifier, version = DeviceInventory._extension_identity(folder)
                 if identifier:
-                    found.append({"editor": editor, "id": identifier, "version": version})
+                    found.append(({"editor": editor, "id": identifier, "version": version}, folder))
                 if len(found) >= MAX_EXTENSIONS:
                     return found
         return found
@@ -389,7 +395,10 @@ class DeviceInventory:
 
     @staticmethod
     def collect(
-        home: Path | None = None, collection: Mapping[str, str] | None = None
+        home: Path | None = None,
+        collection: Mapping[str, str] | None = None,
+        *,
+        verify_extensions: bool = False,
     ) -> dict[str, Any]:
         """The payload: device, inventory and findings, and how well it was collected when the caller says (`CollectionStatus.payload`). Nothing else leaves the machine."""
         home = home or Path.home()
@@ -403,7 +412,13 @@ class DeviceInventory:
 
         findings = DeviceInventory._agent_findings(files)
         findings.extend(DeviceInventory.extension_findings(installed))
-        report = {
+        not_verified: list[dict[str, str]] | None = None
+        if verify_extensions:
+            from cordon_scanner.cloud.extensions.extension_integrity import InstalledExtensions
+
+            findings.extend(InstalledExtensions.findings(DeviceInventory.installed_folders(home)))
+            not_verified = InstalledExtensions.not_verified(installed)
+        report: dict[str, Any] = {
             "schema": SCHEMA,
             "agent_version": __version__,
             "device": DeviceInventory._device(),
@@ -418,6 +433,8 @@ class DeviceInventory:
             },
             "findings": findings,
         }
+        if not_verified is not None:
+            report["inventory"]["extensions_not_verified"] = not_verified
         if collection is not None:
             report["collection"] = dict(collection)
         return report

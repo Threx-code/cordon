@@ -21,9 +21,11 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import NarArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -31,7 +33,10 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
-from cordon_scanner.foundation.models import Scope
+from cordon_scanner.ecosystems.install_marks import ConsumerHooks, NoPrivateMark
+from cordon_scanner.ecosystems.launchers import Launcher
+from cordon_scanner.ecosystems.own_names import OwnName
+from cordon_scanner.foundation.models import Hook, Scope
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -615,7 +620,36 @@ class Fetchers:
                     note="looked up on NIX_PATH when evaluated: whatever that channel holds then, pinned to nothing",
                 )
             )
-        return Manifest(path=content.path, ecosystem=ecosystem, dependencies=tuple(declared))
+        return Manifest(
+            path=content.path,
+            ecosystem=ecosystem,
+            dependencies=tuple(declared),
+            hooks=tuple(Fetchers.phases(tokens, content.path, ecosystem)),
+        )
+
+    @staticmethod
+    def phases(tokens: list[Token], path: str, ecosystem: str) -> list[Hook]:
+        """The build phases a derivation spells as shell: `buildPhase = ''...'';`, `postInstall = "..."`. Each is a command the
+        build runs on the machine of whoever builds the package."""
+        out: list[Hook] = []
+        for index, token in enumerate(tokens[:-2]):
+            if (
+                token.kind == "ident"
+                and token.text.endswith(("Phase", "Install", "Build", "Configure", "Check"))
+                and tokens[index + 1].kind == "punct"
+                and tokens[index + 1].text == "="
+                and tokens[index + 2].kind in ("string", "template")
+            ):
+                out.append(
+                    Hook(
+                        kind="build",
+                        path=path,
+                        name=token.text,
+                        command=tokens[index + 2].text.strip()[:400],
+                        ecosystem=ecosystem,
+                    )
+                )
+        return out
 
     @staticmethod
     def dependency(fetcher: str, argument: dict[str, Any] | str) -> DeclaredDependency | None:
@@ -801,12 +835,34 @@ class NixEcosystem(BaseEcosystem):
     """Flake inputs and hand-pinned sources."""
 
     id = "nix"
+    consumer_hooks = ConsumerHooks(("*Phase", "*Install", "*Build", "*Configure", "*Check"))
+    private_mark = NoPrivateMark(
+        "a Nix package is published by a pull request to its repository; nothing in it marks it unpublishable"
+    )
+    own_name = OwnName(
+        ("package.nix",),
+        readers=(("package.nix", "nix_pname"),),
+        parsers=(("package.nix", "nix_manifest"),),
+    )
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         return name.rsplit("/", 1)[0] if "/" in name else None
 
     purl_type = "nix"
-    manifest_globs: tuple[str, ...] = ("**/flake.nix", "**/default.nix", "**/shell.nix")
+    manifest_globs: tuple[str, ...] = (
+        "**/flake.nix",
+        "**/default.nix",
+        "**/shell.nix",
+        "**/package.nix",
+    )
+    published_archive = (NarArchive(),)
+    mcp_launch = (
+        Launcher(
+            (("nix", "run"),),
+            "nix",
+            "https://nix.dev/manual/nix/stable/command-ref/new-cli/nix3-run.html",
+        ),
+    )
     lockfile_globs: tuple[str, ...] = ("**/flake.lock",)
     registry_hosts: frozenset[str] = frozenset()
     registryless = True
@@ -814,6 +870,27 @@ class NixEcosystem(BaseEcosystem):
     git_distribution = True
     locked_inputs = "inputs."
     """Declarations whose ref is an update channel that flake.lock pins: a flake's inputs."""
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A flake.lock locking these `owner/repo` inputs at these revisions: `{path: content}`."""
+        nodes: dict[str, object] = {}
+        inputs: dict[str, str] = {}
+        for name, version in pins:
+            owner, _, repo = name.partition("/")
+            key = repo or owner
+            inputs[key] = key
+            nodes[key] = {
+                "locked": {"type": "github", "owner": owner, "repo": repo or owner, "rev": version},
+                "original": {"type": "github", "owner": owner, "repo": repo or owner},
+            }
+        nodes["root"] = {"inputs": inputs}
+        return {"flake.lock": json.dumps({"nodes": nodes, "root": "root", "version": 7})}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A flake input is locked to a revision."""
+        raise ValueError("a flake input needs a version: the revision it is locked to")
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()

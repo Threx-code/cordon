@@ -37,7 +37,7 @@ from cordon_scanner.cloud.transport import CloudTransport, Response, Transport
 from cordon_scanner.foundation.files.trees import Trees
 from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.redirects import ClosedErrors
-from cordon_scanner.version import PROGRAM
+from cordon_scanner.version import PROGRAM, USER_AGENT
 
 MAX_ARTIFACT_BYTES: Final = 2 << 30
 CLONE_TIMEOUT_SECONDS: Final = 600
@@ -333,7 +333,7 @@ class CloudRunner:
         digest = hashlib.sha256()
         total = 0
         url = urllib.parse.urlunsplit(parsed)
-        request_object = urllib.request.Request(url, headers={"User-Agent": "cordon-runner"})  # noqa: S310
+        request_object = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})  # noqa: S310
         with (
             (opener or CheckedRedirects.opener(config).open)(
                 request_object, timeout=60

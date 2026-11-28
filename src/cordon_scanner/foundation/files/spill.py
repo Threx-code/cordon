@@ -113,7 +113,7 @@ class Spill:
         return True
 
     @staticmethod
-    def _running_on_windows(pid: int) -> bool:  # pragma: no cover - Windows
+    def _running_on_windows(pid: int) -> bool:  # pragma: no cover - only Windows calls this
         """Whether `pid` runs, asked of the kernel. Never `os.kill(pid, 0)` here: on Windows signal 0
         is CTRL_C_EVENT, so it sent Ctrl+C to every process on the console (each Windows test job
         ended with a KeyboardInterrupt after its last test, 5 Nov)."""

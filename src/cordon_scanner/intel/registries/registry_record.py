@@ -39,7 +39,39 @@ from typing import Any, ClassVar, Final
 from cordon_scanner.foundation.files.atomic import AtomicFile
 
 STORE_VERSION: Final = 1
-ECOSYSTEMS: Final = frozenset({"npm", "pypi"})
+ECOSYSTEMS: Final = frozenset(
+    {
+        "npm",
+        "pypi",
+        "cargo",
+        "rubygems",
+        "hex",
+        "pub",
+        "composer",
+        "cocoapods",
+        "ansible",
+        "conda",
+        "nuget",
+        "cran",
+        "hackage",
+        "terraform",
+        "helm",
+        "image",
+        "gomod",
+        "maven",
+        "gradle",
+        "bazel",
+        "julia",
+        "vcpkg",
+        "opam",
+        "conan",
+        "homebrew",
+        "actions",
+        "swift",
+        "nix",
+        "vscode",
+    }
+)
 #: npm's lifecycle scripts that run on the installing machine.
 INSTALL_HOOKS: Final = frozenset({"preinstall", "install", "postinstall", "prepare"})
 #: A version number chosen to outrank any internal release: the dependency-confusion shape.
@@ -85,6 +117,10 @@ class RegistryRecord:
     for an older release they are unknown, not absent."""
     owners: tuple[str, ...] = field(default_factory=tuple)
     """PyPI project roles (owners and maintainers) where the JSON API lists them."""
+    withdrawn: str = ""
+    """The registry's own word for this release being withdrawn (`yanked`, `retracted`, `deprecated`, `unlisted`, `archived`), or ""."""
+    publisher_kind: str = ""
+    """What `publisher` is: `account`, `namespace`, `committer` (a git-hosted registry), `none`; "" for a record stored before this field."""
 
     ECOSYSTEMS_READ: ClassVar[frozenset[str]] = ECOSYSTEMS
 
@@ -250,8 +286,13 @@ class RegistryRecord:
         published = self._when(self.published)
         created = self._when(self.created)
         age_days = (published - created).total_seconds() / 86400 if published and created else 0.0
+        # Only where `publisher` names who published the release: a git-hosted registry's committer is whoever merged it (often a
+        # bot), and a change of committer says nothing about a change of publisher.
         new_publisher = bool(
-            self.publisher and self.prior_publishers and self.publisher not in self.prior_publishers
+            self.publisher_kind in ("", "account", "namespace")
+            and self.publisher
+            and self.prior_publishers
+            and self.publisher not in self.prior_publishers
         )
         return {
             "reg_known": 1.0,
@@ -324,28 +365,6 @@ class RegistryRecord:
         # Staged under its own name, never a shared `.tmp` (`AtomicFile`).
         AtomicFile.write(path, json.dumps(self.to_dict(), sort_keys=True))
         return path
-
-    # -- acquiring (network; `intel acquire` only) --------------------------------------
-
-    @classmethod
-    def acquire(cls, ecosystem: str, name: str, version: str) -> RegistryRecord | None:
-        """Fetch the name's registry document and keep the record as of `version`. Network."""
-        from cordon_scanner.intel.registries.registry_client import REGISTRY_HOSTS, RegistryClient
-
-        if ecosystem == "npm":
-            document = RegistryClient._fetch(
-                f"{REGISTRY_HOSTS['npm']}/{urllib.parse.quote(name, safe='@')}"
-            )
-            record = cls.from_npm(document, version) if isinstance(document, dict) else None
-        elif ecosystem == "pypi":
-            quoted = urllib.parse.quote(name, safe="")
-            document = RegistryClient._fetch(f"{REGISTRY_HOSTS['pypi']}/pypi/{quoted}/json")
-            record = cls.from_pypi(document, version) if isinstance(document, dict) else None
-        else:
-            return None
-        if record is not None:
-            record.save()
-        return record
 
 
 __all__ = ["ECOSYSTEMS", "INSTALL_HOOKS", "STORE_VERSION", "RegistryRecord"]

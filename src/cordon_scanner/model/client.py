@@ -31,6 +31,7 @@ from cordon_scanner.foundation.network.downloads import Download
 from cordon_scanner.foundation.network.failures import NetworkFailure
 from cordon_scanner.foundation.network.redirects import NoRedirects
 from cordon_scanner.model.features import FileFeatures, PackageArchive, PackageFeatures
+from cordon_scanner.version import USER_AGENT
 
 TOKEN_ENV: Final = "CORDON_MODEL_TOKEN"  # noqa: S105 - the variable's name, never a value
 
@@ -240,7 +241,7 @@ class ModelClient:
             headers={
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self.token}",
-                "User-Agent": "cordon-scanner (model client)",
+                "User-Agent": USER_AGENT,
             },
             method="POST",
         )

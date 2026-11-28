@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import re
-from typing import ClassVar
+from collections.abc import Callable
+from typing import Any, ClassVar
+
+from cordon_scanner.foundation.models import Category, Confidence, Severity
 
 
 class ExtensionVerdicts:
@@ -155,4 +158,26 @@ class ExtensionNames:
         return previous[-1]
 
 
-__all__ = ["ExtensionNames", "ExtensionVerdicts"]
+class InstalledRules:
+    """The rule for an extension installed on a machine (`cloud/extensions/extension_integrity.py`)."""
+
+    @staticmethod
+    def build_rules(rule: Callable[..., Any]) -> dict[str, Any]:
+        """Built with the catalogue's rule factory."""
+        return {
+            "SUSPECT.EXTENSION.ADDED_CODE.001": rule(
+                "SUSPECT.EXTENSION.ADDED_CODE.001",
+                "An installed editor extension holds code its signed package does not have",
+                Category.SUSPICIOUS,
+                Severity.MEDIUM,
+                Confidence.MEDIUM,
+                "An installed extension's folder holds a script, native library or program that the package its registry "
+                "signed for that release does not contain, and nothing in the signed package names it. Not measured on real "
+                "installed folders: extensions download language servers and binaries into their own folder on first use.",
+                "Reinstall the extension from its registry and check what added the file.",
+                (),
+            )
+        }
+
+
+__all__ = ["ExtensionNames", "ExtensionVerdicts", "InstalledRules"]

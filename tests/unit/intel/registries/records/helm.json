@@ -1,0 +1,1036 @@
+{
+ "app_version": "v1.21.3",
+ "available_versions": [
+  {
+   "app_version": "v1.20.5",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1793183804,
+   "version": "1.20.5"
+  },
+  {
+   "app_version": "v1.21.3",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1792787917,
+   "version": "1.21.3"
+  },
+  {
+   "app_version": "v1.20.4",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1789581937,
+   "version": "1.20.4"
+  },
+  {
+   "app_version": "v1.21.2",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1789109672,
+   "version": "1.21.2"
+  },
+  {
+   "app_version": "v1.21.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1785336400,
+   "version": "1.21.1"
+  },
+  {
+   "app_version": "v1.21.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1783548391,
+   "version": "1.21.0"
+  },
+  {
+   "app_version": "v1.19.6",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1782404743,
+   "version": "1.19.6"
+  },
+  {
+   "app_version": "v1.20.3",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1782396104,
+   "version": "1.20.3"
+  },
+  {
+   "app_version": "v1.19.5",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1776781672,
+   "version": "1.19.5"
+  },
+  {
+   "app_version": "v1.20.2",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1775919596,
+   "version": "1.20.2"
+  },
+  {
+   "app_version": "v1.20.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1774636811,
+   "version": "1.20.1"
+  },
+  {
+   "app_version": "v1.20.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1773156779,
+   "version": "1.20.0"
+  },
+  {
+   "app_version": "v1.18.6",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1771951401,
+   "version": "1.18.6"
+  },
+  {
+   "app_version": "v1.19.4",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1771944200,
+   "version": "1.19.4"
+  },
+  {
+   "app_version": "v1.18.5",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1770047907,
+   "version": "1.18.5"
+  },
+  {
+   "app_version": "v1.19.3",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1770041155,
+   "version": "1.19.3"
+  },
+  {
+   "app_version": "v1.18.4",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1765289583,
+   "version": "1.18.4"
+  },
+  {
+   "app_version": "v1.19.2",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1765289435,
+   "version": "1.19.2"
+  },
+  {
+   "app_version": "v1.19.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1760540300,
+   "version": "1.19.1"
+  },
+  {
+   "app_version": "v1.18.3",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1760532447,
+   "version": "1.18.3"
+  },
+  {
+   "app_version": "v1.19.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1759838781,
+   "version": "1.19.0"
+  },
+  {
+   "app_version": "v1.17.4",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1751465510,
+   "version": "1.17.4"
+  },
+  {
+   "app_version": "v1.18.2",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1751458385,
+   "version": "1.18.2"
+  },
+  {
+   "app_version": "v1.18.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1750236194,
+   "version": "1.18.1"
+  },
+  {
+   "app_version": "v1.17.3",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1750159216,
+   "version": "1.17.3"
+  },
+  {
+   "app_version": "v1.18.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1749556287,
+   "version": "1.18.0"
+  },
+  {
+   "app_version": "v1.12.17",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1745587487,
+   "version": "1.12.17"
+  },
+  {
+   "app_version": "v1.16.5",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1745511580,
+   "version": "1.16.5"
+  },
+  {
+   "app_version": "v1.17.2",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1745491640,
+   "version": "1.17.2"
+  },
+  {
+   "app_version": "v1.12.16",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1739539720,
+   "version": "1.12.16"
+  },
+  {
+   "app_version": "v1.16.4",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1739448820,
+   "version": "1.16.4"
+  },
+  {
+   "app_version": "v1.17.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1739443318,
+   "version": "1.17.1"
+  },
+  {
+   "app_version": "v1.17.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1738593289,
+   "version": "1.17.0"
+  },
+  {
+   "app_version": "v1.16.3",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1737026955,
+   "version": "1.16.3"
+  },
+  {
+   "app_version": "v1.15.5",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1736938872,
+   "version": "1.15.5"
+  },
+  {
+   "app_version": "v1.12.15",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1736788639,
+   "version": "1.12.15"
+  },
+  {
+   "app_version": "v1.16.2",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1732125112,
+   "version": "1.16.2"
+  },
+  {
+   "app_version": "v1.15.4",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1732018891,
+   "version": "1.15.4"
+  },
+  {
+   "app_version": "v1.12.14",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1731945690,
+   "version": "1.12.14"
+  },
+  {
+   "app_version": "v1.16.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1728479047,
+   "version": "1.16.1"
+  },
+  {
+   "app_version": "v1.16.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1727963123,
+   "version": "1.16.0"
+  },
+  {
+   "app_version": "v1.15.3",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1723794665,
+   "version": "1.15.3"
+  },
+  {
+   "app_version": "v1.12.13",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1723132985,
+   "version": "1.12.13"
+  },
+  {
+   "app_version": "v1.15.2",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1722343147,
+   "version": "1.15.2"
+  },
+  {
+   "app_version": "v1.15.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1719422949,
+   "version": "1.15.1"
+  },
+  {
+   "app_version": "v1.14.7",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1718961024,
+   "version": "1.14.7"
+  },
+  {
+   "app_version": "v1.12.12",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1718960707,
+   "version": "1.12.12"
+  },
+  {
+   "app_version": "v1.12.11",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1717771695,
+   "version": "1.12.11"
+  },
+  {
+   "app_version": "v1.14.6",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1717765430,
+   "version": "1.14.6"
+  },
+  {
+   "app_version": "v1.15.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1717598983,
+   "version": "1.15.0"
+  },
+  {
+   "app_version": "v1.14.5",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1714044396,
+   "version": "1.14.5"
+  },
+  {
+   "app_version": "v1.13.6",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1714038798,
+   "version": "1.13.6"
+  },
+  {
+   "app_version": "v1.12.10",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1714034014,
+   "version": "1.12.10"
+  },
+  {
+   "app_version": "v1.14.4",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1709900538,
+   "version": "1.14.4"
+  },
+  {
+   "app_version": "v1.12.9",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1709897813,
+   "version": "1.12.9"
+  },
+  {
+   "app_version": "v1.13.5",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1709897808,
+   "version": "1.13.5"
+  },
+  {
+   "app_version": "v1.12.8",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1708680296,
+   "version": "1.12.8"
+  },
+  {
+   "app_version": "v1.14.3",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1708680168,
+   "version": "1.14.3"
+  },
+  {
+   "app_version": "v1.13.4",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1708679887,
+   "version": "1.13.4"
+  },
+  {
+   "app_version": "v1.14.2",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1707397274,
+   "version": "1.14.2"
+  },
+  {
+   "app_version": "v1.14.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1706895054,
+   "version": "1.14.0"
+  },
+  {
+   "app_version": "v1.14.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1706891101,
+   "version": "1.14.1"
+  },
+  {
+   "app_version": "v1.12.7",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1702396379,
+   "version": "1.12.7"
+  },
+  {
+   "app_version": "v1.13.3",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1702305475,
+   "version": "1.13.3"
+  },
+  {
+   "app_version": "v1.12.6",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1698667717,
+   "version": "1.12.6"
+  },
+  {
+   "app_version": "v1.13.2",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1698667687,
+   "version": "1.13.2"
+  },
+  {
+   "app_version": "v1.13.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1695800526,
+   "version": "1.13.1"
+  },
+  {
+   "app_version": "v1.12.5",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1695800447,
+   "version": "1.12.5"
+  },
+  {
+   "app_version": "v1.13.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1694530658,
+   "version": "1.13.0"
+  },
+  {
+   "app_version": "v1.12.4",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1693588279,
+   "version": "1.12.4"
+  },
+  {
+   "app_version": "v1.11.5",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1693585759,
+   "version": "1.11.5"
+  },
+  {
+   "app_version": "v1.12.3",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1690374629,
+   "version": "1.12.3"
+  },
+  {
+   "app_version": "v1.11.4",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1687252184,
+   "version": "1.11.4"
+  },
+  {
+   "app_version": "v1.12.2",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1686920012,
+   "version": "1.12.2"
+  },
+  {
+   "app_version": "v1.12.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1685022034,
+   "version": "1.12.1"
+  },
+  {
+   "app_version": "v1.11.3",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1685018150,
+   "version": "1.11.3"
+  },
+  {
+   "app_version": "v1.12.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1684495823,
+   "version": "1.12.0"
+  },
+  {
+   "app_version": "v1.11.2",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1683649001,
+   "version": "1.11.2"
+  },
+  {
+   "app_version": "v1.11.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1680874947,
+   "version": "1.11.1"
+  },
+  {
+   "app_version": "v1.11.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1673449178,
+   "version": "1.11.0"
+  },
+  {
+   "app_version": "v1.10.2",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1673373117,
+   "version": "1.10.2"
+  },
+  {
+   "app_version": "v1.10.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1669037275,
+   "version": "1.10.1"
+  },
+  {
+   "app_version": "v1.9.2",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1668771767,
+   "version": "1.9.2"
+  },
+  {
+   "app_version": "v1.10.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1666011432,
+   "version": "1.10.0"
+  },
+  {
+   "app_version": "v1.9.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1658847399,
+   "version": "1.9.1"
+  },
+  {
+   "app_version": "v1.9.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1658502355,
+   "version": "1.9.0"
+  },
+  {
+   "app_version": "v1.7.3",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1656000716,
+   "version": "1.7.3"
+  },
+  {
+   "app_version": "v1.8.2",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1655995289,
+   "version": "1.8.2"
+  },
+  {
+   "app_version": "v1.8.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1655224477,
+   "version": "1.8.1"
+  },
+  {
+   "app_version": "v1.8.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1649185092,
+   "version": "1.8.0"
+  },
+  {
+   "app_version": "v1.7.2",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1648065653,
+   "version": "1.7.2"
+  },
+  {
+   "app_version": "v1.6.3",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1648052736,
+   "version": "1.6.3"
+  },
+  {
+   "app_version": "v1.7.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1643990315,
+   "version": "1.7.1"
+  },
+  {
+   "app_version": "v1.5.5",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1643222498,
+   "version": "1.5.5"
+  },
+  {
+   "app_version": "v1.6.2",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1643216102,
+   "version": "1.6.2"
+  },
+  {
+   "app_version": "v1.7.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1643210169,
+   "version": "1.7.0"
+  },
+  {
+   "app_version": "v1.6.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1635775906,
+   "version": "1.6.1"
+  },
+  {
+   "app_version": "v1.6.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1635258240,
+   "version": "1.6.0"
+  },
+  {
+   "app_version": "v1.5.4",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1633020060,
+   "version": "1.5.4"
+  },
+  {
+   "app_version": "v1.5.3",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1629824761,
+   "version": "1.5.3"
+  },
+  {
+   "app_version": "v1.4.4",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1629816082,
+   "version": "1.4.4"
+  },
+  {
+   "app_version": "v1.5.2",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1629456260,
+   "version": "1.5.2"
+  },
+  {
+   "app_version": "v1.5.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1629125320,
+   "version": "1.5.1"
+  },
+  {
+   "app_version": "v1.5.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1628690260,
+   "version": "1.5.0"
+  },
+  {
+   "app_version": "v1.4.3",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1628255620,
+   "version": "1.4.3"
+  },
+  {
+   "app_version": "v1.3.3",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1628252773,
+   "version": "1.3.3"
+  },
+  {
+   "app_version": "v1.4.2",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1627913515,
+   "version": "1.4.2"
+  },
+  {
+   "app_version": "v1.3.2",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1627911273,
+   "version": "1.3.2"
+  },
+  {
+   "app_version": "v1.4.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1626963838,
+   "version": "1.4.1"
+  },
+  {
+   "app_version": "v1.4.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1623761533,
+   "version": "1.4.0"
+  },
+  {
+   "app_version": "v1.3.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1618397345,
+   "version": "1.3.1"
+  },
+  {
+   "app_version": "v1.3.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1617877537,
+   "version": "1.3.0"
+  },
+  {
+   "app_version": "v1.1.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1613493769,
+   "version": "1.1.1"
+  },
+  {
+   "app_version": "v1.2.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1613040667,
+   "version": "1.2.0"
+  },
+  {
+   "app_version": "v1.1.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1606236303,
+   "version": "1.1.0"
+  },
+  {
+   "app_version": "v1.0.4",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1603987327,
+   "version": "1.0.4"
+  },
+  {
+   "app_version": "v1.0.3",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1602145320,
+   "version": "1.0.3"
+  },
+  {
+   "app_version": "v1.0.2",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1600784709,
+   "version": "1.0.2"
+  },
+  {
+   "app_version": "v1.0.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1599247318,
+   "version": "1.0.1"
+  },
+  {
+   "app_version": "v1.0.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1599040546,
+   "version": "1.0.0"
+  },
+  {
+   "app_version": "v0.16.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1596792934,
+   "version": "0.16.1"
+  },
+  {
+   "app_version": "v0.16.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1595517929,
+   "version": "0.16.0"
+  },
+  {
+   "app_version": "v0.15.2",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1593623833,
+   "version": "0.15.2"
+  },
+  {
+   "app_version": "v0.15.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1590585523,
+   "version": "0.15.1"
+  },
+  {
+   "app_version": "v0.15.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1588766921,
+   "version": "0.15.0"
+  },
+  {
+   "app_version": "v0.14.3",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1588150491,
+   "version": "0.14.3"
+  },
+  {
+   "app_version": "v0.14.2",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1586345906,
+   "version": "0.14.2"
+  },
+  {
+   "app_version": "v0.14.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1585161016,
+   "version": "0.14.1"
+  },
+  {
+   "app_version": "v0.14.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1583934115,
+   "version": "0.14.0"
+  },
+  {
+   "app_version": "v0.13.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1582032193,
+   "version": "0.13.1"
+  },
+  {
+   "app_version": "v0.13.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1579631757,
+   "version": "0.13.0"
+  },
+  {
+   "app_version": "v0.12.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1574946690,
+   "version": "0.12.0"
+  },
+  {
+   "app_version": "v0.11.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1574896453,
+   "version": "0.11.1"
+  },
+  {
+   "app_version": "v0.11.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1570715836,
+   "version": "0.11.0"
+  },
+  {
+   "app_version": "v0.10.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1569587793,
+   "version": "0.10.1"
+  },
+  {
+   "app_version": "v0.10.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1567693321,
+   "version": "0.10.0"
+  },
+  {
+   "app_version": "v0.9.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1565704891,
+   "version": "0.9.1"
+  },
+  {
+   "app_version": "v0.9.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1563903560,
+   "version": "0.9.0"
+  },
+  {
+   "app_version": "v0.8.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1560870294,
+   "version": "0.8.1"
+  },
+  {
+   "app_version": "v0.8.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1558372359,
+   "version": "0.8.0"
+  },
+  {
+   "app_version": "v0.7.2",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1556734492,
+   "version": "0.7.2"
+  },
+  {
+   "app_version": "v0.7.1",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1556111831,
+   "version": "0.7.1"
+  },
+  {
+   "app_version": "v0.7.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1552328578,
+   "version": "0.7.0"
+  },
+  {
+   "app_version": "v0.6.0",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1548252734,
+   "version": "0.6.0"
+  },
+  {
+   "app_version": "v0.5.2",
+   "contains_security_updates": false,
+   "prerelease": false,
+   "ts": 1544549501,
+   "version": "0.5.2"
+  }
+ ],
+ "deprecated": false,
+ "description": "A Helm chart for cert-manager",
+ "home_url": "https://cert-manager.io",
+ "name": "cert-manager",
+ "normalized_name": "cert-manager",
+ "official": true,
+ "package_id": "f475c82a-27a5-4f71-8413-fe70d31268a2",
+ "repository": {
+  "display_name": "cert-manager",
+  "name": "cert-manager",
+  "official": false,
+  "organization_name": "cert-manager",
+  "url": "https://charts.jetstack.io",
+  "verified_publisher": true
+ },
+ "version": "1.21.3"
+}

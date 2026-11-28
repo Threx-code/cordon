@@ -25,8 +25,10 @@ import gzip
 import hashlib
 import io
 import tarfile
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import HelmArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -34,6 +36,9 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
+from cordon_scanner.ecosystems.launchers import NoLauncher
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Scope
 from cordon_scanner.foundation.network.failures import NetworkFailure
@@ -293,7 +298,18 @@ class HelmEcosystem(BaseEcosystem):
     """Chart dependencies."""
 
     id = "helm"
+    consumer_hooks = NoConsumerHooks(
+        "a chart's hooks are Kubernetes resources the cluster runs, not commands run on the machine that installs it"
+    )
+    private_mark = NoPrivateMark(
+        "a chart is published only by pushing it to a repository; Chart.yaml has no field that marks it unpublishable (`type: library` marks it not installable, not unpublishable)"
+    )
+    own_name = OwnName(("Chart.yaml",))
     purl_type = "helm"
+    published_archive = (HelmArchive(),)
+    mcp_launch = NoLauncher(
+        "`helm install` and `helm pull` fetch a chart to deploy or unpack; nothing runs a chart's code on the device (https://helm.sh/docs/helm/helm_install/)"
+    )
     # requirements.yaml is Ansible's name too: an apiVersion v1 chart's is read through the
     # Chart.yaml beside it, not claimed by name.
     manifest_globs: tuple[str, ...] = ("**/Chart.yaml", "**/Chart.lock", "**/requirements.lock")
@@ -301,6 +317,22 @@ class HelmEcosystem(BaseEcosystem):
     registry_hosts: frozenset[str] = frozenset()
     records_integrity = False
     """A lock records no hash per chart; a downloaded archive in charts/ is hashed when present."""
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A Chart.lock resolving these charts: `{path: content}`."""
+        rows = "".join(
+            f"- name: {name}\n  repository: https://charts.invalid\n  version: {version}\n"
+            for name, version in pins
+        )
+        return {
+            "Chart.lock": f'dependencies:\n{rows}digest: sha256:{"0" * 64}\ngenerated: "2000-01-01T00:00:00Z"\n'
+        }
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A chart dependency is declared with a version."""
+        raise ValueError("a Helm dependency needs a version")
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()

@@ -1,0 +1,10 @@
+{
+ "id": "terraform-aws-modules/vpc/aws/5.8.1",
+ "name": "vpc",
+ "namespace": "terraform-aws-modules",
+ "provider": "aws",
+ "published_at": "2025-06-19T11:07:38.4453Z",
+ "source": "https://github.com/terraform-aws-modules/terraform-aws-vpc",
+ "tag": "v5.8.1",
+ "version": "5.8.1"
+}

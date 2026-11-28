@@ -1,0 +1,92 @@
+{
+ "formulae": [],
+ "casks": [
+  {
+   "token": "rectangle",
+   "full_token": "rectangle",
+   "old_tokens": [],
+   "tap": "homebrew/cask",
+   "name": [
+    "Rectangle"
+   ],
+   "desc": "Move and resize windows using keyboard shortcuts or snap areas",
+   "homepage": "https://rectangleapp.com/",
+   "url": "https://github.com/rxhanson/Rectangle/releases/download/v2.0.4/Rectangle2.0.4.dmg",
+   "url_specs": {},
+   "version": "2.0.4",
+   "autobump": true,
+   "no_autobump_message": null,
+   "skip_livecheck": false,
+   "installed": null,
+   "installed_time": null,
+   "bundle_version": null,
+   "bundle_short_version": null,
+   "pinned": false,
+   "pinned_version": null,
+   "outdated": false,
+   "sha256": "9f820a2e56bd2c27cdda4fb4556de3cbcfcbac052d9eeb2179d49e2dae277abc",
+   "artifacts": [
+    {
+     "uninstall": [
+      {
+       "quit": "com.knollsoft.Rectangle",
+       "login_item": "Rectangle"
+      }
+     ]
+    },
+    {
+     "app": [
+      "Rectangle.app"
+     ],
+     "target": "/Applications/Rectangle.app"
+    },
+    {
+     "zap": [
+      {
+       "trash": [
+        "~/Library/Application Scripts/com.knollsoft.RectangleLauncher",
+        "~/Library/Application Support/Rectangle",
+        "~/Library/Caches/com.knollsoft.Rectangle",
+        "~/Library/Containers/com.knollsoft.RectangleLauncher",
+        "~/Library/HTTPStorages/com.knollsoft.Rectangle",
+        "~/Library/Preferences/com.knollsoft.Rectangle.plist",
+        "~/Library/WebKit/com.knollsoft.Rectangle"
+       ]
+      }
+     ]
+    }
+   ],
+   "caveats": null,
+   "caveats_rosetta": null,
+   "depends_on": {
+    "macos": {
+     ">=": [
+      "14"
+     ]
+    }
+   },
+   "conflicts_with": null,
+   "container": null,
+   "rename": [],
+   "auto_updates": true,
+   "deprecated": false,
+   "deprecation_date": null,
+   "deprecation_reason": null,
+   "deprecation_replacement_formula": null,
+   "deprecation_replacement_cask": null,
+   "deprecate_args": null,
+   "disabled": false,
+   "disable_date": null,
+   "disable_reason": null,
+   "disable_replacement_formula": null,
+   "disable_replacement_cask": null,
+   "disable_args": null,
+   "tap_git_head": "9abaca1a858def78bb436f6092532852da4d2a32",
+   "languages": [],
+   "ruby_source_path": "Casks/r/rectangle.rb",
+   "ruby_source_checksum": {
+    "sha256": "01cedb20ec7190f4e362057ab62d5ae73352d67c54075b093b03719d5a25bc76"
+   }
+  }
+ ]
+}

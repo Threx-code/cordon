@@ -44,7 +44,7 @@ class Trees:
         try:
             if sys.version_info >= (3, 12):
                 shutil.rmtree(path, onexc=Trees._writable_then_retry)
-            else:  # pragma: no cover - 3.11 only
+            else:  # pragma: no cover - only Python 3.11 runs this; coverage uses 3.12
                 shutil.rmtree(path, onerror=Trees._writable_then_retry)
         except FileNotFoundError:
             pass

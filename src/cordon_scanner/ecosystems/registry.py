@@ -14,8 +14,16 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from cordon_scanner.ecosystems.base import BaseEcosystem, Ecosystem, ReleaseFile
+from cordon_scanner.ecosystems.archive_shapes import ArchiveLevels
+from cordon_scanner.ecosystems.base import (
+    BaseEcosystem,
+    Ecosystem,
+    ProjectDefaults,
+    ReleaseFile,
+)
+from cordon_scanner.ecosystems.editors.vscode import VsCodeEcosystem
 from cordon_scanner.ecosystems.infra.infra import INFRA_ECOSYSTEMS
+from cordon_scanner.ecosystems.install_marks import ConsumerHooks, PrivateMark
 from cordon_scanner.ecosystems.others import (
     BazelEcosystem,
     CocoaPodsEcosystem,
@@ -31,6 +39,7 @@ from cordon_scanner.ecosystems.others import (
     RubyGemsEcosystem,
     SwiftEcosystem,
 )
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.cargo import CargoEcosystem
 from cordon_scanner.ecosystems.packages.go import GoEcosystem
 from cordon_scanner.ecosystems.packages.jvm.maven import MavenEcosystem
@@ -43,8 +52,10 @@ from cordon_scanner.foundation.paths import ContainerPaths
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+    from cordon_scanner.detect.base import FileUnit
     from cordon_scanner.ecosystems.base import ImageReferences
     from cordon_scanner.ecosystems.infra import image as _ecosystems_infra_image
+    from cordon_scanner.foundation.content import FileContent
     from cordon_scanner.foundation.dependencies import InstalledEcosystemFacts, InstallTool
 
     ImageReference: ImageReferences = _ecosystems_infra_image.ImageReference
@@ -204,6 +215,9 @@ class EcosystemRegistry:
     #: through which an agent skill may be distributed. pip, Maven and the rest install neither
     #: where it would run.
     BUNDLED_SCRIPTS: ClassVar[frozenset[str]] = frozenset({"npm"})
+    #: The ecosystems whose campaign fingerprints were first built from package.json (the shipped index holds them):
+    #: their facets keep exactly that form, so condemned releases already in the index still match.
+    PACKAGE_JSON_FINGERPRINTS: ClassVar[frozenset[str]] = frozenset({"npm"})
 
     @staticmethod
     def runs_bundled_scripts(ecosystem: str) -> bool:
@@ -229,12 +243,27 @@ class EcosystemRegistry:
         BazelEcosystem(),
         GitHubActionsEcosystem(),
         *INFRA_ECOSYSTEMS,
+        VsCodeEcosystem(),
     )
 
     BY_ID: ClassVar[dict[str, Ecosystem]] = {eco.id: eco for eco in ECOSYSTEMS}
+    #: The editor extensions (VS Code Marketplace and Open VSX): published to registries of their own like a package,
+    #: yet not a package ecosystem the manifests and lockfiles registered above belong to.
+    EXTENSIONS: ClassVar[str] = "vscode"
 
     _MANIFEST_INDEX: ClassVar[_GlobIndex | None] = None
     _LOCKFILE_INDEX: ClassVar[_GlobIndex | None] = None
+
+    @staticmethod
+    def fill_bundle_keywords() -> None:
+        """Homebrew Bundle installs other ecosystems' packages by keyword: give the Brewfile reader each adapter's.
+        Run once, as this module loads, so the Homebrew module never imports the registry that imports it."""
+        from types import MappingProxyType
+
+        from cordon_scanner.ecosystems.packages.homebrew import Brewfile
+
+        declared = ((getattr(e, "bundle_keyword", None), e) for e in EcosystemRegistry.ECOSYSTEMS)
+        Brewfile.BUNDLE_KEYWORDS = MappingProxyType({k: e for k, e in declared if k})
 
     @classmethod
     def manifest_index(cls) -> _GlobIndex:
@@ -251,6 +280,49 @@ class EcosystemRegistry:
                 [(eco.id, eco.lockfile_globs) for eco in cls.ECOSYSTEMS]
             )
         return cls._LOCKFILE_INDEX
+
+    @classmethod
+    def own_name_ecosystems(cls, path: str, preferred: str | None = None) -> list[BaseEcosystem]:
+        """The ecosystems that state a package's own name in the file at `path` (`own_name`), the one named `preferred`
+        first, then the most specific pattern first: `extension/package.json` is an editor extension's, `package.json` npm's."""
+        found = []
+        for ecosystem in cls.ECOSYSTEMS:
+            if not isinstance(ecosystem, BaseEcosystem):
+                continue
+            declared = ecosystem.own_name
+            if isinstance(declared, OwnName) and (depth := declared.matches(path)):
+                found.append((ecosystem.id != preferred, -depth, ecosystem.id, ecosystem))
+        return [ecosystem for *_, ecosystem in sorted(found, key=lambda f: f[:3])]
+
+    @classmethod
+    def consumer_hooks(cls, ecosystem: str) -> ConsumerHooks | None:
+        """The hooks of `ecosystem` whose commands run when a dependency is installed, or None where it has none."""
+        adapter = cls.BY_ID.get(ecosystem)
+        declared = adapter.consumer_hooks if isinstance(adapter, BaseEcosystem) else None
+        return declared if isinstance(declared, ConsumerHooks) else None
+
+    @classmethod
+    def unpublishable(cls, ecosystem: str, path: str, content: FileContent) -> bool:
+        """Whether the manifest at `path` marks its package as not for publishing, by the mark `ecosystem` declares."""
+        adapter = cls.BY_ID.get(ecosystem)
+        declared = adapter.private_mark if isinstance(adapter, BaseEcosystem) else None
+        return isinstance(declared, PrivateMark) and declared.holds(path, content)
+
+    @classmethod
+    def published_identity_ecosystem(cls, member: str, archive: str = "") -> str | None:
+        """The ecosystem whose published package has this archive member as the file that names it, at the package's root. An
+        ecosystem whose packages share their identity file with another's (a .vsix's `extension/package.json`) is asked only of
+        its own archives (`OwnName.archives`)."""
+        for ecosystem in cls.ECOSYSTEMS:
+            if isinstance(ecosystem, BaseEcosystem):
+                declared = ecosystem.own_name
+                if (
+                    isinstance(declared, OwnName)
+                    and declared.at_root(member)
+                    and (not declared.archives or archive.endswith(declared.archives))
+                ):
+                    return ecosystem.id
+        return None
 
     @staticmethod
     def manifest_ecosystem(path: str) -> str | None:
@@ -303,19 +375,22 @@ class EcosystemRegistry:
         return frozenset()
 
 
-class VsCodeExtensionNames(BaseEcosystem):
-    """What an editor extension's name declares (`publisher.name`): its facts only. Extensions are
-    not a registered package ecosystem, but their names have a namespace."""
-
-    id = "vscode"
-
-    def namespace(self, name: str, alias: str | None = None) -> str | None:
-        return name.split(".", 1)[0] if "." in name else None
+EcosystemRegistry.fill_bundle_keywords()
 
 
 class RegistryPublishing:
     """The publishing and install facts RegistryFacts answers, by asking the ecosystem: projects,
     releases, archives, entry points and the code it ships."""
+
+    @staticmethod
+    def package_check_ecosystems() -> tuple[str, ...]:
+        """The ecosystems that write a project for a package named by an agent (`pinned_project`), in registry order."""
+        return tuple(
+            ecosystem.id
+            for ecosystem in EcosystemRegistry.all_ecosystems()
+            if isinstance(ecosystem, BaseEcosystem)
+            and type(ecosystem).pinned_project is not ProjectDefaults.pinned_project
+        )
 
     @staticmethod
     def pinned_project(ecosystem: str, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
@@ -366,6 +441,25 @@ class RegistryPublishing:
         return RegistryFacts._of(ecosystem).bracket_ranges()
 
     @staticmethod
+    def published_format(units: Sequence[FileUnit]) -> str:
+        """Which published-package format the archive of `units` is, or "": the first shape an ecosystem declares
+        for its packages (`published_archive`, asked in `precedence` order) that the archive's members fit."""
+        levels = ArchiveLevels.of(units)
+        found = sorted(
+            (shape.precedence, shape.format or ecosystem.id, shape)
+            for ecosystem in EcosystemRegistry.all_ecosystems()
+            if isinstance(ecosystem, BaseEcosystem)
+            and isinstance(ecosystem.published_archive, tuple)
+            for shape in ecosystem.published_archive
+        )
+        return next((name for _, name, shape in found if shape.matches(levels)), "")
+
+    @staticmethod
+    def top_level_members(units: Sequence[FileUnit]) -> frozenset[str]:
+        """The members of the archive of `units` that sit in it (not in an archive inside it)."""
+        return ArchiveLevels.of(units).top
+
+    @staticmethod
     def archive_manifest(ecosystem: str) -> str | None:
         return RegistryFacts._of(ecosystem).archive_manifest()
 
@@ -407,9 +501,9 @@ class RegistryFacts(RegistryPublishing):
     (an unknown ecosystem has the defaults: `BaseEcosystem`); installed through the
     `cordon_scanner.ecosystem_facts` entry point."""
 
-    _DECLARED_ONLY: ClassVar[Mapping[str, BaseEcosystem]] = MappingProxyType(
-        {"vscode": VsCodeExtensionNames()}
-    )
+    #: Ecosystems with declarations but no adapter. Empty: editor extensions are a registered ecosystem
+    #: (`VsCodeEcosystem`), so every ecosystem's facts come from its own adapter.
+    _DECLARED_ONLY: ClassVar[Mapping[str, BaseEcosystem]] = MappingProxyType({})
     _UNKNOWN: ClassVar[BaseEcosystem] = BaseEcosystem()
 
     @staticmethod
@@ -463,6 +557,18 @@ class RegistryFacts(RegistryPublishing):
     @staticmethod
     def has_install_scripts(ecosystem: str) -> bool:
         return RegistryFacts._of(ecosystem).has_install_scripts()
+
+    @staticmethod
+    def vulnerabilities_by_contents(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).vulnerabilities_by_contents()
+
+    @staticmethod
+    def manifest_runs_at_build(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).manifest_runs_at_build()
+
+    @staticmethod
+    def name_carries_registry(ecosystem: str) -> bool:
+        return RegistryFacts._of(ecosystem).name_carries_registry()
 
     @staticmethod
     def has_scoped_names(ecosystem: str) -> bool:

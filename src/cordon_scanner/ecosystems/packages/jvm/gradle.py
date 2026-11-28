@@ -25,8 +25,10 @@ from __future__ import annotations
 import dataclasses
 import re
 import tomllib
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import SameArchiveAs
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -34,6 +36,9 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
+from cordon_scanner.ecosystems.launchers import NoLauncher
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.jvm.maven import MavenEcosystem
 from cordon_scanner.foundation.formats.safexml import SafeXml, SafeXmlError
 from cordon_scanner.foundation.models import Hook, Scope
@@ -241,6 +246,16 @@ class GradleWrapper:
 
 class GradleEcosystem(BaseEcosystem):
     id = "gradle"
+    consumer_hooks = NoConsumerHooks(
+        "a build is Groovy or Kotlin code in its own scripts, not command strings, and a dependency's scripts never run when it is resolved"
+    )
+    private_mark = NoPrivateMark(
+        "a Gradle project is published only when a publishing plugin is applied; the build scripts have no flag that marks a project unpublishable"
+    )
+    own_name = OwnName(
+        ("settings.gradle", "settings.gradle.kts"),
+        readers=(("settings.gradle", "gradle_root"), ("settings.gradle.kts", "gradle_root")),
+    )
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         return name.split(":", 1)[0] if ":" in name else None
@@ -252,6 +267,10 @@ class GradleEcosystem(BaseEcosystem):
         return version.upper().endswith("-SNAPSHOT")
 
     purl_type = "maven"
+    published_archive = SameArchiveAs("maven")
+    mcp_launch = NoLauncher(
+        "Gradle runs its own project's build; a Maven coordinate is launched by jbang, which the maven declaration holds (https://docs.gradle.org/current/userguide/command_line_interface.html)"
+    )
     manifest_globs: tuple[str, ...] = (
         "**/build.gradle",
         "**/build.gradle.kts",
@@ -282,6 +301,24 @@ class GradleEcosystem(BaseEcosystem):
     """`gradle.lockfile` records versions, never hashes: Gradle keeps those in
     `gradle/verification-metadata.xml`, applied to the locked entries when the build has one."""
     integrity_companion = True
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A dependency lock pinning these `group:artifact` releases: `{path: content}`."""
+        header = (
+            "# This is a Gradle generated file for dependency locking.\n"
+            "# Manual edits can break the build and are not advised.\n"
+            "# This file is expected to be part of source control.\n"
+        )
+        rows = "".join(
+            f"{name}:{version}=compileClasspath,runtimeClasspath\n" for name, version in pins
+        )
+        return {"gradle.lockfile": f"{header}{rows}empty=\n"}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A Gradle dependency is written `group:artifact:version`."""
+        raise ValueError("a Gradle dependency needs a version: group:artifact:version")
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()
@@ -407,13 +444,10 @@ class GradleEcosystem(BaseEcosystem):
         if name == "gradle-wrapper.properties":
             return GradleWrapper.parse(content, self.id)
         if name == "libs.versions.toml":
-            catalog = GradleCatalog.load(content.text)
-            if catalog is None:
-                try:
-                    tomllib.loads(content.text)
-                except (tomllib.TOMLDecodeError, ValueError) as exc:
-                    return BaseEcosystem._err(content, self.id, f"invalid TOML: {exc}")
-                return BaseEcosystem._err(content, self.id, "not a version catalog")
+            try:
+                catalog = GradleCatalog(tomllib.loads(content.text))
+            except (tomllib.TOMLDecodeError, ValueError) as exc:
+                return BaseEcosystem._err(content, self.id, f"invalid TOML: {exc}")
             # A catalog says what is available, not what is used: an alias no build references is
             # not a dependency. Its entries are what `libs.<alias>` in the scripts resolve to.
             return Manifest(

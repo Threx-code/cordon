@@ -185,7 +185,7 @@ class TestEstablished:
             ),
             (
                 "cargo",
-                "more_registries.RegistryHttp.json",
+                "registry_client.RegistryClient._fetch",
                 {
                     "versions": [
                         {"num": "1.0.0", "created_at": "2025-01-01T00:00:00Z"},
@@ -390,9 +390,11 @@ class TestOpenVsx:
 
     def test_a_vsix_is_known_to_release_history_by_its_publisher_and_name(self) -> None:
         units = self.vsix_units()
-        assert History.history_distribution(units) == "openvsx"
+        assert History.history_distribution(units) == "vscode"
         # As published: the API redirects any other spelling to this one.
-        assert History.history_identity(units, "openvsx") == ("openvsx", "Acme.tool", "1.2.0")
+        assert History.history_identity(units, "vscode") == ("vscode", "Acme.tool", "1.2.0")
+        # The old spelling is still read as input.
+        assert History.history_identity(units, "openvsx") == ("vscode", "Acme.tool", "1.2.0")
 
     def test_a_name_that_is_not_publisher_dot_extension_is_refused(self) -> None:
         from cordon_scanner.intel.registries.openvsx import OpenVsx
@@ -407,8 +409,8 @@ class TestOpenVsx:
         from cordon_scanner.intel.registries.registry_client import RegistryError
 
         link = "https://open-vsx.org/api/BroadcomMFD/jcl/3.0.3/file/BroadcomMFD.jcl-3.0.3.vsix"
-        assert OpenVsx._on_file_host(link) == (
+        assert OpenVsx.on_file_host(link) == (
             "https://openvsx.eclipsecontent.org/BroadcomMFD/jcl/3.0.3/BroadcomMFD.jcl-3.0.3.vsix"
         )
         with pytest.raises(RegistryError):
-            OpenVsx._on_file_host("https://elsewhere.example/api/x/y/1/file/z.vsix")
+            OpenVsx.on_file_host("https://elsewhere.example/api/x/y/1/file/z.vsix")

@@ -254,6 +254,7 @@ class Dependency:
     malware_status: str = "not_checked"
     integrity_status: str = "not_checked"
     provenance_status: str = "not_checked"
+    provenance_reason: str | None = None
     licence_status: str = "not_checked"
     """What each check concluded, never one boolean. "No vulnerability found" and "the check
     did not run" are different answers; see `core/inventory.py` for every value and its meaning."""
@@ -401,6 +402,7 @@ class Dependency:
             "malware_status": self.malware_status,
             "integrity_status": self.integrity_status,
             "provenance_status": self.provenance_status,
+            "provenance_reason": self.provenance_reason,
             "licence_status": self.licence_status,
             "findings": list(self.finding_ids),
             "overridden_by": self.forced_by,
@@ -556,6 +558,14 @@ class ScanResult:
     """The SHA-256 of every native executable or library scanned, sorted (`NativeFile`). `binaries_complete` is False when
     it is a part: a file that could not be hashed whole, or more than the bound. Read by the facts export; not in `to_dict`."""
     binaries_complete: bool = True
+    reuse_code: tuple[str, ...] | None = None
+    """Each code file's reuse fingerprint (hex), when the scan was asked to collect them (`Config.reuse_keys`); None
+    otherwise. `reuse_complete` is False when it is a part. Read by the facts export; not in `to_dict`."""
+    reuse_hooks: tuple[str, ...] | None = None
+    """Each install hook's shape key (hex), collected with `reuse_code`."""
+    reuse_complete: bool = True
+    campaign: dict[str, Any] | None = None
+    """The package's campaign fingerprint (`{ecosystem, manifest, layout, deps}`), collected with `reuse_code`."""
     executables: tuple[dict[str, Any], ...] | None = None
     """The record of each native executable scanned (`ExecutableRecord`), sorted by digest. Read by the facts export; not in `to_dict`."""
     tool_list: tuple[dict[str, Any], ...] | None = None

@@ -1,0 +1,12 @@
+PODS:
+  - boost (1.84.0):
+    - ReactNativeDependencies
+
+EXTERNAL SOURCES:
+  boost:
+    :path: build/rndeps-facades/boost
+
+SPEC CHECKSUMS:
+  boost: 8502bfdc46e2804408af2e163049ece181009af4
+
+COCOAPODS: 1.16.2

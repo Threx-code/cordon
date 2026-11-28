@@ -1,0 +1,71 @@
+{
+ "dev_url": "https://github.com/madler/zlib",
+ "doc_url": "http://zlib.net/manual.html",
+ "files": [
+  {
+   "basename": "linux-64/zlib-1.2.8-0.tar.bz2",
+   "owner": "conda-forge",
+   "upload_time": "2016-04-15 12:59:26.479000+00:00",
+   "version": "1.2.8"
+  },
+  {
+   "basename": "linux-64/zlib-1.2.11-0.tar.bz2",
+   "owner": "conda-forge",
+   "upload_time": "2017-01-23 11:27:53.305000+00:00",
+   "version": "1.2.11"
+  },
+  {
+   "basename": "linux-aarch64/zlib-1.2.12-h4e544f5_0.tar.bz2",
+   "owner": "conda-forge",
+   "upload_time": "2022-05-27 17:43:21.380000+00:00",
+   "version": "1.2.12"
+  },
+  {
+   "basename": "linux-aarch64/zlib-1.2.13-h4e544f5_4.tar.bz2",
+   "owner": "conda-forge",
+   "upload_time": "2022-10-14 14:59:25.824000+00:00",
+   "version": "1.2.13"
+  },
+  {
+   "basename": "linux-aarch64/zlib-1.3-h31becfc_0.conda",
+   "owner": "conda-forge",
+   "upload_time": "2024-01-09 18:34:14.778000+00:00",
+   "version": "1.3"
+  },
+  {
+   "basename": "linux-aarch64/zlib-1.3.1-h31becfc_0.conda",
+   "owner": "conda-forge",
+   "upload_time": "2024-02-29 20:58:36.903000+00:00",
+   "version": "1.3.1"
+  },
+  {
+   "basename": "linux-64/zlib-1.3.2-h25fd6f3_2.conda",
+   "owner": "conda-forge",
+   "upload_time": "2026-03-21 05:57:43.049000+00:00",
+   "version": "1.3.2"
+  }
+ ],
+ "home": "http://zlib.net/",
+ "latest_version": "1.3.2",
+ "name": "zlib",
+ "owner": {
+  "company": "",
+  "created_at": "2015-04-11 10:15:08.727000+00:00",
+  "description": "A community-led collection of recipes, build infrastructure, and distributions for the conda package manager.",
+  "location": "",
+  "login": "conda-forge",
+  "name": "conda-forge",
+  "url": "",
+  "user_type": "org"
+ },
+ "summary": "Massively spiffy yet delicately unobtrusive compression library",
+ "versions": [
+  "1.2.8",
+  "1.2.11",
+  "1.2.12",
+  "1.2.13",
+  "1.3",
+  "1.3.1",
+  "1.3.2"
+ ]
+}

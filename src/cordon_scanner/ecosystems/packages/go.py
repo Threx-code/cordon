@@ -6,6 +6,7 @@ import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import GoModuleArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -14,6 +15,9 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
+from cordon_scanner.ecosystems.launchers import Launcher
+from cordon_scanner.ecosystems.own_names import OwnName
 
 # Each `*Ecosystem` imported below from its own module (GitHub Actions, Bazel, CocoaPods, Composer,
 # Conan, Conda, CRAN, Gradle, Hex, NuGet, Pub, RubyGems, Swift) is re-exported where it always lived.
@@ -180,6 +184,14 @@ class GoModFile:
 
 class GoEcosystem(BaseEcosystem):
     id = "gomod"
+    consumer_hooks = NoConsumerHooks(
+        "go get and go build run no code of a dependency, and go.mod holds no command string"
+    )
+    private_mark = NoPrivateMark(
+        "a Go module is published by pushing a git tag; go.mod has no field that marks it unpublishable (`retract` withdraws a version after it is published)"
+    )
+    bundle_keyword = "go"
+    own_name = OwnName(("go.mod",))
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         return name.rsplit("/", 1)[0] if "/" in name else None
@@ -188,6 +200,12 @@ class GoEcosystem(BaseEcosystem):
         return name == "stdlib"
 
     purl_type = "golang"
+    published_archive = (GoModuleArchive(),)
+    mcp_launch = (
+        Launcher(
+            (("go", "run"),), "go", "https://pkg.go.dev/cmd/go#hdr-Compile_and_run_Go_program"
+        ),
+    )
     manifest_globs: tuple[str, ...] = ("**/go.mod", "**/go.work")
     lockfile_globs: tuple[str, ...] = (
         "**/go.mod",

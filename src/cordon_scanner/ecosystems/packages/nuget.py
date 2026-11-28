@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar
 from xml.sax.saxutils import escape
 
+from cordon_scanner.ecosystems.archive_shapes import NuGetArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -34,6 +35,9 @@ from cordon_scanner.ecosystems.base import (
     LockGraph,
     Manifest,
 )
+from cordon_scanner.ecosystems.install_marks import ConsumerHooks, PrivateMark
+from cordon_scanner.ecosystems.launchers import Launcher
+from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.formats.safexml import Element, SafeXml, SafeXmlError
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -546,8 +550,39 @@ class NuGetAssets:
         return Manifest(path=content.path, ecosystem=ecosystem, hooks=hooks)
 
 
+class MSBuildTargets:
+    """A package's `build/<id>.targets`: MSBuild imports it into the build of every project that references the package, so an
+    `<Exec Command="...">` in it is a command run on the machine of whoever builds that project."""
+
+    @staticmethod
+    def parse(content: FileContent, ecosystem: str) -> Manifest:
+        try:
+            root = SafeXml.parse(content.text, source=content.path)
+        except SafeXmlError as exc:
+            return BaseEcosystem._err(content, ecosystem, f"not a readable MSBuild file: {exc}")
+        hooks = tuple(
+            Hook(
+                kind="build",
+                path=content.path,
+                name="Exec",
+                command=element.attributes.get("Command", "")[:400],
+                ecosystem=ecosystem,
+            )
+            for element in root.find_all("Target", "Exec")
+            if element.attributes.get("Command")
+        )
+        return Manifest(path=content.path, ecosystem=ecosystem, hooks=hooks)
+
+
 class NuGetEcosystem(BaseEcosystem):
     id = "nuget"
+    consumer_hooks = ConsumerHooks(("Exec",))
+    private_mark = PrivateMark(("*.csproj", "*.fsproj", "*.vbproj"), "nuget")
+    own_name = OwnName(
+        ("*.nuspec",),
+        readers=(("*.nuspec", "nuspec_id"),),
+        parsers=(("*.nuspec", "nuspec_manifest"),),
+    )
 
     def admits_lowest(self, declared_spec: str) -> bool:
         # `Version="1.2.3"` means at least 1.2.3, and NuGet restores the lowest version a direct
@@ -555,6 +590,14 @@ class NuGetEcosystem(BaseEcosystem):
         return bool(declared_spec) and not declared_spec.startswith("[")
 
     purl_type = "nuget"
+    published_archive = (NuGetArchive(),)
+    mcp_launch = (
+        Launcher(
+            (("dnx",), ("dotnet", "dnx"), ("dotnet", "tool", "exec")),
+            "nuget",
+            "https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-tool-exec",
+        ),
+    )
     manifest_globs: tuple[str, ...] = (
         "**/*.csproj",
         "**/*.fsproj",
@@ -566,6 +609,8 @@ class NuGetEcosystem(BaseEcosystem):
         "**/nuget.config",
         "**/NuGet.config",
         "**/obj/project.assets.json",
+        "**/build/*.targets",
+        "**/buildTransitive/*.targets",
     )
     lockfile_globs: tuple[str, ...] = ("**/packages.lock.json", "**/project.assets.json")
     registry_hosts: frozenset[str] = frozenset({"api.nuget.org", "nuget.org", "www.nuget.org"})
@@ -610,6 +655,8 @@ class NuGetEcosystem(BaseEcosystem):
             return PackagesConfig.parse(content, self.id)
         if lowered == "project.assets.json":
             return NuGetAssets.hooks(content, self.id)
+        if lowered.endswith(".targets"):
+            return MSBuildTargets.parse(content, self.id)
         try:
             own = MSBuildFile.read(content)
         except SafeXmlError as exc:

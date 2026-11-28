@@ -61,7 +61,9 @@ class AgentHookCommand:
                 + "\n"
             )
             return 2
-        if AgentCalls.of(hook_input) is None:
+        if hook_input.get("hook_event_name") == "SessionStart":
+            answer = cls._session_start(hook_input, clock, store_dir)
+        elif AgentCalls.of(hook_input) is None and not cls._held_mcp_tool(hook_input, store_dir):
             answer = AgentHook.answer("allow")
         else:
             cloud = cloud or cls._cloud()
@@ -79,6 +81,39 @@ class AgentHookCommand:
                 )
         out.write(json.dumps(answer, sort_keys=True) + "\n")
         return int(ExitCode.CLEAN)
+
+    @staticmethod
+    def _held_mcp_tool(hook_input: dict[str, Any], store_dir: Path | None) -> bool:
+        """A tool call of an MCP server whose list the session start found changed: the only MCP tool call the runtime decides."""
+        tool = hook_input.get("tool_name")
+        if not isinstance(tool, str) or not tool.startswith("mcp__"):
+            return False
+        from cordon_scanner.cloud.agent.collection_status import STORE_FOLDER
+        from cordon_scanner.cloud.agent.rug_pull import RugPull
+        from cordon_scanner.cloud.auth import CloudAuth
+        from cordon_scanner.cloud.local_store import LocalStore
+
+        store = LocalStore(store_dir or CloudAuth.config_dir() / STORE_FOLDER)
+        return RugPull.held_key(store, hook_input) is not None
+
+    @classmethod
+    def _session_start(
+        cls, hook_input: dict[str, Any], clock: datetime, store_dir: Path | None
+    ) -> dict[str, Any]:
+        """The session start: read the approved remote servers' lists once and say which changed (the agent shows it to its user)."""
+        from cordon_scanner.cloud.agent.collection_status import STORE_FOLDER
+        from cordon_scanner.cloud.agent.rug_pull import RugPull
+        from cordon_scanner.cloud.auth import CloudAuth
+        from cordon_scanner.cloud.local_store import LocalStore
+
+        store = LocalStore(store_dir or CloudAuth.config_dir() / STORE_FOLDER)
+        found = RugPull.sweep(store, hook_input, clock)
+        if not found:
+            return {}
+        context = RugPull.session_context(found)
+        return {
+            "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": context}
+        }
 
     @classmethod
     def _cloud(cls) -> Any:

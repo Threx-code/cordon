@@ -232,6 +232,345 @@ class TestTheEcosystemsVerifiedOutsideTheRegistryClient:
         assert self.run((self.dependency("bazel", "rules_x", None),)) == rules
 
 
+class TestTerraformProvidersReachTheirVerifier:
+    """Which Terraform dependencies are asked (a provider the lock selected from the public registry), the keyring they are checked
+    against, and what each of the verifier's answers becomes."""
+
+    @staticmethod
+    def dependency(
+        name: str, resolved_from: str | None = None, version: str | None = "3.6.3"
+    ) -> Dependency:
+        return Dependency(
+            purl=f"pkg:terraform/{name}@{version}",
+            ecosystem="terraform",
+            name=name,
+            version=version,
+            direct=True,
+            resolved_from=resolved_from,
+            integrity="zh:" + "a" * 64,
+            declared_in=".terraform.lock.hcl",
+        )
+
+    @staticmethod
+    def stand_in(monkeypatch, outcome: str = "verified") -> list[tuple[str, str, tuple[str, ...]]]:
+        from cordon_scanner.intel.provenance.openpgp import Keyring, OpenPgp
+        from cordon_scanner.intel.provenance.terraform_provenance import (
+            ProviderCheck,
+            TerraformProvenance,
+        )
+
+        asked: list[tuple[str, str, tuple[str, ...]]] = []
+
+        def check(name, version, integrity, keyring):
+            asked.append((name, version, keyring.paths))
+            return ProviderCheck(outcome, "stood in")
+
+        monkeypatch.setattr(OpenPgp, "load", staticmethod(lambda paths: Keyring(paths=paths)))
+        monkeypatch.setattr(TerraformProvenance, "check", staticmethod(check))
+        return asked
+
+    def test_only_a_provider_of_the_public_registry_with_a_version_is_asked(
+        self, monkeypatch
+    ) -> None:
+        asked = self.stand_in(monkeypatch)
+        deps = (
+            self.dependency("hashicorp/random"),
+            self.dependency(
+                "registry.example.invalid/acme/thing", "registry:registry.example.invalid"
+            ),
+            self.dependency("acme/network/aws"),
+            self.dependency("hashicorp/null", version=None),
+        )
+        assert (
+            TestTheEcosystemsVerifiedOutsideTheRegistryClient.run(deps, ("/keys/ring.asc",)) == []
+        )
+        assert asked == [("hashicorp/random", "3.6.3", ("/keys/ring.asc",))]
+
+    @pytest.mark.parametrize(
+        ("outcome", "rules"),
+        [
+            ("verified", []),
+            ("absent", []),
+            ("invalid", [INVALID_RULE]),
+            ("unverifiable", [UNVERIFIED_RULE]),
+            ("unconfigured", [UNVERIFIED_RULE]),
+        ],
+    )
+    def test_each_answer_becomes_its_rule(self, monkeypatch, outcome, rules) -> None:
+        self.stand_in(monkeypatch, outcome)
+        assert (
+            TestTheEcosystemsVerifiedOutsideTheRegistryClient.run(
+                (self.dependency("hashicorp/random"),)
+            )
+            == rules
+        )
+
+
+class TestGoModulesReachTheChecksumDatabase:
+    """Which Go dependencies are asked (a version from the public proxy, not a `replace`), the h1 they are asked about, and what
+    each of the verifier's answers becomes."""
+
+    @staticmethod
+    def dependency(version: str | None = "v0.9.1", **fields: object) -> Dependency:
+        base: dict[str, object] = {
+            "purl": f"pkg:golang/github.com/pkg/errors@{version}",
+            "ecosystem": "gomod",
+            "name": "github.com/pkg/errors",
+            "version": version,
+            "direct": True,
+            "integrity": "h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=",
+            "declared_in": "go.mod",
+        }
+        base.update(fields)
+        return Dependency(**base)  # type: ignore[arg-type]
+
+    @staticmethod
+    def stand_in(monkeypatch, outcome: str = "verified") -> list[tuple[str, str, str | None]]:
+        from cordon_scanner.intel.provenance.bazel_provenance import ModuleCheck
+        from cordon_scanner.intel.provenance.gosumdb import GoSumdb
+
+        asked: list[tuple[str, str, str | None]] = []
+
+        def check(name, version, integrity):
+            asked.append((name, version, integrity))
+            return ModuleCheck(outcome, "stood in")
+
+        monkeypatch.setattr(GoSumdb, "check", staticmethod(check))
+        return asked
+
+    def test_only_a_version_from_the_public_proxy_is_asked_with_the_h1_go_sum_pins(
+        self, monkeypatch
+    ) -> None:
+        asked = self.stand_in(monkeypatch)
+        deps = (
+            self.dependency(),
+            self.dependency(None),
+            self.dependency(resolved_from="https://goproxy.example.invalid"),
+            self.dependency(local=True),
+        )
+        assert TestTheEcosystemsVerifiedOutsideTheRegistryClient.run(deps) == []
+        assert asked == [
+            ("github.com/pkg/errors", "v0.9.1", "h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=")
+        ]
+
+    @pytest.mark.parametrize(
+        ("outcome", "rules"),
+        [
+            ("verified", []),
+            ("absent", []),
+            ("invalid", [INVALID_RULE]),
+            ("unverifiable", [UNVERIFIED_RULE]),
+        ],
+    )
+    def test_each_answer_becomes_its_rule(self, monkeypatch, outcome, rules) -> None:
+        self.stand_in(monkeypatch, outcome)
+        assert TestTheEcosystemsVerifiedOutsideTheRegistryClient.run((self.dependency(),)) == rules
+
+
+class TestActionsReachTheirAttestation:
+    """Which Action dependencies are asked (a repository's tag or commit, not a local path or a docker reference), and what each of
+    the verifier's answers becomes."""
+
+    @staticmethod
+    def dependency(
+        name: str = "sigstore/cosign-installer", version: str | None = "v4.1.4"
+    ) -> Dependency:
+        return Dependency(
+            purl=f"pkg:githubactions/{name}@{version}",
+            ecosystem="actions",
+            name=name,
+            version=version,
+            direct=True,
+            declared_in=".github/workflows/ci.yml",
+        )
+
+    @staticmethod
+    def stand_in(monkeypatch, outcome: str = "verified") -> list[tuple[str, str]]:
+        from cordon_scanner.intel.provenance.bazel_provenance import ModuleCheck
+        from cordon_scanner.intel.provenance.releases.github_attestations import GitHubAttestations
+
+        asked: list[tuple[str, str]] = []
+
+        def check(name, version, integrity):
+            asked.append((name, version))
+            return ModuleCheck(outcome, "stood in")
+
+        monkeypatch.setattr(GitHubAttestations, "check", staticmethod(check))
+        return asked
+
+    def test_only_a_repositorys_release_is_asked(self, monkeypatch) -> None:
+        asked = self.stand_in(monkeypatch)
+        deps = (
+            self.dependency(),
+            self.dependency(version=None),
+            self.dependency("./local-action"),
+            self.dependency("docker://alpine"),
+            self.dependency("actions"),
+        )
+        assert TestTheEcosystemsVerifiedOutsideTheRegistryClient.run(deps) == []
+        assert asked == [("sigstore/cosign-installer", "v4.1.4")]
+
+    @pytest.mark.parametrize(
+        ("outcome", "rules"),
+        [
+            ("verified", []),
+            ("absent", []),
+            ("invalid", [INVALID_RULE]),
+            ("unverifiable", [UNVERIFIED_RULE]),
+        ],
+    )
+    def test_each_answer_becomes_its_rule(self, monkeypatch, outcome, rules) -> None:
+        self.stand_in(monkeypatch, outcome)
+        assert TestTheEcosystemsVerifiedOutsideTheRegistryClient.run((self.dependency(),)) == rules
+
+
+class TestNuGetPackagesReachTheirSignature:
+    """A package of nuget.org at a version is asked for its repository signature; a path or a private feed's package is not."""
+
+    @staticmethod
+    def dependency(version: str | None = "1.0.3", **more) -> Dependency:
+        return Dependency(
+            purl=f"pkg:nuget/IsExternalInit@{version}",
+            ecosystem="nuget",
+            name="IsExternalInit",
+            version=version,
+            direct=True,
+            declared_in="app.csproj",
+            **more,
+        )
+
+    @staticmethod
+    def stand_in(monkeypatch, outcome: str = "verified") -> list[tuple[str, str]]:
+        from cordon_scanner.intel.provenance.bazel_provenance import ModuleCheck
+        from cordon_scanner.intel.provenance.releases.nuget_signature import NuGetSignature
+
+        asked: list[tuple[str, str]] = []
+
+        def check(name, version, integrity):
+            asked.append((name, version))
+            return ModuleCheck(outcome, "stood in")
+
+        monkeypatch.setattr(NuGetSignature, "check", staticmethod(check))
+        return asked
+
+    def test_only_a_published_version_is_asked(self, monkeypatch) -> None:
+        asked = self.stand_in(monkeypatch)
+        deps = (self.dependency(), self.dependency(None), self.dependency(local=True))
+        assert TestTheEcosystemsVerifiedOutsideTheRegistryClient.run(deps) == []
+        assert asked == [("IsExternalInit", "1.0.3")]
+
+    @pytest.mark.parametrize(
+        ("outcome", "rules"),
+        [
+            ("verified", []),
+            ("absent", []),
+            ("invalid", [INVALID_RULE]),
+            ("unverifiable", [UNVERIFIED_RULE]),
+        ],
+    )
+    def test_each_answer_becomes_its_rule(self, monkeypatch, outcome, rules) -> None:
+        self.stand_in(monkeypatch, outcome)
+        assert TestTheEcosystemsVerifiedOutsideTheRegistryClient.run((self.dependency(),)) == rules
+
+
+class TestHackagePackagesReachTheirMetadata:
+    """A package of hackage.haskell.org at a version is asked against Hackage's signed TUF metadata."""
+
+    @staticmethod
+    def dependency(version: str | None = "1.0", **more) -> Dependency:
+        return Dependency(
+            purl=f"pkg:hackage/a@{version}",
+            ecosystem="hackage",
+            name="a",
+            version=version,
+            direct=True,
+            declared_in="a.cabal",
+            **more,
+        )
+
+    @staticmethod
+    def stand_in(monkeypatch, outcome: str = "verified") -> list[tuple[str, str]]:
+        from cordon_scanner.intel.provenance.bazel_provenance import ModuleCheck
+        from cordon_scanner.intel.provenance.releases.hackage_tuf import HackageTuf
+
+        asked: list[tuple[str, str]] = []
+
+        def check(name, version, integrity):
+            asked.append((name, version))
+            return ModuleCheck(outcome, "stood in")
+
+        monkeypatch.setattr(HackageTuf, "check", staticmethod(check))
+        return asked
+
+    def test_only_a_published_version_is_asked(self, monkeypatch) -> None:
+        asked = self.stand_in(monkeypatch)
+        deps = (self.dependency(), self.dependency(None), self.dependency(local=True))
+        assert TestTheEcosystemsVerifiedOutsideTheRegistryClient.run(deps) == []
+        assert asked == [("a", "1.0")]
+
+    @pytest.mark.parametrize(
+        ("outcome", "rules"),
+        [
+            ("verified", []),
+            ("absent", []),
+            ("invalid", [INVALID_RULE]),
+            ("unverifiable", [UNVERIFIED_RULE]),
+        ],
+    )
+    def test_each_answer_becomes_its_rule(self, monkeypatch, outcome, rules) -> None:
+        self.stand_in(monkeypatch, outcome)
+        assert TestTheEcosystemsVerifiedOutsideTheRegistryClient.run((self.dependency(),)) == rules
+
+
+class TestEditorExtensionsReachTheirSignature:
+    """An extension pinned at a version is asked for its Open VSX package signature; an id with no version is not."""
+
+    @staticmethod
+    def dependency(version: str | None = "2.8.0", **more) -> Dependency:
+        return Dependency(
+            purl=f"pkg:vscode-extension/a.b@{version}",
+            ecosystem="vscode",
+            name="a.b",
+            version=version,
+            direct=True,
+            declared_in=".devcontainer/devcontainer.json",
+            **more,
+        )
+
+    @staticmethod
+    def stand_in(monkeypatch, outcome: str = "verified") -> list[tuple[str, str]]:
+        from cordon_scanner.intel.provenance.bazel_provenance import ModuleCheck
+        from cordon_scanner.intel.provenance.releases.openvsx_signature import OpenVsxSignature
+
+        asked: list[tuple[str, str]] = []
+
+        def check(name, version, integrity):
+            asked.append((name, version))
+            return ModuleCheck(outcome, "stood in")
+
+        monkeypatch.setattr(OpenVsxSignature, "check", staticmethod(check))
+        return asked
+
+    def test_only_a_pinned_version_is_asked(self, monkeypatch) -> None:
+        asked = self.stand_in(monkeypatch)
+        deps = (self.dependency(), self.dependency(None), self.dependency(local=True))
+        assert TestTheEcosystemsVerifiedOutsideTheRegistryClient.run(deps) == []
+        assert asked == [("a.b", "2.8.0")]
+
+    @pytest.mark.parametrize(
+        ("outcome", "rules"),
+        [
+            ("verified", []),
+            ("absent", []),
+            ("invalid", [INVALID_RULE]),
+            ("unverifiable", [UNVERIFIED_RULE]),
+        ],
+    )
+    def test_each_answer_becomes_its_rule(self, monkeypatch, outcome, rules) -> None:
+        self.stand_in(monkeypatch, outcome)
+        assert TestTheEcosystemsVerifiedOutsideTheRegistryClient.run((self.dependency(),)) == rules
+
+
 class TestAnsibleCollectionsReachTheirVerifier:
     """Which Ansible dependencies are checked, and how: the signatures an install recorded, over
     the MANIFEST.json in the tree; else galaxy.ansible.com's, for one exact version from there."""

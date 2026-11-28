@@ -1,0 +1,30 @@
+# A multi-root workspace recommending extensions beside each folder's own list (one id shared, in
+# two cases), unwanted recommendations, the older dev container layout with an extension excluded
+# by `-` and one pinned, and a Gitpod configuration naming an id, a pin and a .vsix by URL.
+kinds: [edge, valid]
+covers:
+  - file:app.code-workspace
+  - file:.devcontainer.json
+  - file:.gitpod.yml
+  - vscode.unwanted
+  - vscode.workspace-file
+  - vscode.devcontainer
+  - vscode.exclusions
+  - vscode.pins
+  - vscode.gitpod
+  - vscode.case-insensitive
+  - UNI-05
+  - UNI-09
+dependencies:
+  - {name: rust-lang.rust-analyzer, ecosystem: vscode, manifest_location: {path: app.code-workspace}}
+  - {name: acme.shared, manifest_location: {path: app.code-workspace}}
+  - {name: acme.shared, manifest_location: {path: a/.vscode/extensions.json}}
+  - {name: acme.shared, manifest_location: {path: b/.vscode/extensions.json}}
+  - {name: golang.go, resolved_version: null}
+  - {name: esbenp.prettier-vscode, resolved_version: 10.4.0, manifest_location: {path: .devcontainer.json}}
+  - {name: bradlc.vscode-tailwindcss, resolved_version: 0.6.11, manifest_location: {path: .gitpod.yml}}
+  - {name: svelte.svelte-vscode, resolved_version: null}
+  - {name: acme-tools, source_url: "https://example.com/releases/download/v1/acme-tools.vsix"}
+absent:
+  - ms-python.python
+  - ms-vscode.cpptools

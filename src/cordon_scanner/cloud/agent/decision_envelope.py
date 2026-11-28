@@ -13,6 +13,7 @@ import json
 from datetime import datetime
 from typing import Any, ClassVar
 
+from cordon_scanner.cloud.agent.decision_delegation import DecisionDelegation
 from cordon_scanner.cloud.bundle_chain import BundleChain, BundleError, Dsse
 from cordon_scanner.contracts.digests import ArtifactDigests
 from cordon_scanner.decide.decision.outcome import Decision
@@ -70,9 +71,22 @@ class DecisionEnvelope:
         delegation: object,
         tenant: str,
         now: datetime,
+        decision_delegation: object = None,
+        min_sequence: int = 0,
     ) -> dict[str, Any]:
-        """The statement the envelope carries, or BundleError when no delegated decision key signed it."""
+        """The statement the envelope carries, or BundleError when no delegated decision key signed it.
+
+        A root that names a decision key itself is the one-link chain and `decision_delegation` is not read. A root that names none (one
+        the customer holds) leaves the decision keys to the decision delegation the policy key signed (`DecisionDelegation`), whose
+        sequence must not be below `min_sequence`, the highest the verifier holds."""
         keys = BundleChain.role_keys(root_public, delegation, tenant, now, cls.ROLES)
+        if decision_delegation is not None and not DecisionDelegation.root_names_decision(
+            root_public, delegation, tenant
+        ):
+            accepted = DecisionDelegation.accept(
+                root_public, delegation, tenant, decision_delegation, min_sequence=min_sequence
+            )
+            keys = {**keys, **DecisionDelegation.keys(accepted, now, cls.ROLES)}
         document = json.loads(Dsse.verify(envelope, keys, payload_type=cls.TYPE))
         if not isinstance(document, dict) or document.get("_type") != cls.STATEMENT:
             raise BundleError("the payload is not an in-toto statement")

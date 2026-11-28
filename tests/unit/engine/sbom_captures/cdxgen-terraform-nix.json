@@ -1,0 +1,56 @@
+{
+ "bomFormat": "CycloneDX",
+ "specVersion": "1.6",
+ "version": 1,
+ "//": "Built from the components cdxgen's own tests assert, not a tool run: terraform providers and modules (lib/ecosystems/parsers-terraform.poku.js; proposed types at parsers-terraform.js:253 and :1197) and a flake input (parsers-misc.js:1448-1458, purl.js nixGenericPurl). The sources and their sha256 are in CAPTURES.md.",
+ "components": [
+  {
+   "type": "library",
+   "bom-ref": "pkg:generic/registry.terraform.io/hashicorp/aws@5.80.0",
+   "group": "registry.terraform.io/hashicorp",
+   "name": "aws",
+   "version": "5.80.0",
+   "purl": "pkg:generic/registry.terraform.io/hashicorp/aws@5.80.0",
+   "properties": [
+    {
+     "name": "cdx:purl:proposedType",
+     "value": "terraform-provider"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:generic/registry.terraform.io/terraform-aws-modules/vpc/aws@5.1.2",
+   "group": "registry.terraform.io/terraform-aws-modules/vpc",
+   "name": "aws",
+   "version": "5.1.2",
+   "purl": "pkg:generic/registry.terraform.io/terraform-aws-modules/vpc/aws@5.1.2",
+   "properties": [
+    {
+     "name": "cdx:purl:proposedType",
+     "value": "terraform-module"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:generic/nixpkgs@latest",
+   "name": "nixpkgs",
+   "version": "latest",
+   "purl": "pkg:generic/nixpkgs@latest",
+   "properties": [
+    {
+     "name": "cdx:purl:proposedType",
+     "value": "nix"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:generic/openssl@3.0.0",
+   "name": "openssl",
+   "version": "3.0.0",
+   "purl": "pkg:generic/openssl@3.0.0"
+  }
+ ]
+}

@@ -23,35 +23,34 @@ from typing import ClassVar, Final
 
 from cordon_scanner.ecosystems.registry import EcosystemRegistry, RegistryFacts
 from cordon_scanner.foundation.dependencies import InstallTool
+from cordon_scanner.sources.package import PackageTarget
 
-#: The ecosystems a package check accepts, by the name the advisory database uses.
-ECOSYSTEMS: Final[tuple[str, ...]] = (
-    "npm",
-    "pypi",
-    "cargo",
-    "gomod",
-    "maven",
-    "nuget",
-    "composer",
-    "rubygems",
-    "pub",
-    "hex",
-    "cran",
-    "swift",
-)
+#: The ecosystems a package check accepts, by the name the advisory database uses: every ecosystem that writes a
+#: project for a named package (`pinned_project` and `loose_project` of its adapter).
+ECOSYSTEMS: Final[tuple[str, ...]] = RegistryFacts.package_check_ecosystems()
+
+
+class Fetchable:
+    """The package-URL type of each ecosystem whose published archive the scanner can fetch and scan: the types a
+    package-URL scan target takes (`PackageTarget.TYPES`). An ecosystem is fetched by its own purl type where a scan
+    target takes it (Gradle's is `maven`: its dependencies are Maven artifacts), else by the type that names it."""
+
+    @staticmethod
+    def kinds() -> dict[str, str]:
+        found: dict[str, str] = {}
+        for ecosystem in ECOSYSTEMS:
+            own = EcosystemRegistry.BY_ID[ecosystem].purl_type
+            if own in PackageTarget.TYPES:
+                found[ecosystem] = own
+            else:
+                named = [k for k, e in PackageTarget.TYPES.items() if e == ecosystem]
+                if named:
+                    found[ecosystem] = named[0]
+        return found
+
 
 #: Package-URL types for the ecosystems whose published archive the scanner can fetch and scan.
-FETCHABLE: Final[dict[str, str]] = {
-    "npm": "npm",
-    "pypi": "pypi",
-    "cargo": "cargo",
-    "rubygems": "gem",
-    "nuget": "nuget",
-    "gomod": "golang",
-    "hex": "hex",
-    "pub": "pub",
-    "maven": "maven",
-}
+FETCHABLE: Final[dict[str, str]] = Fetchable.kinds()
 
 ALIASES: Final[dict[str, str]] = {
     "pip": "pypi",
@@ -76,7 +75,6 @@ ALIASES: Final[dict[str, str]] = {
     "dotnet": "nuget",
     ".net": "nuget",
     "java": "maven",
-    "gradle": "maven",
 }
 
 #: A tool's reader: (ecosystem, tool, its declaration, the words after it, the result) -> read.

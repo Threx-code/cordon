@@ -335,6 +335,7 @@ class TestEcosystemFiltering:
             "hackage",
             "julia",
             "opam",
+            "image",
         }
         assert set(osv_import.ECOSYSTEM_OSV_NAMES) == expected
 
@@ -612,3 +613,14 @@ class TestOsvImport:
         assert OsvImport.advisories_from_osv_record("pypi", record) == ()
         record.pop("withdrawn")
         assert OsvImport.advisories_from_osv_record("pypi", record)
+
+
+class TestBitnamiImages:
+    """Bitnami's records name the application; an image reference names `bitnami/<application>`."""
+
+    def test_a_bitnami_record_is_keyed_as_the_image(self) -> None:
+        assert osv_import.OsvImport.package_name_for("image", "nginx") == "bitnami/nginx"
+        assert osv_import.OsvImport.package_name_for("image", " Redis ") == "bitnami/redis"
+
+    def test_other_ecosystems_keep_osvs_name(self) -> None:
+        assert osv_import.OsvImport.package_name_for("npm", "left-pad") == "left-pad"

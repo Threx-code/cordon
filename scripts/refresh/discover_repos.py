@@ -115,7 +115,7 @@ class RepoDiscovery:
                 }
             )
             headers = {
-                "User-Agent": "cordon-scanner measurement corpus",
+                "User-Agent": "Mozilla/5.0",
                 "Accept": "application/vnd.github+json",
             }
             if token:

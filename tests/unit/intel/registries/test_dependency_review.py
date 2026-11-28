@@ -21,7 +21,7 @@ import pytest
 from cordon_scanner.cli.commands.review import ChangeReview, GraphDiff, PackageChange, ReviewReport
 from cordon_scanner.detect.supply import release_diff
 from cordon_scanner.foundation.models import Severity
-from cordon_scanner.intel.registries.more_registries import MoreRegistries
+from cordon_scanner.intel.registries.archive_sources.git import GoZip
 from cordon_scanner.intel.registries.registry_client import PackageArchive, RegistryError
 
 
@@ -118,7 +118,7 @@ class TestReleaseComparison:
             )
 
         monkeypatch.setattr(
-            "cordon_scanner.intel.registries.registry_client.RegistryClient.package_archive",
+            "cordon_scanner.intel.registries.archive_sources.table.ArchiveSources.package_archive",
             archive,
         )
         changes = (
@@ -150,11 +150,45 @@ class TestReleaseComparison:
         ChangeReview.releases([change], quiet=True)
         assert change.compared.startswith("not compared:") and not change.release
 
-    def test_composer_is_listed_and_never_fetched_unverified(self, monkeypatch) -> None:
-        fetched = self.stub(monkeypatch)
+    def test_composer_is_compared_by_the_commit_its_registry_names_and_says_so(
+        self, monkeypatch
+    ) -> None:
+        """Packagist publishes no archive digest: the archive is the code host's tarball of the named commit, and the review
+        says it was checked by that, not by a digest."""
+        self.stub(monkeypatch)
+        fetched: list[tuple[str, str]] = []
+
+        def archive(source, name, version):
+            fetched.append((name, version))
+            return PackageArchive(
+                "composer",
+                name,
+                version,
+                f"{name.replace('/', '_')}-{version}.tar.gz",
+                b"\x1f\x8b" + b"\x00" * 30,
+                "git-commit",
+            )
+
+        monkeypatch.setattr(
+            "cordon_scanner.intel.registries.archive_sources.table.ArchiveSources.package_archive",
+            staticmethod(lambda ecosystem, name, version: archive(None, name, version)),
+        )
         change = PackageChange("upgraded", "composer", "vendor/pkg", "1.0.0", "1.1.0")
         ChangeReview.releases([change], quiet=True)
-        assert fetched == [] and "no archive digest" in change.compared
+        assert fetched == [("vendor/pkg", "1.1.0"), ("vendor/pkg", "1.0.0")]
+        assert (
+            "checked by git-commit only" in change.compared
+            and "digests verified" not in change.compared
+        )
+
+    def test_what_an_archive_was_checked_with_is_named_only_when_it_is_weaker_than_a_digest(
+        self,
+    ) -> None:
+        strong = PackageArchive("npm", "a", "1", "a.tgz", b"")
+        weak = PackageArchive("cran", "a", "1", "a.tar.gz", b"", "md5")
+        assert ChangeReview.verified(strong, strong) == "digests verified"
+        assert ChangeReview.verified(strong) == "digest verified"
+        assert ChangeReview.verified(strong, weak) == "checked by md5 only"
 
 
 class TestTheReport:
@@ -191,4 +225,4 @@ class TestGoModuleHashes:
             )
         )
         expected = "h1:" + base64.b64encode(hashlib.sha256(lines.encode()).digest()).decode()
-        assert MoreRegistries.go_h1(buffer.getvalue()) == expected
+        assert GoZip.h1(buffer.getvalue()) == expected
