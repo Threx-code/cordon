@@ -655,7 +655,7 @@ class ArchiveStages:
                     and d.scope in (Scope.RUNTIME, Scope.UNKNOWN)
                     and not (honoured and honoured.search(d.declared_in or ""))
                 ):
-                    return replace(d, scope=Scope.DEV)
+                    return replace(d, scope=Scope.DEV, unhonoured_lock=True)
                 return d
 
             dependencies = tuple(demoted(d) for d in dependencies)
