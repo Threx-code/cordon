@@ -425,6 +425,19 @@ class RegistryPublishing:
         return RegistryFacts._of(ecosystem).bracket_ranges()
 
     @staticmethod
+    def shipped_locks() -> dict[str, re.Pattern[str]]:
+        """For each ecosystem that declares `shipped_locks`, the pattern of those lockfiles one folder inside its archive."""
+        return {
+            ecosystem.id: re.compile(
+                r"(?:^|!)[^/!]+/(?:"
+                + "|".join(re.escape(name) for name in ecosystem.shipped_locks)
+                + r")$"
+            )
+            for ecosystem in EcosystemRegistry.all_ecosystems()
+            if isinstance(ecosystem, BaseEcosystem) and ecosystem.shipped_locks
+        }
+
+    @staticmethod
     def published_format(units: Sequence[FileUnit]) -> str:
         """Which published-package format the archive of `units` is, or "": the first shape an ecosystem declares
         for its packages (`published_archive`, asked in `precedence` order) that the archive's members fit."""

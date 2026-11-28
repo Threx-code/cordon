@@ -46,6 +46,10 @@ class Declarations:
 
     published_archive: PublishedArchive
     mcp_launch: McpLaunch
+    shipped_locks: tuple[str, ...] = ()
+    """File names of lockfiles, one folder inside the package's archive, that the package runs as shipped (an action's `dist/` is compiled
+    from the runtime entries of its lock): their runtime entries keep their scope and rating instead of being read as the maintainers'
+    environment (`HONOURED_PINS`). None by default: a consumer's installer resolves from the package's declared metadata."""
 
 
 __all__ = ["Declarations", "Launcher", "McpLaunch", "NoLauncher"]

@@ -437,6 +437,7 @@ class GitHubActionsEcosystem(BaseEcosystem):
 
     purl_type = "githubactions"
     published_archive = (ActionArchive(),)
+    shipped_locks = ("package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml")
     mcp_launch = NoLauncher(
         "an action runs only inside a workflow job on a GitHub runner (`uses:` in a workflow file); no command on a machine downloads one and runs it (https://docs.github.com/en/actions/sharing-automations/creating-actions/about-custom-actions)"
     )

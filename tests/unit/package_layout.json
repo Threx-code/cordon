@@ -1137,6 +1137,7 @@
   "test_install_bazel.py": "sources/install",
   "test_install_cocoapods.py": "sources/install",
   "test_install_hackage.py": "sources/install",
+  "test_action_installed.py": "detect/supply/advisories",
   "test_install_cran.py": "sources/install",
   "test_install_julia.py": "sources/install",
   "test_install_nix.py": "sources/install",
