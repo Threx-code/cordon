@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import ClassVar
 
 import pytest
-
 from support import ROOT
 
 
@@ -55,8 +54,11 @@ class TestEveryCaptureIsTraced:
         record = folder / CaptureRecords.RECORD
         assert record.is_file(), f"{folder.relative_to(ROOT)} has no {CaptureRecords.RECORD}"
         rows = CaptureRecords.rows(folder)
+        # Every file below the folder, nested ones too, by its path from the folder.
         files = sorted(
-            p.name for p in folder.iterdir() if p.is_file() and p.name != CaptureRecords.RECORD
+            p.relative_to(folder).as_posix()
+            for p in folder.rglob("*")
+            if p.is_file() and p.relative_to(folder).as_posix() != CaptureRecords.RECORD
         )
         assert sorted(rows) == files, f"listed {sorted(rows)}, present {files}"
         for name, row in rows.items():

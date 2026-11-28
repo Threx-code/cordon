@@ -126,7 +126,11 @@ class Portfile:
     DISTFILE_KEYWORDS: ClassVar[frozenset[str]] = frozenset(
         {"URLS", "FILENAME", "SHA512", "SKIP_SHA512", "ALWAYS_REDOWNLOAD", "HEADERS", "QUIET"}
     )
-    VARIABLE: ClassVar[re.Pattern[str]] = re.compile(r"\$\{([A-Za-z0-9_]+)\}|\$ENV\{[^}]*\}|\$\{")
+    #: A `${NAME}` reference, or any `$ENV{` or unclosed `${`, which refuse; the environment name is read
+    #: only as far as the message shows, so an unclosed run is never read again from inside.
+    VARIABLE: ClassVar[re.Pattern[str]] = re.compile(
+        r"\$\{([A-Za-z0-9_]++)\}|\$ENV\{[^}]{0,60}+|\$\{"
+    )
     SHA512: ClassVar[re.Pattern[str]] = re.compile(r"[0-9a-fA-F]{128}")
     REPO: ClassVar[re.Pattern[str]] = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
     SAFE_REF: ClassVar[re.Pattern[str]] = re.compile(r"[A-Za-z0-9_.+/~-]+")

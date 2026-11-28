@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
 
 class VcpkgPlanner:
-    NAME: ClassVar[re.Pattern[str]] = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+    NAME: ClassVar[re.Pattern[str]] = re.compile(r"[a-z0-9]++(?:-[a-z0-9]++)*+")
     COMMIT: ClassVar[re.Pattern[str]] = re.compile(r"[0-9a-f]{40}")
     #: Flags that name another source of ports, triplets, binaries or assets.
     REFUSED_FLAGS: ClassVar[tuple[str, ...]] = (
@@ -167,7 +167,7 @@ class VcpkgPlanner:
     @staticmethod
     def at_least(have: str, want: str) -> bool:
         """Whether version `have` is `want` or later: dotted numbers compare by number, anything else only by equality."""
-        pattern = re.compile(r"\d+(?:[.-]\d+)*")
+        pattern = re.compile(r"\d++(?:[.-]\d++)*+")
         if have == want:
             return True
         if pattern.fullmatch(have) and pattern.fullmatch(want):
