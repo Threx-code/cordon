@@ -176,3 +176,28 @@ class TestRecovery:
                 f"parsing grew {growth:.2f} then {again:.2f} times faster than the input from "
                 f"{n:,} units"
             )
+
+
+class TestNodes:
+    def test_a_node_lists_its_fields_in_order(self) -> None:
+        program = Parser("a;", jsx=False).program()
+        statement = program["body"][0]
+        assert list(statement.fields) == ["expression"]
+        assert statement.fields["expression"].type == "Identifier"
+
+    def test_a_node_reads_as_its_type_and_span(self) -> None:
+        program = Parser("a;", jsx=False).program()
+        assert repr(program["body"][0]) == "Node(ExpressionStatement, 0-2)"
+
+    def test_blocks_nested_past_the_depth_limit_are_an_error_not_a_crash(self) -> None:
+        assert Parsed.errors("{" * 600 + "}" * 600) > 0
+
+    def test_an_import_source_that_is_not_a_literal_is_an_error(self) -> None:
+        assert Parsed.errors("import x from y;") == 1
+
+    def test_a_binding_that_is_not_a_name_is_an_error(self) -> None:
+        assert Parsed.errors("function f(1) {}") > 0
+
+    def test_a_type_after_a_conditional_is_not_taken_for_a_return_type(self) -> None:
+        assert Parsed.errors("c ? (a) : b;", typescript=True) == 0
+        assert "ConditionalExpression" in Parsed.types("c ? (a) : b;", typescript=True)

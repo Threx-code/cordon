@@ -160,3 +160,23 @@ class TestRecovery:
             n *= 2
         small, large = seconds(n), seconds(4 * n)
         assert large < small * 10, f"{small:.2f}s at {n:,} lines, {large:.2f}s at {4 * n:,}"
+
+
+class TestTokenText:
+    def test_a_token_reads_as_its_kind_value_and_place(self) -> None:
+        token = Lexer("abc").next()
+        assert repr(token) == "Token(name, 'abc', 0)"
+
+    @pytest.mark.parametrize(
+        ("source", "value"),
+        [
+            (r'"a\u{110000}b"', "a{110000}b"),
+            (r'"a\u{}b"', "a{}b"),
+            (r'"a\uZZb"', "aZZb"),
+            (r'"a\u12b"', "a12b"),
+        ],
+    )
+    def test_a_bad_unicode_escape_is_dropped_and_the_rest_stays_as_written(
+        self, source: str, value: str
+    ) -> None:
+        assert Lexed.all(source) == [("string", value)]
