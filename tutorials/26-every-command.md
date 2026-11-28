@@ -684,10 +684,10 @@ Notification channels: send a test message to each.
 - `mix`: mix deps.get from the lock
 - `docker`: docker pull/run/create, scanned
 - `podman`: podman pull/run/create, scanned
-- `code`: code --install-extension, from Open VSX
-- `codium`: codium --install-extension, scanned
-- `cursor`: cursor --install-extension, scanned
-- `brew`: brew install/upgrade, bottles scanned
+- `code`: code extensions, from Open VSX
+- `codium`: codium extensions, scanned
+- `cursor`: cursor extensions, scanned
+- `brew`: brew install, bottles scanned
 
 ## npm
 

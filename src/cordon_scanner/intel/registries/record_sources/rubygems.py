@@ -33,7 +33,7 @@ class RubygemsSource(RecordSource):
         return (
             Document(f"{API}/versions/{quoted}.json", array=True),
             Document(f"{API}/gems/{quoted}.json", required=False),
-            Document(f"{API}/gems/{quoted}/owners.json", required=False),
+            Document(f"{API}/gems/{quoted}/owners.json", required=False, array=True),
         )
 
     def record(
