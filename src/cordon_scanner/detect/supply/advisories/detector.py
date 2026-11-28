@@ -499,16 +499,6 @@ class AdvisoryDetector(BaseDetector):
         records = self._database.for_package(
             dependency.ecosystem, dependency.name, open_ranges=True
         )
-        if dependency.name in EstablishedPackageNames.established(dependency.ecosystem) or any(
-            not record.malicious for record in records
-        ):
-            # An established package with one compromised release -- chalk 5.6.1, debug 4.4.2,
-            # @tanstack/react-router 1.169.5 -- had that release pulled from the registry within
-            # hours, so a range over it no longer installs it, and every project declaring
-            # `"chalk": "^5.0.0"` would be reported for nothing. Ordinary vulnerability records
-            # are the evidence of a real codebase where the popularity list runs out; a lockfile
-            # that pins the bad release is still reported, exactly.
-            return
         if dependency.declared_in and "node_modules/" in dependency.declared_in.replace("\\", "/"):
             # The manifest of a copy already installed: nothing resolves its ranges again, and its
             # devDependencies are installed by nobody. `keyv`'s own package.json declares
@@ -520,6 +510,45 @@ class AdvisoryDetector(BaseDetector):
             # A fixture's manifest is test data nobody installs; react-native's
             # `__fixtures__/.../package.json` names `third-party-dep-a`, a name squatted since.
             return
+        if dependency.name in EstablishedPackageNames.established(dependency.ecosystem) or any(
+            not record.malicious for record in records
+        ):
+            # An established package with one compromised release -- chalk 5.6.1, debug 4.4.2,
+            # @tanstack/react-router 1.169.5 -- had that release pulled from the registry within
+            # hours, so a range over it no longer installs it, and every project declaring
+            # `"chalk": "^5.0.0"` would be reported for nothing. Ordinary vulnerability records
+            # are the evidence of a real codebase where the popularity list runs out; a lockfile
+            # that pins the bad release is still reported, exactly. Online, the registry is asked
+            # instead: while it still serves the release, the range still installs it.
+            yield from self._range_findings(
+                dependency, spec, records, ctx, served=self._served(dependency, ctx)
+            )
+            return
+        yield from self._range_findings(dependency, spec, records, ctx, served=None)
+
+    @staticmethod
+    def _served(dependency: Dependency, ctx: ScanContext) -> frozenset[str]:
+        """The releases the registry still serves for this name, asked only in an online scan; none
+        offline or when the registry cannot be read, so nothing is reported on a guess."""
+        if ctx.offline:
+            return frozenset()
+        from cordon_scanner.intel.registries.archive_sources.table import ArchiveSources
+
+        try:
+            return frozenset(ArchiveSources.versions(dependency.ecosystem, dependency.name))
+        except Exception:  # noqa: BLE001 - any registry failure means "cannot tell", never a block
+            return frozenset()
+
+    def _range_findings(
+        self,
+        dependency: Dependency,
+        spec: str,
+        records: Iterable[AdvisoryRecord],
+        ctx: ScanContext,
+        served: frozenset[str] | None,
+    ) -> Iterator[Finding]:
+        """A finding for the first malicious record whose release the range admits; with `served`,
+        only a release the registry still serves counts (an "every version" record never does)."""
         for advisory in records:
             if not advisory.malicious:
                 continue
@@ -528,8 +557,13 @@ class AdvisoryDetector(BaseDetector):
                     v
                     for v in advisory.versions
                     if VersionRanges.admits(dependency.ecosystem, spec, v)
+                    and (served is None or v in served)
                 ]
-            elif advisory.affects("0") and not (advisory.fixed or advisory.last_affected):
+            elif (
+                served is None
+                and advisory.affects("0")
+                and not (advisory.fixed or advisory.last_affected)
+            ):
                 admitted = ["every version"]
             else:
                 admitted = []
