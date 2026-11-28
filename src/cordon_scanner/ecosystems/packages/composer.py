@@ -21,6 +21,7 @@ import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import ComposerArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -30,6 +31,7 @@ from cordon_scanner.ecosystems.base import (
     Manifest,
 )
 from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
+from cordon_scanner.ecosystems.launchers import NoLauncher
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -336,6 +338,10 @@ class ComposerEcosystem(BaseEcosystem):
         return name.split("/", 1)[0] if "/" in name else None
 
     purl_type = "composer"
+    published_archive = (ComposerArchive(),)
+    mcp_launch = NoLauncher(
+        "`composer global require` installs a package and a later command runs its binary; `composer exec` runs the binary of an already installed one (https://getcomposer.org/doc/03-cli.md#exec)"
+    )
     manifest_globs: tuple[str, ...] = ("**/composer.json", "**/composer.lock", "**/auth.json")
     lockfile_globs: tuple[str, ...] = ("**/composer.lock",)
     registry_hosts: frozenset[str] = frozenset(

@@ -31,6 +31,8 @@ from enum import StrEnum
 from typing import ClassVar, Final
 from urllib.parse import quote, urlsplit
 
+from cordon_scanner.contracts.name_fold import NameFolds
+
 
 class SubjectKind(StrEnum):
     """The kinds of thing Cordon decides on."""
@@ -58,23 +60,6 @@ _SEGMENT: Final = re.compile(r"[^\s/\\?#]+")
 class SubjectParts:
     """The vocabulary and the checks the canonical forms share: what each registry folds, and what a part may be."""
 
-    #: Registries whose package names are case-insensitive and are written in lower case.
-    LOWER_CASE: ClassVar[frozenset[str]] = frozenset(
-        [
-            "npm",
-            "pypi",
-            "nuget",
-            "composer",
-            "golang",
-            "hex",
-            "github",
-            "bitbucket",
-            "swift",
-            "cocoapods",
-        ]
-    )
-    #: Registries that treat `-`, `_` and `.` in a name as one (PEP 503).
-    ONE_SEPARATOR: ClassVar[frozenset[str]] = frozenset(["pypi"])
     #: The purl type of each name an ecosystem goes by.
     PURL_TYPES: ClassVar[dict[str, str]] = {
         "go": "golang",
@@ -90,6 +75,8 @@ class SubjectParts:
         "php": "composer",
         "java": "maven",
         "docker": "oci",
+        # The container-image subject kind owns `pkg:oci/`; a package whose ecosystem is `image` keeps its own type.
+        "image": "image",
     }
     SKILL_SOURCES: ClassVar[tuple[str, ...]] = ("gh", "registry", "local", "archive")
     MCP_TRANSPORTS: ClassVar[tuple[str, ...]] = ("npm", "pypi", "oci", "remote", "local")
@@ -225,15 +212,13 @@ class CanonicalIds:
         namespace = SubjectParts.optional(parts, "namespace")
         if namespace is None and "/" in name:
             namespace, _, name = name.rpartition("/")
-        fold = purl_type in SubjectParts.LOWER_CASE
+        fold = NameFolds.of(SubjectParts.need(parts, "ecosystem"), purl_type)
         if namespace:
             namespace = "/".join(
-                SubjectParts.fold(piece, fold, False)
+                SubjectParts.fold(piece, fold.lower, False)
                 for piece in SubjectParts.path(namespace, "namespace")
             )
-        name = SubjectParts.fold(
-            SubjectParts.single(name, "name"), fold, purl_type in SubjectParts.ONE_SEPARATOR
-        )
+        name = SubjectParts.fold(SubjectParts.single(name, "name"), fold.lower, fold.one_separator)
         encoded = quote(name, safe="")
         if namespace:
             encoded_namespace = "/".join(quote(piece, safe="") for piece in namespace.split("/"))

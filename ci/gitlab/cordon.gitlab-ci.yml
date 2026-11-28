@@ -66,6 +66,30 @@ cordon:scan:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
+# On a merge request: what the dependency update adds, compared with the merge request's base. Each change that
+# blocks is a Code Quality entry titled with its reason code (R100, R404, R400, R401), at the lockfile that declares
+# it, shown in the merge request's widget; the job fails when any change blocks. Set CORDON_REVIEW_ONLINE to "true"
+# to also fetch each changed package's old and new releases, verify and compare them.
+cordon:dependency-review:
+  extends: .cordon
+  stage: test
+  variables:
+    CORDON_REVIEW_ONLINE: "false"
+    GIT_DEPTH: "0"
+  script:
+    - |
+      echo "$CI_MERGE_REQUEST_DIFF_BASE_SHA" | grep -Eq '^[0-9a-f]{40}([0-9a-f]{24})?$' || { echo "no merge request base"; exit 3; }
+      set -- review . --base "$CI_MERGE_REQUEST_DIFF_BASE_SHA" --format codeclimate --quiet
+      [ "$CORDON_REVIEW_ONLINE" = "true" ] && set -- "$@" --online
+      cordon-scanner "$@" > gl-code-quality-review.json
+  artifacts:
+    when: always
+    expire_in: 30 days
+    reports:
+      codequality: gl-code-quality-review.json
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
 # For a runner with no internet access: extend this instead. The image must already carry the
 # scanner (installed from the release wheel and its hash pin, mirrored internally) and a signed
 # intel bundle from `cordon-scanner bundle install`. CORDON_OFFLINE stops the feed fetch entirely.

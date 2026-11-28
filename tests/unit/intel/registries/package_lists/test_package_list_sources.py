@@ -22,7 +22,9 @@ from support import ROOT
 
 
 class Pages:
-    DIRECTORY = ROOT / "tests" / "unit" / "intel" / "registries" / "package_lists" / "pages_captures"
+    DIRECTORY = (
+        ROOT / "tests" / "unit" / "intel" / "registries" / "package_lists" / "pages_captures"
+    )
 
     @classmethod
     def read(cls, name: str) -> Any:

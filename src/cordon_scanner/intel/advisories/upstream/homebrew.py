@@ -299,7 +299,7 @@ class HomebrewBottles:
         """The stable source a formula pins: its URL, its mirrors (brew checks each against the
         same digest) and its sha256."""
         found = re.search(
-            r'^([ \t]*)url\s+"([^"]+)"[^\n]*\n((?:\1(?:mirror|version)\s+"[^"]*"[^\n]*\n)*)\1sha256\s+"([0-9a-f]{64})"',
+            r'^([ \t]*)url\s+"([^"]+)"[^\n]*\n((?:\1(?:mirror|version)\s++"[^"]*+"[^\n]*+\n)*+)\1sha256\s+"([0-9a-f]{64})"',
             text,
             re.MULTILINE,
         )

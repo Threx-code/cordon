@@ -22,6 +22,7 @@ import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import PubArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -30,6 +31,7 @@ from cordon_scanner.ecosystems.base import (
     Manifest,
 )
 from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, PrivateMark
+from cordon_scanner.ecosystems.launchers import NoLauncher
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Hook, Scope
@@ -332,6 +334,10 @@ class PubEcosystem(BaseEcosystem):
     private_mark = PrivateMark(("pubspec.yaml",), "pubspec")
     own_name = OwnName(("pubspec.yaml",))
     purl_type = "pub"
+    published_archive = (PubArchive(),)
+    mcp_launch = NoLauncher(
+        "`dart pub global activate` installs a package and `dart pub global run` runs it afterwards: two steps (https://dart.dev/tools/pub/cmd/pub-global)"
+    )
     manifest_globs: tuple[str, ...] = ("**/pubspec.yaml",)
     lockfile_globs: tuple[str, ...] = ("**/pubspec.lock", "**/.dart_tool/package_config.json")
     registry_hosts: frozenset[str] = frozenset({"pub.dev", "pub.dartlang.org"})

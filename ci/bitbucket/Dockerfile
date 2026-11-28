@@ -8,6 +8,11 @@ RUN python -m pip install --no-cache-dir --disable-pip-version-check --require-h
  # pip installed the scanner and has no job after that. The base image's copy carried four high
  # advisories into the pipe, found by scanning it; a tool the pipe never runs is only exposure.
  && python -m pip uninstall --yes --quiet pip
+# git reads the pull request's destination branch for the dependency review; nothing else is added.
+RUN apt-get update -qq \
+ && apt-get install -qq -y --no-install-recommends git >/dev/null \
+ && rm -rf /var/lib/apt/lists/*
 COPY ci/bitbucket/pipe.sh /pipe.sh
+COPY ci/bitbucket/insights.py /insights.py
 USER 65534:65534
 ENTRYPOINT ["/bin/sh", "/pipe.sh"]

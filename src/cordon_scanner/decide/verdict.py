@@ -39,6 +39,7 @@ import math
 import re
 from dataclasses import replace
 from pathlib import Path
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from cordon_scanner.decide.feature_schema import FeatureFold, FeatureRecord, FeatureSchema
@@ -48,7 +49,7 @@ from cordon_scanner.foundation.paths import PackagePaths
 from cordon_scanner.intel.malware.feed_models import FeedModels
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
 MODEL_PATH: Final = PackagePaths.data("detect") / "verdict.json.gz"
 #: A model of the PyPI package area's own, fitted on the package-wide code features (0.8.0): a
@@ -270,6 +271,22 @@ class Verdict:
         """The delivered models a scan turned down and why, or None when it turned none down: what a scan's stats say about the models it did not use."""
         return FeedModels.refusals() or None
 
+    #: Every ecosystem's verdict area: the line its packages answer to, as the shipped model names it. One
+    #: table keyed by ecosystem id: four areas keep the names the model was fitted under (a crate, a Go
+    #: module, an Ansible collection, a Composer package, an editor extension), so a refit can rename them
+    #: here and nowhere else. MCP servers, agent skills and the fallback are areas too, but of no ecosystem.
+    ECOSYSTEM_AREAS: ClassVar[Mapping[str, str]] = MappingProxyType(
+        {
+            "npm": "npm", "pypi": "pypi", "cargo": "crates", "gomod": "go", "ansible": "galaxy",
+            "composer": "packagist", "vscode": "openvsx", "actions": "actions", "rubygems": "rubygems",
+            "nuget": "nuget", "maven": "maven", "gradle": "gradle", "conda": "conda", "hex": "hex",
+            "image": "image", "cran": "cran", "pub": "pub", "swift": "swift", "cocoapods": "cocoapods",
+            "hackage": "hackage", "helm": "helm", "conan": "conan", "vcpkg": "vcpkg", "opam": "opam",
+            "julia": "julia", "bazel": "bazel", "nix": "nix", "homebrew": "homebrew",
+            "terraform": "terraform",
+        }
+    )  # fmt: skip
+
     _PYPI: ClassVar[re.Pattern[str]] = re.compile(r"^[^/]+/PKG-INFO$|^[^/]+\.dist-info/METADATA$")
     #: Each ecosystem's layout, read on the outermost archive only (a jar bundled in a Gradle
     #: repository is not a Maven release), measured on the benign corpus (2026-10-19). Release
@@ -281,15 +298,15 @@ class Verdict:
         (name, re.compile(layout))
         for name, layout in (
             ("rubygems", r"^metadata\.gz$"),
-            ("crates", r"^[^/]+-\d[^/]*/Cargo\.toml\.orig$"),
+            ("cargo", r"^[^/]+-\d[^/]*/Cargo\.toml\.orig$"),
             ("nuget", r"^[^/]+\.nuspec$"),
             ("maven", r"^META-INF/(?:MANIFEST\.MF$|maven/)"),
-            ("go", r"^(?:[^/]+/)*[^/@]+@v\d[^/]*/"),
+            ("gomod", r"^(?:[^/]+/)*[^/@]+@v\d[^/]*/"),
             ("conda", r"^info/index\.json$|^info-[^/]+\.tar\.zst$"),
             ("hex", r"^metadata\.config$"),
-            ("galaxy", r"^FILES\.json$"),
+            ("ansible", r"^FILES\.json$"),
             ("image", r"^image-config/|^sha256:[0-9a-f]{64}$|^blobs/sha256/"),
-            ("packagist", r"^[^/]+/composer\.json$"),
+            ("composer", r"^[^/]+/composer\.json$"),
             ("cran", r"^[^/]+/DESCRIPTION$"),
             ("pub", r"^(?:[^/]+/)?pubspec\.yaml$"),
             ("swift", r"^(?:[^/]+/)?Package\.swift$"),
@@ -356,7 +373,7 @@ class Verdict:
             return "pypi"
         for ecosystem, layout in Verdict._ECOSYSTEMS:
             if any(layout.match(n) for n in inner):
-                return ecosystem
+                return Verdict.ECOSYSTEM_AREAS[ecosystem]
         if package.get("skill"):
             return "skill"
         if any(

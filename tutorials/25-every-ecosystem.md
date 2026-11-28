@@ -310,7 +310,7 @@ The VS Code extensions a workspace recommends or pins, from Open VSX. Ecosystem 
 │ MANIFESTS       .vscode/extensions.json, *.code-workspace,                 │
 │                 .devcontainer/devcontainer.json,                           │
 │                 .devcontainer/*/devcontainer.json, .devcontainer.json,     │
-│                 .gitpod.yml, extension.vsixmanifest                        │
+│                 .gitpod.yml, .gitpod.yaml, extension.vsixmanifest          │
 │ LOCKFILES       none                                                       │
 │                                                                            │
 │ OFFLINE         the dependency graph, lockfile integrity, licences,        │

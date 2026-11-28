@@ -56,7 +56,7 @@ class CabalProject:
                 if not found:
                     continue
                 package, rule = found.group(1), found.group(2).strip()
-                if re.fullmatch(r"(?:[+-][\w-]+\s*)+", rule):
+                if re.fullmatch(r"(?:[+-][\w-]++\s*+)++", rule):
                     sources.append(f"flags {package}: {rule}")
                 elif rule not in ("installed", "source"):
                     overrides[package] = rule
@@ -118,7 +118,7 @@ class CabalFreeze:
         r"^(?:(any|setup|[A-Za-z0-9-]+:setup|[A-Za-z0-9-]+:exe)\.)?([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)\s*==\s*([0-9]+(?:\.[0-9]+)*)$"
     )
     FLAGS: ClassVar[re.Pattern[str]] = re.compile(
-        r"^(?:any\.)?([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)\s+((?:[+-][\w-]+\s*)+)$"
+        r"^(?:any\.)?([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)\s+((?:[+-][\w-]++\s*+)++)$"
     )
 
     @staticmethod

@@ -195,12 +195,7 @@ class AgentChainDetector(BaseDetector):
         if AgentPaths._paths_match(path, GITPOD_PATHS):
             findings.extend(ExtensionFileFindings.gitpod_extensions(unit, ctx))
         if AgentPaths._paths_match(path, BREWFILE_PATHS):
-            for identifier in dict.fromkeys(
-                re.findall(r"""(?m)^\s*vscode\s+["']([^"']+)["']""", unit.content.text)
-            ):
-                findings.extend(
-                    ExtensionFileFindings.judge_extension(identifier, unit, ctx, recommended=True)
-                )
+            findings.extend(ExtensionFileFindings.brewfile_extensions(unit, ctx))
         if path == VSIX_MANIFEST and ".vsix!" in unit.content.path.lower():
             findings.extend(ExtensionFileFindings.vsix_manifest(unit, ctx))
         findings.extend(self._mcp_server_files(path, unit, ctx))

@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 API = "https://repo.packagist.org/p2"
 #: Composer's own rule for a package name: lower-case `vendor/package`, words joined by `.`, `-` or `_`.
-NAME = re.compile(r"[a-z0-9](?:[_.-]?[a-z0-9]+)*/[a-z0-9](?:(?:[_.]|-{1,2})?[a-z0-9]+)*")
+NAME = re.compile(r"[a-z0-9]++(?:[_.-][a-z0-9]++)*+/[a-z0-9]++(?:(?:[_.]|-{1,2})[a-z0-9]++)*+")
 
 
 class ComposerSource(RecordSource):

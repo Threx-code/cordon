@@ -81,6 +81,17 @@ class Coverage:
         )
 
     @staticmethod
+    def verdict_areas() -> frozenset[str]:
+        """Every ecosystem whose verdict area (`Verdict.ECOSYSTEM_AREAS`) has a line in the shipped model."""
+        import gzip
+        import json
+
+        from cordon_scanner.decide.verdict import MODEL_PATH, Verdict
+
+        areas = json.loads(gzip.decompress(MODEL_PATH.read_bytes()))["areas"]
+        return frozenset(e for e, area in Verdict.ECOSYSTEM_AREAS.items() if area in areas)
+
+    @staticmethod
     def previous_release() -> frozenset[str]:
         from cordon_scanner.sources.previous import PreviousRelease
 
@@ -196,6 +207,12 @@ class More:
 
         return cls.ids(PackageUrl.ECOSYSTEMS.values())
 
+    @staticmethod
+    def sbom_ingest_reasons() -> dict[str, str]:
+        return {
+            "gradle": "Gradle builds Maven artifacts; SBOM tools write pkg:maven, ingested as maven, whose advisories gradle shares."
+        }
+
     @classmethod
     def mcp_packages(cls) -> frozenset[str]:
         from cordon_scanner.mcp.packages import ECOSYSTEMS
@@ -218,15 +235,25 @@ class More:
     def device_attestation(cls) -> frozenset[str]:
         from cordon_scanner.cloud.device_attestation import DeviceAttestation
 
-        return cls.ids(DeviceAttestation.SPLITTERS)
+        return cls.ids(DeviceAttestation.splitters())
+
+    @staticmethod
+    def device_attestation_reasons() -> dict[str, str]:
+        from cordon_scanner.ecosystems.base import BaseEcosystem
+        from cordon_scanner.ecosystems.launchers import NoLauncher
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+        return {
+            e.id: e.mcp_launch.reason
+            for e in EcosystemRegistry.all_ecosystems()
+            if isinstance(e, BaseEcosystem) and isinstance(e.mcp_launch, NoLauncher)
+        }
 
     @classmethod
     def subjects(cls) -> frozenset[str]:
-        from cordon_scanner.contracts.subjects import SubjectParts
+        from cordon_scanner.contracts.name_fold import NameFolds
 
-        return cls.ids([*SubjectParts.PURL_TYPES, *SubjectParts.PURL_TYPES.values()]) & (
-            ALL | {"vscode"}
-        )
+        return cls.ids(NameFolds.BY_ID) & (ALL | {"vscode"})
 
     @classmethod
     def typosquat_targets(cls) -> frozenset[str]:
@@ -303,7 +330,35 @@ class More:
 
     @classmethod
     def package_format(cls) -> frozenset[str]:
-        return cls.ids(More.compared("cordon_scanner.engine.package_format", "of"))
+        from cordon_scanner.ecosystems.archive_shapes import NoArchive
+
+        return frozenset(
+            ecosystem.id
+            for ecosystem in EcosystemRegistry.all_ecosystems()
+            if not isinstance(ecosystem.published_archive, NoArchive)
+        )
+
+    @classmethod
+    def package_format_reasons(cls) -> dict[str, str]:
+        from cordon_scanner.ecosystems.archive_shapes import NoArchive
+
+        return {
+            ecosystem.id: ecosystem.published_archive.reason
+            for ecosystem in EcosystemRegistry.all_ecosystems()
+            if isinstance(ecosystem.published_archive, NoArchive)
+        }
+
+    @classmethod
+    def credential_homes(cls) -> frozenset[str]:
+        from cordon_scanner.analysis.shared.credential_homes import ECOSYSTEM_CREDENTIALS
+
+        return cls.ids(e for e, credential in ECOSYSTEM_CREDENTIALS.items() if credential.homes)
+
+    @classmethod
+    def credential_homes_reasons(cls) -> dict[str, str]:
+        from cordon_scanner.analysis.shared.credential_homes import ECOSYSTEM_CREDENTIALS
+
+        return {e: c.reason for e, c in ECOSYSTEM_CREDENTIALS.items() if not c.homes}
 
     @classmethod
     def agent_hook(cls) -> frozenset[str]:
@@ -352,6 +407,7 @@ class Features:
             Coverage.provenance_reasons,
         ),
         "version ordering for advisory ranges": (Coverage.version_order, dict),
+        "verdict model areas": (Coverage.verdict_areas, dict),
         "popular package lists": (Coverage.popular_lists, dict),
         "advisory sources (OSV or the upstream project)": (Coverage.advisory_sources, dict),
         "campaign fingerprints": (Coverage.campaign_fingerprints, dict),
@@ -364,7 +420,7 @@ class Features:
         "package-URL scan targets": (More.package_url_targets, More.package_url_reasons),
         "advisory-text symbols": (More.advisory_text, More.advisory_text_reasons),
         "malware dataset": (More.malware_dataset, dict),
-        "SBOM package-URL ingest": (More.sbom_ingest, dict),
+        "SBOM package-URL ingest": (More.sbom_ingest, More.sbom_ingest_reasons),
         "MCP package check": (More.mcp_packages, dict),
         "typosquat (look-alike names)": (More.typosquat_targets, More.typosquat_reasons),
         "name-signal readers": (More.name_signals, dict),
@@ -372,7 +428,7 @@ class Features:
         "agent hook install recognition": (More.agent_hook, More.agent_hook_reasons),
         "install shims and planners": (More.install_guard, More.install_guard_reasons),
         "fixer (lockfile fix)": (More.fixer, dict),
-        "device attestation splitters": (More.device_attestation, dict),
+        "device attestation splitters": (More.device_attestation, More.device_attestation_reasons),
         "subject canonicalisation": (More.subjects, dict),
         "manifest findings (own name)": (More.own_name_findings, More.own_name_reasons),
         "unpublishable mark of a manifest": (More.private_marks, More.private_mark_reasons),
@@ -380,21 +436,17 @@ class Features:
             More.install_hook_shapes,
             More.install_hook_reasons,
         ),
-        "package format sniffing": (More.package_format, dict),
+        "credential homes": (More.credential_homes, More.credential_homes_reasons),
+        "package format sniffing": (More.package_format, More.package_format_reasons),
     }
     #: Features being built now: expected to fail until they cover every ecosystem; the entry comes off when they do.
     BUILDING: ClassVar[frozenset[str]] = frozenset(
         {
             # Not yet built for every ecosystem:
-            "SBOM package-URL ingest",
-            "MCP package check",
             "name-signal readers",
             "popular package lists",
             "install shims and planners",
             "fixer (lockfile fix)",
-            "device attestation splitters",
-            "subject canonicalisation",
-            "package format sniffing",
         }
     )
 
@@ -441,12 +493,107 @@ class TestEveryFeatureCoversEveryEcosystem:
         )
 
 
+class TestNoPhantomCoverage:
+    """A row may only count what production code uses. Every `Name.attr` (or upper-case table) the reader of a row's
+    COVERED SET takes from `cordon_scanner` must be referenced as code (a load, not a comment, docstring or its own
+    definition) somewhere in `src/`. A table read only by this guard made a feature look covered while nothing shipped
+    used it (an SBOM "served by" table, caught in review): this makes that a failure. A row's reasons are not held
+    here: they document why something does not exist, which is not coverage."""
+
+    @staticmethod
+    def reads() -> set[tuple[str, str, str]]:
+        """(reader, Name, attr) for every name a reader imports from cordon_scanner and reads."""
+        import ast
+
+        from support import ROOT as REPO
+
+        tree = ast.parse(
+            (
+                REPO
+                / "tests/unit/ecosystems/coverage"
+                / "test_every_feature_covers_every_ecosystem.py"
+            ).read_text(encoding="utf-8")
+        )
+        covered = {
+            value.elts[0].attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Dict)
+            for value in node.values
+            if isinstance(value, ast.Tuple)
+            and value.elts
+            and isinstance(value.elts[0], ast.Attribute)
+            and isinstance(value.elts[0].value, ast.Name)
+            and value.elts[0].value.id in ("Coverage", "More")
+        }
+        readers = [
+            m
+            for c in tree.body
+            if isinstance(c, ast.ClassDef) and c.name in ("Coverage", "More")
+            for m in c.body
+            if isinstance(m, ast.FunctionDef) and m.name in covered
+        ]
+        out: set[tuple[str, str, str]] = set()
+        for reader in readers:
+            imported = {
+                a.asname or a.name
+                for n in ast.walk(reader)
+                if isinstance(n, ast.ImportFrom) and (n.module or "").startswith("cordon_scanner")
+                for a in n.names
+            }
+            for node in ast.walk(reader):
+                if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+                    if node.value.id in imported:
+                        out.add((reader.name, node.value.id, node.attr))
+                elif isinstance(node, ast.Name) and node.id in imported and node.id.isupper():
+                    out.add((reader.name, node.id, ""))
+        return out
+
+    @staticmethod
+    def referenced() -> set[str]:
+        """Every attribute and name loaded as code anywhere in src/."""
+        import ast
+
+        from support import ROOT as REPO
+
+        names: set[str] = set()
+        for path in (REPO / "src" / "cordon_scanner").rglob("*.py"):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
+                    names.add(node.attr)
+                elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                    names.add(node.id)
+        return names
+
+    #: Read by a row and not yet by production, each being wired in now. An entry that production starts to use
+    #: fails `test_what_is_being_wired_is_still_unwired` until it comes off; nothing is ever added here to pass.
+    BUILDING: ClassVar[frozenset[str]] = frozenset()
+
+    def phantom(self) -> set[str]:
+        reads = self.reads()
+        assert len({r for r, _, _ in reads}) >= 20, "the guard's readers were not found"
+        used = self.referenced()
+        return {
+            f"{reader}: {name}.{attr}" if attr else f"{reader}: {name}"
+            for reader, name, attr in reads
+            if (attr or name) not in used
+        }
+
+    def test_every_row_reads_what_production_uses(self) -> None:
+        unexpected = sorted(self.phantom() - self.BUILDING)
+        assert not unexpected, "read by the guard but by no production code: " + ", ".join(
+            unexpected
+        )
+
+    def test_what_is_being_wired_is_still_unwired(self) -> None:
+        done = sorted(self.BUILDING - self.phantom())
+        assert not done, "now used by production, take it off BUILDING: " + ", ".join(done)
+
+
 #: Ecosystems whose install shim and planner are still being built. A builder takes its cell off this
 #: list when its shim and planner land; a listed cell must still fail (strict), so none stays listed.
 INSTALL_PENDING = frozenset(
     {
-        "bazel", "cocoapods", "conan", "cran", "gradle", "hackage",
-        "julia", "nix", "opam", "swift", "vcpkg",
+        "conan", "gradle", "opam", "vcpkg",
     }
 )  # fmt: skip
 

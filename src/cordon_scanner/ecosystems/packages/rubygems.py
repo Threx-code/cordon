@@ -22,6 +22,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import GemArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -31,6 +32,7 @@ from cordon_scanner.ecosystems.base import (
     Manifest,
 )
 from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
+from cordon_scanner.ecosystems.launchers import Launcher
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -649,6 +651,12 @@ class RubyGemsEcosystem(BaseEcosystem):
     )
     own_name = OwnName(("*.gemspec",))
     purl_type = "gem"
+    published_archive = (GemArchive(),)
+    mcp_launch = (
+        Launcher(
+            (("gem", "exec"),), "gem", "https://guides.rubygems.org/command-reference/#gem-exec"
+        ),
+    )
     manifest_globs: tuple[str, ...] = (
         "**/Gemfile",
         "**/gems.rb",

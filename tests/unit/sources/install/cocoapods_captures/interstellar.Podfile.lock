@@ -1,0 +1,18 @@
+PODS:
+  - Interstellar/Core (2.0.0)
+
+EXTERNAL SOURCES:
+  Interstellar:
+    :branch: observable-unsubscribe
+    :git: https://github.com/artsy/Interstellar.git
+
+CHECKOUT OPTIONS:
+  Interstellar:
+    :commit: ca22646f5a8449795fba3d3436a045da0aeb5949
+    :git: https://github.com/artsy/Interstellar.git
+
+
+SPEC CHECKSUMS:
+  Interstellar: cd0c3290e249b5f156113a4c6c9c09dd0f418aaa
+
+COCOAPODS: 1.16.2

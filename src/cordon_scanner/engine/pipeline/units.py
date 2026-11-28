@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, ClassVar
 from cordon_scanner.analysis.shared.inline_programs import InlinePrograms
 from cordon_scanner.analysis.shared.languages import LanguageRegistry
 from cordon_scanner.detect.base import FileUnit
-from cordon_scanner.ecosystems.registry import EcosystemRegistry
+from cordon_scanner.ecosystems.registry import EcosystemRegistry, RegistryFacts
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.archives import ArchiveMembers
 from cordon_scanner.engine.pipeline.constants import REPOSITORY_SCOPE
@@ -801,7 +801,11 @@ class Units:
         known = {unit.path for unit in units}
         for unit in units:
             ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
-            if ecosystem_id is None or ecosystem_id == "image" or unit.content.is_binary:
+            if (
+                ecosystem_id is None
+                or RegistryFacts.manifest_runs_at_build(ecosystem_id)
+                or unit.content.is_binary
+            ):
                 continue
             ecosystem = EcosystemRegistry.get(ecosystem_id)
             if ecosystem is None:

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import gzip
 import json
+from typing import ClassVar
 from unittest import mock
+
+import pytest
 
 from cordon_scanner.decide.verdict import MODEL_PATH, Verdict, VerdictFeatures, VerdictModel
 from cordon_scanner.foundation.models import (
@@ -590,3 +593,50 @@ class TestTheShippedScorerImportsOnlyTheStandardLibrary:
                     not in sys.stdlib_module_names | {"cordon_scanner", "__future__"}
                 ]
         assert found == []
+
+
+class TestEveryEcosystemHasAVerdictArea:
+    """Each registered ecosystem answers to a verdict line of its own, from one table keyed by ecosystem id, and the
+    shipped model holds that line. Real published archives (the member lists in
+    `tests/unit/intel/advisories/package_format_captures/members.json`) land in their ecosystem's area."""
+
+    #: Member-list key -> the ecosystem whose real published archive it is.
+    REAL: ClassVar[dict[str, str]] = {
+        "actions": "actions", "ansible": "ansible", "composer": "composer", "conan": "conan", "helm": "helm",
+        "image": "image", "julia": "julia", "opam": "opam", "pub": "pub", "swift": "swift", "vsix": "vscode",
+    }  # fmt: skip
+    #: Real archives no area's line was fitted on: they answer to the strictest line until one is, so a release of
+    #: a kind no line was measured on can only be judged more cautiously, never less.
+    STRICTEST: ClassVar[tuple[str, ...]] = ("bottle", "terraform_provider")
+
+    @staticmethod
+    def members(key: str) -> list[str]:
+        from support import ROOT as REPO
+
+        table = json.loads(
+            (REPO / "tests/unit/intel/advisories/package_format_captures/members.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        return [f"target.ext!{m}" for m in table[key]["members"]]
+
+    def test_the_table_is_the_registry(self) -> None:
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+        assert set(Verdict.ECOSYSTEM_AREAS) == set(EcosystemRegistry.BY_ID)
+
+    def test_every_area_has_a_line_in_the_shipped_model(self) -> None:
+        areas = json.loads(gzip.decompress(MODEL_PATH.read_bytes()))["areas"]
+        assert set(Verdict.ECOSYSTEM_AREAS.values()) <= set(areas)
+
+    def test_every_layout_is_an_ecosystem_of_the_table(self) -> None:
+        assert {e for e, _ in Verdict._ECOSYSTEMS} <= set(Verdict.ECOSYSTEM_AREAS)
+
+    @pytest.mark.parametrize("key", sorted(REAL))
+    def test_a_real_published_archive_lands_in_its_area(self, key: str) -> None:
+        expected = Verdict.ECOSYSTEM_AREAS[self.REAL[key]]
+        assert Verdict.area(self.members(key), {}, {}, {}) == expected
+
+    @pytest.mark.parametrize("key", STRICTEST)
+    def test_a_release_no_line_was_fitted_on_answers_to_the_strictest(self, key: str) -> None:
+        assert Verdict.area(self.members(key), {}, {}, {}) == Verdict.FALLBACK

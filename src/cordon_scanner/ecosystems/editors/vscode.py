@@ -7,7 +7,7 @@
   .devcontainer/devcontainer.json,     `customizations.vscode.extensions` (and the older top-level `extensions`):
   .devcontainer/<name>/devcontainer.json,  ids installed into the container, `publisher.name` or
   .devcontainer.json                   `publisher.name@version`; `-publisher.name` asks for one NOT to be installed
-  .gitpod.yml                          `vscode.extensions`: Open VSX ids, `id@version`, or the URL of a .vsix
+  .gitpod.yml, .gitpod.yaml           `vscode.extensions`: Open VSX ids, `id@version`, or the URL of a .vsix
   extension.vsixmanifest               an extension's own manifest inside its .vsix: its identity (publisher,
                                        name, version) and the extensions it depends on or packs
 ```
@@ -21,8 +21,11 @@ runtime dependency.
 
 from __future__ import annotations
 
+import json
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import VsixArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -30,6 +33,7 @@ from cordon_scanner.ecosystems.base import (
     Manifest,
 )
 from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
+from cordon_scanner.ecosystems.launchers import NoLauncher
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Scope
 
@@ -86,6 +90,7 @@ class VsCodeEcosystem(BaseEcosystem):
     private_mark = NoPrivateMark(
         "an extension's manifest is a package.json, read as npm's own: its `private` flag is npm's mark, not a mark of the editor ecosystem"
     )
+    bundle_keyword = "vscode"
     own_name = OwnName(
         ("extension/package.json",),
         readers=(("extension/package.json", "extension_manifest"),),
@@ -93,6 +98,10 @@ class VsCodeEcosystem(BaseEcosystem):
         archives=(".vsix",),
     )
     purl_type = "vscode-extension"
+    published_archive = (VsixArchive(),)
+    mcp_launch = NoLauncher(
+        "an extension is installed into an editor (`code --install-extension`), which loads it itself; no command downloads one and runs it (https://code.visualstudio.com/docs/configure/command-line)"
+    )
     manifest_globs: tuple[str, ...] = (
         "**/.vscode/extensions.json",
         "**/*.code-workspace",
@@ -100,6 +109,7 @@ class VsCodeEcosystem(BaseEcosystem):
         "**/.devcontainer/*/devcontainer.json",
         "**/.devcontainer.json",
         "**/.gitpod.yml",
+        "**/.gitpod.yaml",
         "**/extension.vsixmanifest",
     )
     lockfile_globs: tuple[str, ...] = ()
@@ -115,6 +125,18 @@ class VsCodeEcosystem(BaseEcosystem):
 
     def namespace(self, name: str, alias: str | None = None) -> str | None:
         return name.split(".", 1)[0] if "." in name else None
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A dev container installing these extensions at these versions: `{path: content}`."""
+        extensions = [f"{name}@{version}" for name, version in pins]
+        body = {"customizations": {"vscode": {"extensions": extensions}}}
+        return {".devcontainer/devcontainer.json": json.dumps(body)}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """The extensions a workspace recommends, with no version: `{path: content}`."""
+        return {".vscode/extensions.json": json.dumps({"recommendations": list(names)})}
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()
@@ -135,6 +157,7 @@ class VsCodeEcosystem(BaseEcosystem):
         (".code-workspace", "_workspace", "extensions.recommendations"),
         ("extensions.json", "_recommendations", "recommendations"),
         (".gitpod.yml", "_gitpod", "vscode.extensions"),
+        (".gitpod.yaml", "_gitpod", "vscode.extensions"),
         ("devcontainer.json", "_devcontainer", "customizations.vscode.extensions"),
     )
 
@@ -148,7 +171,11 @@ class VsCodeEcosystem(BaseEcosystem):
             return self._vsix(content)
         read = getattr(self, reader[1])
         try:
-            data = self._yaml(content) if content.path.endswith(".yml") else self._jsonc(content)
+            data = (
+                self._yaml(content)
+                if content.path.endswith((".yml", ".yaml"))
+                else self._jsonc(content)
+            )
         except ValueError as exc:
             return BaseEcosystem._err(content, self.id, str(exc))
         if not isinstance(data, dict):

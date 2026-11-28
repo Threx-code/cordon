@@ -17,8 +17,10 @@ from typing import Any
 import pytest
 
 from cordon_scanner.cloud import CloudError
+from cordon_scanner.cloud.declared_packages import DeclaredPackages
 from cordon_scanner.cloud.device_attestation import DeviceAttestation
 from cordon_scanner.contracts.digests import ArtifactDigests
+from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.intel.provenance._ed25519 import Ed25519
 from cordon_scanner.intel.provenance._ed25519_signer import Ed25519Signer
 from support import ROOT
@@ -62,6 +64,65 @@ class Kit:
         return DeviceAttestation.statement(
             cls.payload(servers, extensions), session=SESSION, now=NOW
         )
+
+
+class TestEveryLauncherIsNamed:
+    """Each launcher of an ecosystem (`mcp_launch`) is named in the statement as the platform's validator accepts it."""
+
+    DIGEST = "sha256:" + "a" * 64
+
+    @pytest.mark.parametrize(
+        ("ecosystem", "package", "purl"),
+        [
+            ("image", f"mcp/github@{DIGEST}", f"pkg:docker/mcp/github@{DIGEST}"),
+            ("gomod", "example.com/mcp@v1.2.3", "pkg:golang/example.com/mcp@v1.2.3"),
+            ("nuget", "Mcp.Server@1.2.3", "pkg:nuget/Mcp.Server@1.2.3"),
+            ("maven", "org.acme:mcp:1.2.3", "pkg:maven/org.acme/mcp@1.2.3"),
+            ("rubygems", "mcp-gem@1.2.3", "pkg:gem/mcp-gem@1.2.3"),
+            ("conda", "mcp-server==1.2.3", "pkg:conda/mcp-server@1.2.3"),
+        ],
+    )
+    def test_a_pinned_package_of_each_launcher_is_named(
+        self, ecosystem: str, package: str, purl: str
+    ) -> None:
+        statement = Kit.statement([Kit.server(ecosystem, package)])
+        assert statement["loaded"] == [{"kind": "mcp", "purl": purl}]
+        assert statement["unnamed"] == 0
+
+    def test_a_package_the_platform_would_refuse_is_counted_not_sent(self) -> None:
+        # a Nix flake input is `owner/repo`: two parts where the platform's `nix` type has one
+        statement = Kit.statement([Kit.server("nix", "github:o/r/" + "b" * 40 + "#x")])
+        assert statement["loaded"] == [] and statement["unnamed"] == 1
+
+    def test_a_tag_is_not_a_pin(self) -> None:
+        statement = Kit.statement([Kit.server("image", "mcp/github:1.0", pinned=False)])
+        assert statement["loaded"] == [] and statement["unnamed"] == 1
+
+    @pytest.mark.parametrize("ecosystem", sorted(EcosystemRegistry.BY_ID))
+    def test_every_ecosystems_package_url_type_is_one_the_platform_reads(
+        self, ecosystem: str
+    ) -> None:
+        assert EcosystemRegistry.BY_ID[ecosystem].purl_type in DeclaredPackages.TYPES
+
+
+class TestTheMirrorOfThePlatformsTable:
+    #: The 29 types of the platform's `DeclaredPackages.TYPES` (`src/decisions/helpers/declared_packages.py`, backend commit
+    #: 10873176c): a change there shows up here in review, and the scanner's copy follows.
+    PLATFORM_TYPES = frozenset(
+        {
+            "npm", "pypi", "cargo", "golang", "maven", "nuget", "composer", "gem", "pub", "hex", "cran", "swift",
+            "hackage", "julia", "opam", "conda", "cocoapods", "bazel", "brew", "conan", "vcpkg", "nix", "helm",
+            "terraform", "oci", "docker", "githubactions", "ansible", "vscode-extension",
+        }
+    )  # fmt: skip
+
+    def test_the_copy_lists_the_same_types_as_the_platform(self) -> None:
+        assert set(DeclaredPackages.TYPES) == self.PLATFORM_TYPES
+        assert len(self.PLATFORM_TYPES) == 29
+
+    def test_an_image_digest_keeps_its_colon(self) -> None:
+        assert DeclaredPackages.read("pkg:docker/mcp/x@sha256:" + "a" * 64) is not None
+        assert DeclaredPackages.read("pkg:npm/x@sha256:" + "a" * 64) is None
 
 
 class TestWhatIsNamed:

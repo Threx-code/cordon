@@ -57,3 +57,22 @@ class TestAdvisoryNaming:
         found = database.matching("npm", "fsevents", "1.1.3")
         assert [a.identifier for a in found] == ["GHSA-8r6j-v8pm-fqw3"]
         assert not any(a.malicious for a in found)
+
+
+class TestEveryEcosystemFoldsAsItsAdapterDeclares:
+    """The advisory lookup reads a name the way the ecosystem's own adapter folds it, for all of them:
+    a registry that treats two spellings as one name is matched under both, with no second table."""
+
+    def test_each_ecosystem_looks_up_its_declared_fold(self) -> None:
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry
+
+        name = "Some_Package.Name-X"
+        for ecosystem, adapter in EcosystemRegistry.BY_ID.items():
+            forms = AdvisoryDatabase.spellings(ecosystem, name)
+            assert forms[0] == name.lower(), ecosystem
+            assert adapter.normalize_name(name.lower()) in forms, ecosystem
+
+    def test_pep_503_and_crates_folds_hold(self) -> None:
+        assert "amino-fix" in AdvisoryDatabase.spellings("pypi", "amino.fix")
+        assert "whatsfly-labfox" in AdvisoryDatabase.spellings("pypi", "whatsfly_labfox")
+        assert "serde-json" in AdvisoryDatabase.spellings("cargo", "serde_json")

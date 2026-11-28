@@ -74,6 +74,9 @@ class PackageChange:
     """Why the releases were or were not compared."""
     categories: dict[str, str] = field(default_factory=dict)
     """Each release finding's category by rule id, where the scan gave one (an added package's own scan)."""
+    path: str = ""
+    """The file the changed package is declared in (its lockfile, else its manifest), for an annotation's place."""
+    line: int = 1
 
     BLOCKING: ClassVar[frozenset[str]] = frozenset({"critical", "high"})
 
@@ -187,6 +190,8 @@ class GraphDiff:
         from cordon_scanner.ecosystems.registry import EcosystemRegistry
         from cordon_scanner.intel.advisories.versions import Versions
 
+        where: dict[tuple[str, str], tuple[str, int]] = {}
+
         def index(graph: tuple[Dependency, ...]) -> dict[tuple[str, str], tuple[set[str], bool]]:
             out: dict[tuple[str, str], tuple[set[str], bool]] = {}
             for dependency in graph:
@@ -201,10 +206,18 @@ class GraphDiff:
                 )
                 versions, direct = out.get((dependency.ecosystem, name), (set(), False))
                 versions.add(version)
+                where.setdefault(
+                    (dependency.ecosystem, name),
+                    (
+                        str(dependency.declared_in or dependency.manifest_path or ""),
+                        int(dependency.lockfile_line or dependency.manifest_line or 1),
+                    ),
+                )
                 out[(dependency.ecosystem, name)] = (versions, direct or dependency.direct)
             return out
 
-        before, after = index(old), index(new)
+        after = index(new)
+        before = index(old)
         changes: list[PackageChange] = []
         for key in sorted(set(before) | set(after)):
             ecosystem, name = key
@@ -230,6 +243,8 @@ class GraphDiff:
                 changes.append(PackageChange(kind, ecosystem, name, previous, version, direct))
             for version in gone[len(came) :]:
                 changes.append(PackageChange("removed", ecosystem, name, version, None, direct))
+        for change in changes:
+            change.path, change.line = where.get((change.ecosystem, change.name), ("", 1))
         return changes
 
 
@@ -450,7 +465,96 @@ class GithubAnnotations:
         return "\n".join(lines)
 
 
+class HostReports:
+    """The review in the forms GitLab and Bitbucket show on a merge or pull request: one entry per reason a change
+    blocks, titled with its reason code and placed at the file that declares the package, as the GitHub annotations
+    are."""
+
+    #: Bitbucket's annotation severities by the review's: a blocking reason is a known malicious or vulnerable release.
+    BITBUCKET_SEVERITY: ClassVar[dict[str, str]] = {"R100": "CRITICAL", "R400": "CRITICAL"}
+    #: Bitbucket caps an annotation's summary at 450 characters and a report at 1,000 annotations.
+    SUMMARY: ClassVar[int] = 450
+    ANNOTATIONS: ClassVar[int] = 1000
+
+    @staticmethod
+    def blocking(changes: list[PackageChange]) -> list[tuple[PackageChange, str, str, str]]:
+        """`(change, code, title, message)` for each reason a change blocks."""
+        from cordon_scanner.contracts.reason_codes import ReasonCodes
+
+        out = []
+        for change in changes:
+            version = (
+                f"{change.old} -> {change.new}"
+                if change.old and change.new
+                else (change.new or change.old or "")
+            )
+            for code, why in change.reasons():
+                title = f"{code} {ReasonCodes.lookup(code).title}"
+                message = f"{change.kind} {change.ecosystem}:{change.name} {version}: {why}"
+                out.append((change, code, title, message))
+        return out
+
+    @classmethod
+    def codeclimate(cls, changes: list[PackageChange], base: str) -> str:
+        """GitLab's Code Quality report (`artifacts: reports: codequality`): its merge request widget lists each."""
+        import hashlib
+
+        entries = [
+            {
+                "type": "issue",
+                "check_name": code,
+                "description": f"{title}: {message}",
+                "categories": ["Security"],
+                "severity": "blocker" if code in cls.BITBUCKET_SEVERITY else "critical",
+                "fingerprint": hashlib.sha256(f"{base}|{code}|{message}".encode()).hexdigest(),
+                "location": {"path": change.path or ".", "lines": {"begin": change.line or 1}},
+            }
+            for change, code, title, message in cls.blocking(changes)
+        ]
+        return json.dumps(entries, indent=2, sort_keys=True)
+
+    @classmethod
+    def bitbucket(cls, changes: list[PackageChange], base: str) -> str:
+        """A Bitbucket Code Insights report and its annotations, as the pipe sends them for the pull request's
+        commit: `{"report": ..., "annotations": [...]}`."""
+        found = cls.blocking(changes)
+        report = {
+            "title": "Cordon dependency review",
+            "details": (
+                f"{len(changes)} dependency change(s) since {base}; "
+                + (f"{len(found)} reason(s) block." if found else "nothing blocks.")
+            ),
+            "report_type": "SECURITY",
+            "reporter": "Cordon",
+            "result": "FAILED" if found else "PASSED",
+        }
+        annotations = [
+            {
+                "external_id": f"cordon-{index}",
+                "annotation_type": "VULNERABILITY",
+                "summary": f"{title}: {message}"[: cls.SUMMARY],
+                "severity": cls.BITBUCKET_SEVERITY.get(code, "HIGH"),
+                "result": "FAILED",
+                **({"path": change.path, "line": change.line or 1} if change.path else {}),
+            }
+            for index, (change, code, title, message) in enumerate(found[: cls.ANNOTATIONS])
+        ]
+        return json.dumps({"report": report, "annotations": annotations}, indent=2, sort_keys=True)
+
+
 class ReviewCommand:
+    #: Each output by its `--format` name.
+    FORMATS: ClassVar[dict[str, Any]] = {
+        "json": lambda changes, base: json.dumps(
+            {"base": base, "changes": [c.as_dict() for c in changes]}, indent=2
+        ),
+        "markdown": lambda changes, base: ReviewReport.markdown(changes, base),
+        "github": lambda changes, base: GithubAnnotations.render(changes, base),
+        "codeclimate": lambda changes, base: HostReports.codeclimate(changes, base),
+        "bitbucket": lambda changes, base: HostReports.bitbucket(changes, base),
+        "text": lambda changes, base: ReviewReport.text(changes, base),
+    }
+
     @staticmethod
     def add_parser(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
         review = sub.add_parser(
@@ -467,9 +571,11 @@ class ReviewCommand:
         )
         review.add_argument(
             "--format",
-            choices=("text", "markdown", "json", "github"),
+            choices=("text", "markdown", "json", "github", "codeclimate", "bitbucket"),
             default="text",
-            help="github: one ::error annotation per blocking reason, titled with its reason code",
+            help="github: one ::error annotation per blocking reason, titled with its reason code; "
+            "codeclimate: GitLab's Code Quality report of the same; bitbucket: a Code Insights report and its "
+            "annotations",
         )
         review.add_argument(
             "--online",
@@ -497,16 +603,7 @@ class ReviewCommand:
         ChangeReview.advisories(changes)
         if args.online:
             ChangeReview.releases(changes, quiet=args.quiet)
-        if args.format == "json":
-            print(
-                json.dumps({"base": args.base, "changes": [c.as_dict() for c in changes]}, indent=2)
-            )
-        elif args.format == "markdown":
-            print(ReviewReport.markdown(changes, args.base))
-        elif args.format == "github":
-            print(GithubAnnotations.render(changes, args.base))
-        else:
-            print(ReviewReport.text(changes, args.base))
+        print(ReviewCommand.FORMATS[args.format](changes, args.base))
         if getattr(args, "annotations", None):
             Path(args.annotations).write_text(
                 GithubAnnotations.render(changes, args.base) + "\n", encoding="utf-8"
@@ -518,6 +615,7 @@ __all__ = [
     "ChangeReview",
     "GithubAnnotations",
     "GraphDiff",
+    "HostReports",
     "PackageChange",
     "ReviewCommand",
     "ReviewReport",

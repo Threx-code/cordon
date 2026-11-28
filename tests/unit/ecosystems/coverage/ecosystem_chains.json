@@ -17,23 +17,11 @@
  "src/cordon_scanner/detect/binary/rule_engine/syntax.py::_modifiers_fit": [
   "hex"
  ],
- "src/cordon_scanner/detect/supply/advisories/detector.py::_no_feed_note": [
-  "image"
- ],
- "src/cordon_scanner/detect/supply/advisories/detector.py::_not_installed_no_feed": [
-  "image"
- ],
  "src/cordon_scanner/detect/supply/manifests/source_findings.py::wrapper_findings": [
   "maven"
  ],
  "src/cordon_scanner/detect/supply/name_risk.py::organisation": [
   "npm"
- ],
- "src/cordon_scanner/detect/supply/registries/detector.py::_worth_asking": [
-  "image"
- ],
- "src/cordon_scanner/engine/inventory.py::_advisory": [
-  "image"
  ],
  "src/cordon_scanner/engine/isolation/expander.py::accept": [
   "image"
@@ -43,12 +31,6 @@
  ],
  "src/cordon_scanner/engine/pipeline/hooks.py::extension_entries": [
   "vscode"
- ],
- "src/cordon_scanner/engine/pipeline/hooks.py::manifest_hook_paths": [
-  "image"
- ],
- "src/cordon_scanner/engine/pipeline/units.py::inline_hooks": [
-  "image"
  ],
  "src/cordon_scanner/engine/sbom_ingest.py::package_name": [
   "image"
@@ -83,9 +65,6 @@
  ],
  "src/cordon_scanner/intel/registries/openvsx.py::timeline": [
   "npm"
- ],
- "src/cordon_scanner/intel/registries/private_registries.py::matching": [
-  "image"
  ],
  "src/cordon_scanner/intel/registries/registry_client.py::attestation_payload": [
   "gradle",

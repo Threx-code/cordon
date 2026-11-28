@@ -22,6 +22,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import HexArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -30,6 +31,7 @@ from cordon_scanner.ecosystems.base import (
     Manifest,
 )
 from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
+from cordon_scanner.ecosystems.launchers import NoLauncher
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.ecosystems.packages.hex_literals import ElixirLiterals
 from cordon_scanner.foundation.models import Hook, Scope
@@ -791,6 +793,10 @@ class HexEcosystem(BaseEcosystem):
         return name.split("/", 1)[0] if "/" in name else None
 
     purl_type = "hex"
+    published_archive = (HexArchive(),)
+    mcp_launch = NoLauncher(
+        "`mix escript.install hex <package>` installs an escript and a later command runs it: two steps (https://hexdocs.pm/mix/Mix.Tasks.Escript.Install.html)"
+    )
     manifest_globs: tuple[str, ...] = ("**/mix.exs", "**/rebar.config")
     lockfile_globs: tuple[str, ...] = ("**/mix.lock", "**/rebar.lock")
     registry_hosts: frozenset[str] = frozenset({"hex.pm", "repo.hex.pm"})

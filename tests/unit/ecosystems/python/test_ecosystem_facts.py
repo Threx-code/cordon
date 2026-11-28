@@ -137,3 +137,31 @@ class TestTheDeclaredFacts:
                 assert naming.is_builtin(eco, name) == (eco == "gomod" and name == "stdlib")
             assert naming.is_builtin("gomod", "stdlib")
             assert naming.coordinate_separator(eco) == (":" if eco in ("maven", "gradle") else None)
+
+
+class TestWhatKindOfThingADependencyIs:
+    """A dependency that is not a package (a container image) says so through its adapter's
+    declarations, and every cross-cutting rule reads the declaration instead of the name."""
+
+    NATURES = ("vulnerabilities_by_contents", "manifest_runs_at_build", "name_carries_registry")
+
+    def test_an_image_declares_every_nature_that_differs(self) -> None:
+        from cordon_scanner.ecosystems.registry import RegistryFacts
+
+        assert all(getattr(RegistryFacts, nature)("image") for nature in self.NATURES)
+
+    def test_a_package_ecosystem_declares_none(self) -> None:
+        from cordon_scanner.ecosystems.registry import EcosystemRegistry, RegistryFacts
+
+        for ecosystem in sorted(set(EcosystemRegistry.BY_ID) - {"image"}):
+            for nature in self.NATURES:
+                assert not getattr(RegistryFacts, nature)(ecosystem), (ecosystem, nature)
+
+    def test_a_private_registry_is_found_by_the_host_a_name_carries(self) -> None:
+        from cordon_scanner.intel.base import PrivateRegistry
+        from cordon_scanner.intel.registries.private_registries import PrivateRegistries
+
+        mine = PrivateRegistry(base="https://registry.example.com", variable="TOKEN")
+        found = PrivateRegistries.matching((mine,), "image", "registry.example.com/team/app", None)
+        assert found is mine
+        assert PrivateRegistries.matching((mine,), "npm", "registry.example.com/x", None) is None

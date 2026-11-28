@@ -28,8 +28,10 @@ from __future__ import annotations
 import dataclasses
 import json
 import re
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import GalaxyArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -38,6 +40,7 @@ from cordon_scanner.ecosystems.base import (
     Manifest,
 )
 from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
+from cordon_scanner.ecosystems.launchers import NoLauncher
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.formats.datayaml import DataYaml
 from cordon_scanner.foundation.models import Scope
@@ -478,6 +481,10 @@ class AnsibleGalaxyEcosystem(BaseEcosystem):
         return name.split(".", 1)[0] if "." in name else None
 
     purl_type = "ansible"
+    published_archive = (GalaxyArchive(),)
+    mcp_launch = NoLauncher(
+        "`ansible-galaxy collection install` downloads a collection and a playbook uses it afterwards: two steps, and a collection is content, not a program (https://docs.ansible.com/ansible/latest/collections_guide/collections_installing.html)"
+    )
     manifest_globs: tuple[str, ...] = (
         "**/requirements.yml",
         "**/requirements.yaml",
@@ -496,6 +503,18 @@ class AnsibleGalaxyEcosystem(BaseEcosystem):
     registry_hosts: frozenset[str] = frozenset({GALAXY})
     records_integrity = False
     INSTALL_DIRECTORIES: ClassVar[tuple[str, ...]] = ("collections", "roles")
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A requirements file pinning these collections: `{path: content}`."""
+        body = "".join(f'  - name: {name}\n    version: "{version}"\n' for name, version in pins)
+        return {"requirements.yml": f"collections:\n{body}"}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A requirements file naming these collections with no version: `{path: content}`."""
+        body = "".join(f"  - name: {name}\n" for name in names)
+        return {"requirements.yml": f"collections:\n{body}"}
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()

@@ -49,7 +49,7 @@ class PodSiblings:
     @staticmethod
     def http(text: str, version: str) -> str | None:
         """A podspec's `source = { :http => '...' }`, `#{s.version}` read as the version."""
-        found = re.search(r"\.source\s*=\s*\{((?:[^{}]|#\{[^{}]*\})*)\}", text)
+        found = re.search(r"\.source\s*=\s*\{((?:#\{[^{}]*+\}|[^{}])*+)\}", text)
         if not found:
             return None
         for entry in NpmPodspec.FIELD.finditer(found.group(1)):
@@ -338,7 +338,7 @@ class NpmPodspec:
         `#{<spec>.version}` is the locked version and a bare name a resolved variable; anything
         else computed is unknown, never guessed."""
         # The hash may hold interpolations (`"v#{spec.version}"`), whose braces are not its own.
-        found = re.search(r"\.source\s*=\s*\{((?:[^{}]|#\{[^{}]*\})*)\}", text)
+        found = re.search(r"\.source\s*=\s*\{((?:#\{[^{}]*+\}|[^{}])*+)\}", text)
         if not found:
             return Unnamed("its podspec's source is computed")
         fields: dict[str, str] = {}

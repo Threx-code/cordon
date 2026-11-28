@@ -24,8 +24,10 @@ import dataclasses
 import json
 import posixpath
 import re
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
+from cordon_scanner.ecosystems.archive_shapes import NoArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -33,6 +35,7 @@ from cordon_scanner.ecosystems.base import (
     Manifest,
 )
 from cordon_scanner.ecosystems.install_marks import NoConsumerHooks, NoPrivateMark
+from cordon_scanner.ecosystems.launchers import NoLauncher
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -361,6 +364,12 @@ class VcpkgEcosystem(BaseEcosystem):
     )
     own_name = OwnName(("vcpkg.json",))
     purl_type = "vcpkg"
+    published_archive = NoArchive(
+        "the vcpkg registry is a git repository of ports (a portfile.cmake and a vcpkg.json each) whose sources are the upstream project's own archive, named by the REF and SHA512 in the portfile (captured: vcpkg/portfile.cmake)"
+    )
+    mcp_launch = NoLauncher(
+        "`vcpkg install` builds ports into an install tree and has no command that runs one (https://learn.microsoft.com/en-us/vcpkg/commands/install)"
+    )
     manifest_globs: tuple[str, ...] = (
         "**/vcpkg.json",
         "**/vcpkg-configuration.json",
@@ -371,6 +380,26 @@ class VcpkgEcosystem(BaseEcosystem):
     records_integrity = False
     """No vcpkg file records a port's hash: each version is pinned by git-tree in the registry's
     version database, at the baseline commit."""
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A manifest depending on these ports, each overridden to this version: `{path: content}`."""
+        manifest = {
+            "name": "check",
+            "version": "0.0.0",
+            "dependencies": [name for name, _ in pins],
+            "overrides": [{"name": name, "version": version} for name, version in pins],
+        }
+        return {"vcpkg.json": json.dumps(manifest)}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A manifest depending on these ports with no version: `{path: content}`."""
+        return {
+            "vcpkg.json": json.dumps(
+                {"name": "check", "version": "0.0.0", "dependencies": list(names)}
+            )
+        }
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()

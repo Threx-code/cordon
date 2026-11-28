@@ -46,7 +46,9 @@ class InstallSpec:
     }
     _PIP: Final = re.compile(r"(==|>=|<=|~=|!=|<|>|\[)")
     _DOT: Final = re.compile(r"([A-Za-z][\w+-]*?)[.=](\d[\w.+~-]*)")
-    _DASH: Final = re.compile(r"([A-Za-z][\w-]*?)-(\d+(?:\.\d+)*)")
+    #: `name-1.2.3`: split at the last dash, so no pattern has to guess where the name ends.
+    _DASH_NAME: Final = re.compile(r"[A-Za-z][\w-]*")
+    _DASH_VERSION: Final = re.compile(r"\d++(?:\.\d++)*+")
 
     @staticmethod
     def _exact(version: str) -> str | None:
@@ -86,8 +88,10 @@ class InstallSpec:
 
     @classmethod
     def _dash(cls, spec: str) -> tuple[str, str | None]:
-        found = cls._DASH.fullmatch(spec)
-        return (found.group(1), found.group(2)) if found else (spec, None)
+        name, dash, version = spec.rpartition("-")
+        if dash and cls._DASH_NAME.fullmatch(name) and cls._DASH_VERSION.fullmatch(version):
+            return name, version
+        return spec, None
 
     @staticmethod
     def _hash(spec: str) -> tuple[str, str | None]:

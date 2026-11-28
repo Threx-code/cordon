@@ -48,6 +48,52 @@ if TYPE_CHECKING:
     from cordon_scanner.foundation.taxonomy import ThreatDomain
 
 
+class InstallRunsMake:
+    """Whether something a package's install runs starts `make`, beyond the formats whose
+    installer always can (`MAKE_AT_INSTALL`): an npm install hook (`"install": "make"`), a
+    `setup.py` or `build.rs` that calls it, or a node-gyp `binding.gyp` action. Then the
+    package's Makefile is install-time code, not its maintainers' tooling."""
+
+    #: Install hooks of `package.json` whose command line may start make.
+    HOOKS: ClassVar[tuple[str, ...]] = ("preinstall", "install", "postinstall", "prepare")
+    #: A shell command line that runs make: at the start, or after `;`, `&&`, `||` or `(`.
+    SHELL: ClassVar[re.Pattern[str]] = re.compile(r"(?:^|[;&|(])\s{0,4}make(?:\s|$)")
+    #: Code that starts make: `["make", ...]`, `("make")`, `system("make ...")`, `Command::new("make")`.
+    CODE: ClassVar[re.Pattern[str]] = re.compile(
+        r"""(?:[\[(,]\s{0,4}["']make["'])|(?:\b(?:system|call|check_call|check_output|run|Popen)"""
+        r"""\(\s{0,4}["']make(?:\s|["']))"""
+    )
+    #: Install-time code files that may call make, by name.
+    CODE_FILES: ClassVar[frozenset[str]] = frozenset({"setup.py", "build.rs", "binding.gyp"})
+
+    @classmethod
+    def runs_make(cls, units: Sequence[FileUnit]) -> bool:
+        for unit in units:
+            if unit.content.is_binary:
+                continue
+            name = ContainerPaths.basename(unit.path.rpartition("!")[2])
+            if name in cls.CODE_FILES and cls.CODE.search(unit.content.text[: 1 << 20]):
+                return True
+            if name == "package.json" and cls._hook_runs_make(unit.content.text):
+                return True
+        return False
+
+    @classmethod
+    def _hook_runs_make(cls, text: str) -> bool:
+        import json
+
+        try:
+            scripts = json.loads(text).get("scripts")
+        except (ValueError, AttributeError):
+            return False
+        if not isinstance(scripts, dict):
+            return False
+        return any(
+            isinstance(scripts.get(hook), str) and cls.SHELL.search(scripts[hook])
+            for hook in cls.HOOKS
+        )
+
+
 class Ceilings:
     """The package verdict and the ceilings it is held under."""
 
@@ -590,7 +636,8 @@ class Ceilings:
         What counts depends on the format's installer. Compiled source is lowered only in
         Python and npm packages, whose install compiles an extension but does not run it: in a
         crate, a Go module or a jar that source IS the program the consumer runs. A Makefile
-        stays a finding where installing runs make (`MAKE_AT_INSTALL`).
+        stays a finding where installing runs make (`MAKE_AT_INSTALL`, or `InstallRunsMake`: a hook,
+        `setup.py`, `build.rs` or `binding.gyp` of the package's own that starts it).
 
         A shell, PowerShell or batch script runs only when something starts it. No installer
         starts one on its own: a hook that does is in `runs` (the install-hook paths), and code
@@ -602,7 +649,7 @@ class Ceilings:
         compiled_is_inert = RegistryFacts.compiled_is_inert(distribution)
         # Another ecosystem's install manifest is author-time here: npm's package.json in a wheel.
         foreign_manifests = RegistryFacts.foreign_install_manifests(distribution)
-        make_is_inert = distribution not in MAKE_AT_INSTALL
+        make_is_inert = distribution not in MAKE_AT_INSTALL and not InstallRunsMake.runs_make(units)
 
         def author_time(member: str) -> bool:
             name = ContainerPaths.basename(member)

@@ -97,10 +97,13 @@ class PrivateRegistries:
         resolved_from: str | None,
     ) -> PrivateRegistry | None:
         """The registry a dependency came from, when it is one of these: by the resolved URL's
-        host and path prefix, or (an image) by the registry host in its name."""
+        host and path prefix, or (where a name carries its registry, as an image's does) by the
+        registry host in its name."""
         if not configured:
             return None
-        if ecosystem == "image":
+        from cordon_scanner.foundation.dependencies import EcosystemFactsProvider
+
+        if EcosystemFactsProvider.traits().name_carries_registry(ecosystem):
             host = name.split("/", 1)[0].lower() if "/" in name else ""
             return next((r for r in configured if r.host == host), None)
         reference = (resolved_from or "").removeprefix("registry:").removeprefix("registry+")

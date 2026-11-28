@@ -22,7 +22,7 @@ from cordon_scanner.detect.base import (
     FileUnit,
     ScanContext,
 )
-from cordon_scanner.ecosystems.registry import EcosystemRegistry
+from cordon_scanner.ecosystems.registry import EcosystemRegistry, RegistryFacts
 from cordon_scanner.engine.isolation.documents import Documents
 from cordon_scanner.engine.pipeline.accumulator import Accumulator
 from cordon_scanner.engine.pipeline.constants import (
@@ -779,7 +779,7 @@ class Hooks:
         for unit in units:
             ecosystem_id = EcosystemRegistry.manifest_ecosystem(unit.path)
             if ecosystem_id is None or (
-                ecosystem_id == "image"
+                RegistryFacts.manifest_runs_at_build(ecosystem_id)
                 and (
                     SourcePaths.is_vendored(unit.path)
                     or BuildRoots.in_sdist(unit.path, package_directories)

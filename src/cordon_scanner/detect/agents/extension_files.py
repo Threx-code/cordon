@@ -55,7 +55,14 @@ class ExtensionFileFindings:
         for entry in dict.fromkeys(named):
             identifier, _, version = entry.partition("@")
             yield from cls.judge_extension(
-                identifier, unit, ctx, recommended=True, version=version or None
+                identifier,
+                unit,
+                ctx,
+                recommended=True,
+                version=version or None,
+                # The editor-extension ecosystem reads this file: a known-malicious release is its
+                # MALWARE.DEPENDENCY.KNOWN.001; judging it here too would report one extension twice.
+                osv=False,
             )
 
     @classmethod
@@ -74,8 +81,24 @@ class ExtensionFileFindings:
                 continue
             identifier, _, version = entry.partition("@")
             yield from cls.judge_extension(
-                identifier, unit, ctx, recommended=True, version=version or None
+                identifier,
+                unit,
+                ctx,
+                recommended=True,
+                version=version or None,
+                # The editor-extension ecosystem reads this file: a known-malicious release is its
+                # MALWARE.DEPENDENCY.KNOWN.001; judging it here too would report one extension twice.
+                osv=False,
             )
+
+    @classmethod
+    def brewfile_extensions(cls, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
+        """`vscode "publisher.name"` lines in a Brewfile. The Homebrew reader records each as an editor-extension
+        dependency, which owns the OSV verdict; the removal and look-alike checks stay here."""
+        for identifier in dict.fromkeys(
+            re.findall(r"""(?m)^\s*vscode\s+["']([^"']+)["']""", unit.content.text)
+        ):
+            yield from cls.judge_extension(identifier, unit, ctx, recommended=True, osv=False)
 
     @classmethod
     def vsix_manifest(cls, unit: FileUnit, ctx: ScanContext) -> Iterator[Finding]:
@@ -163,7 +186,10 @@ class ExtensionFileFindings:
             return
         intel = IntelDataFile.newest("vscode-extensions.json")
         how = "recommends" if recommended else "vendors the package of"
-        verdict = ExtensionVerdicts.osv(lowered, version) if osv else None
+        verdict = ExtensionVerdicts.osv(lowered, version)
+        if verdict is not None and not osv and verdict[0] == "MALWARE.EXTENSION.KNOWN.001":
+            # A known-malicious release is the dependency or package rule's, which reports it once.
+            return
         if verdict is not None:
             rule_id, detail = verdict
             yield AgentFinding.at_text(

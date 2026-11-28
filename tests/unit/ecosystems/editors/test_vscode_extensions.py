@@ -71,7 +71,12 @@ class TestTheFilesThatNameExtensions:
         assert [d.name for d in Kit.parsed(".vscode/extensions.json", text).dependencies] == ["a.b"]
 
     def test_a_named_devcontainer_configuration_is_found(self) -> None:
-        for path in (".devcontainer/python/devcontainer.json", "app.code-workspace", ".gitpod.yml"):
+        for path in (
+            ".devcontainer/python/devcontainer.json",
+            "app.code-workspace",
+            ".gitpod.yml",
+            ".gitpod.yaml",
+        ):
             assert EcosystemRegistry.manifest_ecosystem(path) == "vscode", path
 
     def test_a_multi_root_workspace_recommends_extensions(self) -> None:
@@ -165,3 +170,15 @@ class TestWhatTheEditorRuns:
             self.unit(self.ROOT + "dist/extension.js", "1;"),
         ]
         assert Hooks.extension_entries(units) == set()
+
+
+class TestTheAgentRulesReadNoMoreThanThisDoes:
+    """The agent rules leave a known-malicious extension's verdict to this ecosystem for the files both read; a
+    file only they read would lose its verdict."""
+
+    def test_every_extension_file_they_read_is_read_here(self) -> None:
+        from cordon_scanner.detect.agents.paths import EXTENSION_PATHS, GITPOD_PATHS
+
+        for glob in (*EXTENSION_PATHS, *GITPOD_PATHS):
+            sample = glob.replace("**/", "").replace("*", "app")
+            assert EcosystemRegistry.manifest_ecosystem(sample) == "vscode", glob

@@ -134,6 +134,9 @@ _POLICY_PREFIXES: tuple[str, ...] = (
     "SUSPECT.MCP.UNPINNED.",
     "SUSPECT.MCP.UNTRUSTED_REMOTE.",
     "SUSPECT.MCP.TOOLS_CHANGED.",
+    # A code file an installed extension carries that its signed file list does not name: an integrity
+    # fact like the provenance findings above, claiming neither malware nor behaviour.
+    "SUSPECT.EXTENSION.ADDED_CODE.",
     "SUSPECT.AGENT.PLUGIN_SOURCE.",
     "SUSPECT.AGENT.ATR.MODEL_SECURITY.",
     # A file that stopped the rule engine before an answer: a fail-closed incomplete scan, which

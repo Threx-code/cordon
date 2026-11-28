@@ -21,9 +21,11 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from cordon_scanner.ecosystems.archive_shapes import NarArchive
 from cordon_scanner.ecosystems.base import (
     BaseEcosystem,
     DeclaredDependency,
@@ -32,6 +34,7 @@ from cordon_scanner.ecosystems.base import (
     Manifest,
 )
 from cordon_scanner.ecosystems.install_marks import ConsumerHooks, NoPrivateMark
+from cordon_scanner.ecosystems.launchers import Launcher
 from cordon_scanner.ecosystems.own_names import OwnName
 from cordon_scanner.foundation.models import Hook, Scope
 
@@ -852,6 +855,14 @@ class NixEcosystem(BaseEcosystem):
         "**/shell.nix",
         "**/package.nix",
     )
+    published_archive = (NarArchive(),)
+    mcp_launch = (
+        Launcher(
+            (("nix", "run"),),
+            "nix",
+            "https://nix.dev/manual/nix/stable/command-ref/new-cli/nix3-run.html",
+        ),
+    )
     lockfile_globs: tuple[str, ...] = ("**/flake.lock",)
     registry_hosts: frozenset[str] = frozenset()
     registryless = True
@@ -859,6 +870,27 @@ class NixEcosystem(BaseEcosystem):
     git_distribution = True
     locked_inputs = "inputs."
     """Declarations whose ref is an update channel that flake.lock pins: a flake's inputs."""
+
+    # -- the projects mcp writes for a package check (EcosystemProjects) ------------
+
+    def pinned_project(self, pins: Sequence[tuple[str, str]]) -> dict[str, str] | None:
+        """A flake.lock locking these `owner/repo` inputs at these revisions: `{path: content}`."""
+        nodes: dict[str, object] = {}
+        inputs: dict[str, str] = {}
+        for name, version in pins:
+            owner, _, repo = name.partition("/")
+            key = repo or owner
+            inputs[key] = key
+            nodes[key] = {
+                "locked": {"type": "github", "owner": owner, "repo": repo or owner, "rev": version},
+                "original": {"type": "github", "owner": owner, "repo": repo or owner},
+            }
+        nodes["root"] = {"inputs": inputs}
+        return {"flake.lock": json.dumps({"nodes": nodes, "root": "root", "version": 7})}
+
+    def loose_project(self, names: Sequence[str]) -> dict[str, str] | None:
+        """A flake input is locked to a revision."""
+        raise ValueError("a flake input needs a version: the revision it is locked to")
 
     def normalize_name(self, name: str) -> str:
         return name.strip().lower()

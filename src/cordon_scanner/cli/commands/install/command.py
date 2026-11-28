@@ -33,11 +33,22 @@ class InstallGuardCommand:
     TOOLS: ClassVar[tuple[str, ...]] = (
         "npm", "pnpm", "yarn", "pip", "pip3", "uv", "poetry", "cargo", "go", "gem", "bundler",
         "dotnet", "dart", "flutter", "conda", "mamba", "composer", "mvn",
-        "terraform", "tofu", "helm", "ansible-galaxy", "mix", "docker", "podman",
-        "code", "codium", "cursor", "brew",
+        "terraform", "tofu", "helm", "ansible-galaxy", "mix", "docker", "podman", "code", "codium", "cursor", "brew", "bazel", "bazelisk", "julia", "nix", "swift", "Rscript", "R", "pod", "cabal",
     )  # fmt: skip
     #: The executable each tool runs, where its name here differs (`bundle` is Cordon's own command).
     EXECUTABLES: ClassVar[dict[str, str]] = {"bundler": "bundle"}
+
+    #: What a person should know about one tool before using it guarded, shown in its help.
+    NOTES: ClassVar[dict[str, str]] = {
+        "cabal": (
+            "cabal builds from a private repository of only the scanned packages (cabal.project.freeze names them), so your own "
+            "cabal config and extra repositories are not used for a guarded install; a project that sets its own repositories is refused."
+        ),
+        "pod": (
+            "pod refuses often: any pod whose source is a bare git tag is refused (pin :commit), as is one from a podspec URL or "
+            "another spec repository; pod runs with --deployment."
+        ),
+    }
 
     @classmethod
     def add_parser(cls, sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
@@ -51,6 +62,7 @@ class InstallGuardCommand:
                     "when nothing is malicious. Other subcommands run unchanged. Cordon's options go "
                     "first: --cordon-fail-on SEVERITY, --cordon-config PATH, --cordon-registry-token "
                     "URL=VAR, --cordon-no-cache."
+                    + (f" {cls.NOTES[tool]}" if tool in cls.NOTES else "")
                 ),
             )
             parser_.add_argument(
@@ -91,6 +103,13 @@ class InstallGuardCommand:
         from cordon_scanner.cli.commands.install.hex import HexTools
         from cordon_scanner.cli.commands.install.homebrew import HomebrewTools
         from cordon_scanner.cli.commands.install.image import ImageTools
+        from cordon_scanner.cli.commands.install.locked.bazel import BazelTools
+        from cordon_scanner.cli.commands.install.locked.cocoapods import CocoaPodsTools
+        from cordon_scanner.cli.commands.install.locked.cran import CranTools
+        from cordon_scanner.cli.commands.install.locked.hackage import HackageTools
+        from cordon_scanner.cli.commands.install.locked.julia import JuliaTools
+        from cordon_scanner.cli.commands.install.locked.nix import NixTools
+        from cordon_scanner.cli.commands.install.locked.swift import SwiftTools
         from cordon_scanner.cli.commands.install.maven import MavenTools
         from cordon_scanner.cli.commands.install.native import NativeTools
         from cordon_scanner.cli.commands.install.node import NodeTools
@@ -127,6 +146,15 @@ class InstallGuardCommand:
             "codium": (VscodeTools.installs, VscodeTools.code),
             "cursor": (VscodeTools.installs, VscodeTools.code),
             "brew": (HomebrewTools.installs, HomebrewTools.brew),
+            "bazel": (BazelTools.installs, BazelTools.bazel),
+            "bazelisk": (BazelTools.installs, BazelTools.bazel),
+            "julia": (JuliaTools.installs, JuliaTools.julia),
+            "nix": (NixTools.installs, NixTools.nix),
+            "swift": (SwiftTools.installs, SwiftTools.swift),
+            "Rscript": (CranTools.installs, CranTools.rscript),
+            "R": (CranTools.installs, CranTools.rscript),
+            "pod": (CocoaPodsTools.installs, CocoaPodsTools.pod),
+            "cabal": (HackageTools.installs, HackageTools.cabal),
         }
 
 
